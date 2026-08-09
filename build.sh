@@ -12,6 +12,9 @@ mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
 cp .build/release/F50Monitor "$MACOS_DIR/F50Monitor"
+if [ -f "Sources/F50Monitor/AppIcon.icns" ]; then
+    cp Sources/F50Monitor/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
+fi
 
 cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,6 +23,8 @@ cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
 <dict>
     <key>CFBundleExecutable</key>
     <string>F50Monitor</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.f50.monitor</string>
     <key>CFBundleName</key>
@@ -27,7 +32,7 @@ cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>

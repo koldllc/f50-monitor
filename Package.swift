@@ -12,7 +12,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "F50Monitor",
-            path: "Sources/F50Monitor"
+            path: "Sources/F50Monitor",
+            exclude: ["AppIcon.icns"]
         ),
         .testTarget(
             name: "F50MonitorTests",
