@@ -8,5 +8,6 @@
 # Node
 node_modules/
 
-# Apps
+# Apps & Archives
 *.app/
+*.zip
