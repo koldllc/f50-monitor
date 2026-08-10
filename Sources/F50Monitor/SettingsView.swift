@@ -51,7 +51,7 @@ public struct SettingsView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("连接")
+                Text("连接设置")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
@@ -69,7 +69,7 @@ public struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("路由器管理密码")
+                    Text("路由器管理密码 (Port 80)")
                         .font(.system(size: 12, weight: .semibold))
                     SecureField("例如 admin", text: $tempPassword)
                         .textFieldStyle(.roundedBorder)
@@ -77,7 +77,7 @@ public struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("UFI-TOOLS 登录口令（可选）")
+                    Text("UFI-TOOLS 登录口令 (Port 2333)")
                         .font(.system(size: 12, weight: .semibold))
                     SecureField("例如 admin", text: $tempUFIToken)
                         .textFieldStyle(.roundedBorder)
@@ -88,7 +88,7 @@ public struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("刷新与显示")
+                Text("刷新与显示（节能优化）")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
@@ -97,15 +97,19 @@ public struct SettingsView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Picker("", selection: $tempInterval) {
-                        Text("1 秒").tag(1.0)
+                        Text("3 秒（推荐节能）").tag(3.0)
+                        Text("5 秒（极简降温）").tag(5.0)
+                        Text("10 秒（超低负载）").tag(10.0)
                         Text("2 秒").tag(2.0)
-                        Text("3 秒").tag(3.0)
-                        Text("5 秒").tag(5.0)
-                        Text("10 秒").tag(10.0)
+                        Text("1 秒").tag(1.0)
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
+
+                Text("适当拉长刷新间隔（如 3~5 秒）可大幅降低 F50 设备芯片 CPU 占用率与发热。")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
 
                 HStack {
                     Text("菜单栏显示模式")
@@ -153,7 +157,12 @@ public struct SettingsView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            Spacer()
+            HStack {
+                Text("F50 Monitor v1.2.0")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
 
             HStack {
                 Button("使用默认值") {

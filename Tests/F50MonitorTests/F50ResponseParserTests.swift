@@ -27,6 +27,23 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50ResponseParser.parseInt("bars: 5"), 5)
         XCTAssertEqual(F50ResponseParser.parseDouble("61.5℃"), 61.5)
         XCTAssertEqual(F50ResponseParser.parseUInt64("12345 bytes"), 12345)
+        XCTAssertEqual(F50ResponseParser.parseUInt64(NSNumber(value: 9876543210 as UInt64)), 9876543210)
+        XCTAssertEqual(F50ResponseParser.parseUInt64("0x1000"), 4096)
+        XCTAssertEqual(F50ResponseParser.parseUInt64(123.456), 123)
+    }
+
+    func testSumsCellularUsageRowsFromUFIBackend() {
+        let payload: [String: Any] = [
+            "result": "success",
+            "usage": [
+                ["date": "2026-08-09", "usage": "51324645852"],
+                ["date": "2026-08-10", "usage": "15600173859"]
+            ]
+        ]
+
+        XCTAssertEqual(F50ResponseParser.parseCellularUsage(payload), 66_924_819_711)
+        XCTAssertEqual(F50ResponseParser.parseCellularUsage(["result": "success", "usage": []]), 0)
+        XCTAssertNil(F50ResponseParser.parseCellularUsage(["result": "failed"]))
     }
 
     func testParsesTrafficLimitFromRouterPayload() {
@@ -34,7 +51,36 @@ final class F50ResponseParserTests: XCTestCase {
             F50ResponseParser.parseTrafficLimit(size: "1536_1", unit: "data"),
             1536 * 1024 * 1024
         )
-        XCTAssertEqual(F50ResponseParser.parseTrafficLimit(size: "1536", unit: "time"), 0)
+        XCTAssertEqual(
+            F50ResponseParser.parseTrafficLimit(size: "100_1024", unit: "0"),
+            100 * 1024 * 1024 * 1024
+        )
+        XCTAssertEqual(
+            F50ResponseParser.parseTrafficLimit(size: "10", unit: "GB"),
+            10 * 1024 * 1024 * 1024
+        )
+        XCTAssertEqual(
+            F50ResponseParser.parseTrafficLimit(size: "500", unit: "MB"),
+            500 * 1024 * 1024
+        )
+        XCTAssertEqual(F50ResponseParser.parseTrafficLimit(size: "0", unit: "data"), 0)
+    }
+
+    func testF50StatusTrafficTotals() {
+        var status = F50Status()
+        status.monthlyRx = 1000
+        status.monthlyTx = 500
+        status.realtimeRx = 200
+        status.realtimeTx = 100
+        status.trackedDaily = 400
+
+        XCTAssertEqual(status.monthlyTotal, 1500)
+        XCTAssertEqual(status.sessionTotal, 300)
+        XCTAssertEqual(status.dailyTotal, 400)
+
+        status.dailyRx = 250
+        status.dailyTx = 250
+        XCTAssertEqual(status.dailyTotal, 500)
     }
 
     func testFormatsTerabytes() {
@@ -50,6 +96,14 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G NSA"), "B3 + n78")
         XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G SA"), "n78")
         XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "4G LTE"), "B3")
+
+        XCTAssertEqual(
+            F50ResponseParser.parseCurrentBands(
+                from: ["ZCELLINFO_band": "78"],
+                networkType: "5G SA"
+            ),
+            "n78"
+        )
     }
 
     func testBaseRefreshKeepsExistingHardwareMetricsWhenPayloadHasNoValidValues() {

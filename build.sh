@@ -32,7 +32,7 @@ cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.3</string>
+    <string>1.2.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -46,4 +46,10 @@ EOF
 chmod +x "$MACOS_DIR/F50Monitor"
 codesign --force --sign - --timestamp=none "$APP_DIR"
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
-echo "✅ 构建完成！可直接双击运行 $APP_DIR"
+
+if [ -d "/Applications/$APP_DIR" ]; then
+    rm -rf "/Applications/$APP_DIR"
+fi
+cp -R "$APP_DIR" "/Applications/$APP_DIR"
+
+echo "✅ 构建完成！已自动更新至 /Applications/$APP_DIR"

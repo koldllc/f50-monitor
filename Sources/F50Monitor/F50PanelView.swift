@@ -3,38 +3,38 @@ import SwiftUI
 public struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
     var onOpenSettings: () -> Void
-    
+
     public init(fetcher: F50Fetcher, onOpenSettings: @escaping () -> Void) {
         self.fetcher = fetcher
         self.onOpenSettings = onOpenSettings
     }
-    
+
     private var subscriptionText: String {
         let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
         let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
         let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
-        
+
         if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
             return "无数据"
         }
-        
+
         var parts: [String] = []
         if !qciVal.isEmpty {
             parts.append("QCI：\(qciVal)")
         } else {
             parts.append("QCI：-")
         }
-        
+
         if !dlVal.isEmpty {
             parts.append("⬇️ \(dlVal)")
         }
         if !ulVal.isEmpty {
             parts.append("⬆️ \(ulVal)")
         }
-        
+
         return parts.joined(separator: "  ")
     }
-    
+
     public var body: some View {
         VStack(spacing: 10) {
             // Header: Model & Connection Status
@@ -46,9 +46,9 @@ public struct F50PanelView: View {
                     Text("ZTE F50 5G MiFi")
                         .font(.system(size: 15, weight: .bold))
                 }
-                
+
                 Spacer()
-                
+
                 // Status Badge
                 HStack(spacing: 4) {
                     Circle()
@@ -61,7 +61,7 @@ public struct F50PanelView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                
+
                 Button(action: {
                     fetcher.fetchData()
                 }) {
@@ -72,7 +72,7 @@ public struct F50PanelView: View {
                 .help("立即刷新")
             }
             .padding(.horizontal, 4)
-            
+
             if !fetcher.status.isOnline {
                 // Error Alert Box
                 VStack(spacing: 6) {
@@ -91,7 +91,7 @@ public struct F50PanelView: View {
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.12)))
             }
-            
+
             // 1. Network & 3 Signal Metrics Card
             VStack(spacing: 8) {
                 HStack {
@@ -103,7 +103,7 @@ public struct F50PanelView: View {
                             Text(fetcher.status.networkType)
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.primary)
-                            
+
                             if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
                                 Text(fetcher.status.carrier)
                                     .font(.system(size: 11, weight: .medium))
@@ -123,9 +123,9 @@ public struct F50PanelView: View {
                             }
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     // Signal Bar Indicators (Bottom-aligned)
                     HStack(alignment: .bottom, spacing: 3) {
                         ForEach(1...5, id: \.self) { bar in
@@ -135,7 +135,7 @@ public struct F50PanelView: View {
                         }
                     }
                 }
-                
+
                 // Subscription Status / QCI Line
                 HStack(spacing: 6) {
                     Text("签约状态:")
@@ -149,9 +149,9 @@ public struct F50PanelView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.blue.opacity(0.06)))
-                
+
                 Divider()
-                
+
                 // 3 Signal Values & Status Bars (Ordered: RSRP, SINR/SNR, RSRQ)
                 HStack(spacing: 8) {
                     // Column 1: RSRP
@@ -161,7 +161,7 @@ public struct F50PanelView: View {
                             .foregroundColor(.secondary)
                         Text(fetcher.status.rsrp)
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        
+
                         // Status Bar & Tag
                         let q = fetcher.status.rsrpQuality
                         VStack(spacing: 2) {
@@ -174,9 +174,9 @@ public struct F50PanelView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    
+
                     Divider().frame(height: 36)
-                    
+
                     // Column 2: SINR / SNR
                     VStack(spacing: 4) {
                         Text("SINR / SNR")
@@ -184,7 +184,7 @@ public struct F50PanelView: View {
                             .foregroundColor(.secondary)
                         Text(fetcher.status.snr)
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        
+
                         // Status Bar & Tag
                         let q = fetcher.status.snrQuality
                         VStack(spacing: 2) {
@@ -197,9 +197,9 @@ public struct F50PanelView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    
+
                     Divider().frame(height: 36)
-                    
+
                     // Column 3: RSRQ
                     VStack(spacing: 4) {
                         Text("RSRQ")
@@ -207,7 +207,7 @@ public struct F50PanelView: View {
                             .foregroundColor(.secondary)
                         Text(fetcher.status.rsrq)
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        
+
                         // Status Bar & Tag
                         let q = fetcher.status.rsrqQuality
                         VStack(spacing: 2) {
@@ -224,7 +224,7 @@ public struct F50PanelView: View {
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-            
+
             // 2. Speeds Card
             HStack(spacing: 12) {
                 // Download Speed
@@ -244,7 +244,7 @@ public struct F50PanelView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.08)))
-                
+
                 // Upload Speed
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -264,16 +264,87 @@ public struct F50PanelView: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("已用流量：\(F50Status.formatBytes(fetcher.status.monthlyRx + fetcher.status.monthlyTx))/总流量：\(fetcher.status.trafficLimit > 0 ? F50Status.formatBytes(fetcher.status.trafficLimit) : "--")")
-                Text("当日流量：\(F50Status.formatBytes(fetcher.status.realtimeRx + fetcher.status.realtimeTx)) / 本月已用：\(F50Status.formatBytes(fetcher.status.monthlyRx + fetcher.status.monthlyTx))")
+            // 3. Traffic Statistics Card
+            VStack(spacing: 8) {
+                HStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chart.bar.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.cyan)
+                        Text("套餐流量")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    if fetcher.status.trafficLimit > 0 {
+                        Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
+                            .foregroundColor(fetcher.status.trafficUsageColor)
+                    } else {
+                        Text("已用流量：\(F50Status.formatBytes(fetcher.status.packageUsed))")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.primary)
+                    }
+                }
+
+                if fetcher.status.trafficLimit > 0 {
+                    HStack {
+                        Text("已用流量：\(F50Status.formatBytes(fetcher.status.packageUsed))")
+                        Spacer()
+                        Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
+                    }
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+
+                    ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
+                        .tint(fetcher.status.trafficUsageColor)
+                        .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                }
+
+                Divider()
+
+                // 2 Metrics Columns: 当日流量, 本月已用
+                HStack(spacing: 8) {
+                    // Column 1: 当日流量
+                    VStack(spacing: 3) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sun.max.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                            Text("当日流量")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        Text(F50Status.formatBytes(fetcher.status.dailyTotal))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Divider().frame(height: 28)
+
+                    // Column 2: 本月已用
+                    VStack(spacing: 3) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 11))
+                                .foregroundColor(.purple)
+                            Text("本月已用")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        Text(F50Status.formatBytes(fetcher.status.monthlyTotal))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.cyan.opacity(0.08)))
-            
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
+
             // 3. Hardware Metrics Grid
             VStack(spacing: 8) {
                 HStack(spacing: 12) {
@@ -294,7 +365,7 @@ public struct F50PanelView: View {
                     .padding(8)
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
-                    
+
                     // Memory Usage Metric
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -313,7 +384,7 @@ public struct F50PanelView: View {
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
                 }
-                
+
                 HStack(spacing: 12) {
                     // Temperature
                     HStack(spacing: 8) {
@@ -333,7 +404,7 @@ public struct F50PanelView: View {
                     .padding(8)
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 10).fill(fetcher.status.tempColor.opacity(0.08)))
-                    
+
                     // Connected Devices
                     HStack(spacing: 8) {
                         Image(systemName: "laptopcomputer.and.iphone")
@@ -353,9 +424,9 @@ public struct F50PanelView: View {
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.08)))
                 }
             }
-            
+
             Divider()
-            
+
             // 4. Actions
             HStack(spacing: 10) {
                     // Open Web Dashboard Button
@@ -374,7 +445,7 @@ public struct F50PanelView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
-                    
+
                     // Settings Button
                     Button(action: {
                         onOpenSettings()
@@ -388,7 +459,7 @@ public struct F50PanelView: View {
                         .padding(.horizontal, 12)
                     }
                     .buttonStyle(.bordered)
-                    
+
                     // Quit Button
                     Button(action: {
                         NSApplication.shared.terminate(nil)

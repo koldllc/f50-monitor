@@ -58,24 +58,89 @@ enum F50ResponseParser {
     }
 
     static func parseUInt64(_ value: Any) -> UInt64 {
-        if let number = value as? UInt64 { return number }
-        if let number = value as? Int { return UInt64(max(0, number)) }
+        if let number = value as? NSNumber {
+            return number.uint64Value
+        }
+        if let number = value as? UInt64 {
+            return number
+        }
+        if let number = value as? Int {
+            return UInt64(max(0, number))
+        }
+        if let number = value as? Double {
+            return number.isFinite && number >= 0 ? UInt64(number) : 0
+        }
         if let string = value as? String {
-            let clean = string.trimmingCharacters(in: CharacterSet.decimalDigits.inverted)
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("0x") || trimmed.hasPrefix("0X") {
+                let hexStr = String(trimmed.dropFirst(2))
+                return UInt64(hexStr, radix: 16) ?? 0
+            }
+            if let uVal = UInt64(trimmed) {
+                return uVal
+            }
+            if let dVal = Double(trimmed), dVal.isFinite && dVal >= 0 {
+                return UInt64(dVal)
+            }
+            let clean = trimmed.trimmingCharacters(in: CharacterSet.decimalDigits.inverted)
             return UInt64(clean) ?? 0
         }
         return 0
     }
 
-    static func parseTrafficLimit(size: Any?, unit: Any?) -> UInt64 {
-        guard String(describing: unit ?? "").lowercased() == "data" else { return 0 }
+    static func parseCellularUsage(_ json: [String: Any]) -> UInt64? {
+        guard let rows = json["usage"] as? [[String: Any]] else { return nil }
+        return rows.reduce(0) { total, row in
+            total + parseUInt64(row["usage"] ?? 0)
+        }
+    }
 
-        let parts = String(describing: size ?? "").split(separator: "_", maxSplits: 1)
-        guard let value = Double(parts.first ?? ""), value > 0 else { return 0 }
-        let multiplier = parts.count == 2 ? (Double(parts[1]) ?? 1) : 1
-        let bytes = value * multiplier * 1024 * 1024
-        guard bytes.isFinite, bytes > 0, bytes <= Double(UInt64.max) else { return 0 }
-        return UInt64(bytes)
+    static func parseTrafficLimit(size: Any?, unit: Any?) -> UInt64 {
+        let sizeStr = String(describing: size ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let unitStr = String(describing: unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        guard !sizeStr.isEmpty, sizeStr != "0", sizeStr != "null", sizeStr != "undefined" else { return 0 }
+
+        // 1. Check if size string contains underscore separators e.g. "1536_1", "100_1024" or "500_1"
+        let parts = sizeStr.split(separator: "_").compactMap { Double($0) }
+        if parts.count >= 2 {
+            let value = parts[0]
+            guard value > 0 else { return 0 }
+            let subMultiplier = parts[1] > 0 ? parts[1] : 1.0
+            let bytes = value * subMultiplier * 1024.0 * 1024.0
+            if bytes.isFinite && bytes > 0 && bytes <= Double(UInt64.max) {
+                return UInt64(bytes)
+            }
+        }
+
+        // 2. Single numeric size value
+        let cleanSize = sizeStr.components(separatedBy: CharacterSet.decimalDigits.union(CharacterSet(charactersIn: ".")).inverted).joined()
+        guard let numValue = Double(cleanSize), numValue > 0 else { return 0 }
+
+        let multiplier: Double
+        if unitStr == "gb" || unitStr == "1" || unitStr == "g" {
+            multiplier = 1024.0 * 1024.0 * 1024.0
+        } else if unitStr == "mb" || unitStr == "0" || unitStr == "m" {
+            multiplier = 1024.0 * 1024.0
+        } else if unitStr == "tb" || unitStr == "2" || unitStr == "t" {
+            multiplier = 1024.0 * 1024.0 * 1024.0 * 1024.0
+        } else if unitStr == "kb" || unitStr == "k" {
+            multiplier = 1024.0
+        } else if unitStr == "data" || unitStr == "data_volume" || unitStr == "size" {
+            multiplier = numValue < 1000 ? 1024.0 * 1024.0 * 1024.0 : 1024.0 * 1024.0
+        } else if numValue > 1_000_000_000 {
+            multiplier = 1.0
+        } else if numValue > 100_000 {
+            multiplier = 1024.0
+        } else {
+            multiplier = 1024.0 * 1024.0 * 1024.0
+        }
+
+        let totalBytes = numValue * multiplier
+        if totalBytes.isFinite && totalBytes > 0 && totalBytes <= Double(UInt64.max) {
+            return UInt64(totalBytes)
+        }
+        return 0
     }
 
     static func parseCurrentBands(from payload: [String: Any], networkType: String) -> String {
@@ -86,7 +151,7 @@ enum F50ResponseParser {
         )
         let nrBand = firstBand(
             in: payload,
-            keys: ["nr5g_action_band", "nr5g_action_nsa_band", "Z5g_CELLINFO_band", "nr_ca_pcell_band"],
+            keys: ["nr5g_action_band", "nr5g_action_nsa_band", "ZCELLINFO_band", "Z5g_CELLINFO_band", "nr_ca_pcell_band"],
             prefix: "n"
         )
 

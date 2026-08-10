@@ -8,7 +8,7 @@ public enum MenuBarDisplayMode: String, CaseIterable, Identifiable, Codable {
     case temperature = "图标 + 温度"
     case devices = "图标 + 设备数"
     case full = "完整显示"
-    
+
     public var id: String { rawValue }
 }
 
@@ -16,7 +16,7 @@ public struct F50Status: Equatable {
     public var isOnline: Bool = false
     public var errorMessage: String? = nil
     public var ufiAuthFailed: Bool = false  // True if port 2333 returned 401
-    
+
     public var networkType: String = "5G SA" // e.g. "5G SA", "5G NSA", "4G LTE"
     public var signalBar: Int = 0           // 0 to 5
     public var rsrp: String = "N/A"         // e.g. "-85 dBm"
@@ -25,31 +25,76 @@ public struct F50Status: Equatable {
     public var carrier: String = "未知"     // e.g. "中国移动"
     public var currentBands: String = ""   // e.g. "B3 + n78"
     public var pppStatus: String = "未连接"
-    
+
     // QCI & Subscription Rates (Empty if not fetched from modem)
     public var qci: String = ""
     public var qosDl: String = ""
     public var qosUl: String = ""
-    
+
     public var dlSpeed: Double = 0.0        // Bytes per sec
     public var ulSpeed: Double = 0.0        // Bytes per sec
-    
+
     public var connectedDevices: Int = 0
     public var cpuUsage: Double = 0.0       // 0 - 100%
     public var memUsage: Double = 0.0       // 0 - 100%
     public var temperature: Double = 0.0    // ℃
-    
+
     public var batteryValue: Int = -1       // -1 means no battery or N/A
     public var isCharging: Bool = false
-    
+
     public var monthlyRx: UInt64 = 0
     public var monthlyTx: UInt64 = 0
     public var realtimeRx: UInt64 = 0
     public var realtimeTx: UInt64 = 0
+    public var dailyRx: UInt64 = 0
+    public var dailyTx: UInt64 = 0
+    public var trackedDaily: UInt64 = 0
+    public var packageUsed: UInt64 = 0
     public var trafficLimit: UInt64 = 0
-    
+
+    public var monthlyOffsetBytes: Int64 = 0
+    public var dailyOffsetBytes: Int64 = 0
+
+    public var monthlyTotal: UInt64 {
+        let raw = monthlyRx + monthlyTx
+        if monthlyOffsetBytes != 0 {
+            let adjusted = Int64(raw) + monthlyOffsetBytes
+            return UInt64(max(0, adjusted))
+        }
+        return raw
+    }
+
+    public var sessionTotal: UInt64 { realtimeRx + realtimeTx }
+
+    public var dailyTotal: UInt64 {
+        let nativeDaily = dailyRx + dailyTx
+        let raw = nativeDaily > 0 ? nativeDaily : max(trackedDaily, sessionTotal)
+        if dailyOffsetBytes != 0 {
+            let adjusted = Int64(raw) + dailyOffsetBytes
+            return UInt64(max(0, adjusted))
+        }
+        return raw
+    }
+
+    public var trafficUsageRatio: Double {
+        guard trafficLimit > 0 else { return 0 }
+        return min(1.0, max(0.0, Double(packageUsed) / Double(trafficLimit)))
+    }
+
+    public var trafficUsageColor: Color {
+        guard trafficLimit > 0 else { return .cyan }
+        let ratio = trafficUsageRatio
+        if ratio >= 0.9 {
+            return .red
+        } else if ratio >= 0.75 {
+            return .orange
+        } else {
+            return .cyan
+        }
+    }
+
     public var lastUpdated: Date = Date()
-    
+
     public init() {}
 
     mutating func mergeHardwareMetrics(from payload: [String: Any]) {
@@ -72,7 +117,7 @@ public struct F50Status: Equatable {
         memUsage = 0
         temperature = 0
     }
-    
+
     // Helper to extract double value from string
     private func parseVal(_ str: String) -> Double? {
         let clean = str.replacingOccurrences(of: "dBm", with: "")
@@ -80,7 +125,7 @@ public struct F50Status: Equatable {
                        .trimmingCharacters(in: .whitespaces)
         return Double(clean)
     }
-    
+
     // RSRP Quality (Excellent >= -85, Good >= -95, Fair >= -105, Poor < -105)
     public var rsrpQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(rsrp) else { return ("-", .secondary, 0.0) }
@@ -94,7 +139,7 @@ public struct F50Status: Equatable {
             return ("较差", .red, 0.25)
         }
     }
-    
+
     // SINR Quality (Excellent >= 20, Good >= 13, Fair >= 3, Poor < 3)
     public var snrQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(snr) else { return ("-", .secondary, 0.0) }
@@ -108,7 +153,7 @@ public struct F50Status: Equatable {
             return ("较差", .red, 0.25)
         }
     }
-    
+
     // RSRQ Quality (Excellent >= -10, Good >= -15, Fair >= -20, Poor < -20)
     public var rsrqQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(rsrq) else { return ("-", .secondary, 0.0) }
@@ -122,7 +167,7 @@ public struct F50Status: Equatable {
             return ("较差", .red, 0.25)
         }
     }
-    
+
     public static func formatSpeed(_ bytesPerSec: Double) -> String {
         if bytesPerSec < 1024 {
             return String(format: "%.0f B/s", bytesPerSec)
@@ -134,7 +179,7 @@ public struct F50Status: Equatable {
             return String(format: "%.2f GB/s", bytesPerSec / (1024.0 * 1024.0 * 1024.0))
         }
     }
-    
+
     public static func formatSpeedFixedWidth(_ bytesPerSec: Double) -> String {
         if bytesPerSec < 1024 {
             return String(format: "%3.0f B/s", bytesPerSec)
@@ -146,7 +191,7 @@ public struct F50Status: Equatable {
             return String(format: "%4.2f GB/s", bytesPerSec / (1024.0 * 1024.0 * 1024.0))
         }
     }
-    
+
     public static func formatBytes(_ bytes: UInt64) -> String {
         let dBytes = Double(bytes)
         if dBytes < 1024 {
@@ -161,7 +206,7 @@ public struct F50Status: Equatable {
             return String(format: "%.2f TB", dBytes / (1024.0 * 1024.0 * 1024.0 * 1024.0))
         }
     }
-    
+
     public var signalIconName: String {
         guard isOnline else { return "wifi.slash" }
         switch signalBar {
@@ -173,7 +218,7 @@ public struct F50Status: Equatable {
         default: return "antenna.radiowaves.left.and.right"
         }
     }
-    
+
     public var tempColor: Color {
         if temperature <= 0 {
             return .secondary
@@ -185,7 +230,7 @@ public struct F50Status: Equatable {
             return .red
         }
     }
-    
+
     public var cpuColor: Color {
         if cpuUsage <= 0 {
             return .secondary
@@ -197,7 +242,7 @@ public struct F50Status: Equatable {
             return .red
         }
     }
-    
+
     public var memColor: Color {
         if memUsage <= 0 {
             return .secondary
