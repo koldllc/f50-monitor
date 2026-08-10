@@ -9,6 +9,7 @@ public struct SettingsView: View {
     @State private var tempUFIToken: String = ""
     @State private var tempInterval: Double = 2.0
     @State private var tempDisplayMode: MenuBarDisplayMode = .full
+    @StateObject private var launchAtLogin = LaunchAtLoginManager()
     
     public init(fetcher: F50Fetcher, onClose: @escaping () -> Void) {
         self.fetcher = fetcher
@@ -118,6 +119,36 @@ public struct SettingsView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
+
+                Divider()
+
+                Toggle(isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.setEnabled($0) }
+                )) {
+                    Text("登录时自动启动")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .toggleStyle(.switch)
+                .disabled(launchAtLogin.isUpdating)
+
+                if launchAtLogin.requiresApproval {
+                    HStack(spacing: 4) {
+                        Text("需要在系统设置中允许")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Button("前往设置") {
+                            launchAtLogin.openSystemSettings()
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 10))
+                    }
+                } else if let errorMessage = launchAtLogin.errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
@@ -159,6 +190,7 @@ public struct SettingsView: View {
             tempUFIToken = fetcher.ufiToken
             tempInterval = fetcher.refreshInterval
             tempDisplayMode = fetcher.displayMode
+            launchAtLogin.refresh()
         }
     }
 }
