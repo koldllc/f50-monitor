@@ -78,6 +78,38 @@ enum F50ResponseParser {
         return UInt64(bytes)
     }
 
+    static func parseCurrentBands(from payload: [String: Any], networkType: String) -> String {
+        let lteBand = firstBand(
+            in: payload,
+            keys: ["lte_ca_pcell_band", "wan_active_band", "lte_band"],
+            prefix: "B"
+        )
+        let nrBand = firstBand(
+            in: payload,
+            keys: ["nr5g_action_band", "nr5g_action_nsa_band", "Z5g_CELLINFO_band", "nr_ca_pcell_band"],
+            prefix: "n"
+        )
+
+        if networkType == "5G NSA" {
+            return [lteBand, nrBand].compactMap { $0 }.joined(separator: " + ")
+        }
+        if networkType.hasPrefix("5G") {
+            return nrBand ?? lteBand ?? ""
+        }
+        return lteBand ?? ""
+    }
+
+    private static func firstBand(in payload: [String: Any], keys: [String], prefix: String) -> String? {
+        for key in keys {
+            guard let value = payload[key] else { continue }
+            let raw = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty, raw != "0",
+                  let range = raw.range(of: #"\d+"#, options: .regularExpression) else { continue }
+            return prefix + String(raw[range])
+        }
+        return nil
+    }
+
     private static func formatRate(_ kbps: Double) -> String {
         kbps >= 1000
             ? String(format: "%.0fMbps", kbps / 1000)

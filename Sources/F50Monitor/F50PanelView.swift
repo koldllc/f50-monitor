@@ -112,6 +112,15 @@ public struct F50PanelView: View {
                                     .background(Capsule().fill(Color.blue.opacity(0.15)))
                                     .foregroundColor(.blue)
                             }
+
+                            if !fetcher.status.currentBands.isEmpty {
+                                Text(fetcher.status.currentBands)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.purple.opacity(0.15)))
+                                    .foregroundColor(.purple)
+                            }
                         }
                     }
                     

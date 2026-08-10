@@ -23,6 +23,7 @@ public struct F50Status: Equatable {
     public var rsrq: String = "N/A"         // e.g. "-7 dB"
     public var snr: String = "N/A"          // e.g. "8 dB"
     public var carrier: String = "未知"     // e.g. "中国移动"
+    public var currentBands: String = ""   // e.g. "B3 + n78"
     public var pppStatus: String = "未连接"
     
     // QCI & Subscription Rates (Empty if not fetched from modem)

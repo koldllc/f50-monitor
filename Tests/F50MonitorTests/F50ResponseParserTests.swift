@@ -41,6 +41,17 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50Status.formatBytes(1536 * 1024 * 1024 * 1024), "1.50 TB")
     }
 
+    func testParsesCurrentBandsForNetworkType() {
+        let payload: [String: Any] = [
+            "wan_active_band": "LTE BAND 3",
+            "nr5g_action_band": "n78"
+        ]
+
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G NSA"), "B3 + n78")
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G SA"), "n78")
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "4G LTE"), "B3")
+    }
+
     func testBaseRefreshKeepsExistingHardwareMetricsWhenPayloadHasNoValidValues() {
         var status = F50Status()
         status.cpuUsage = 32
