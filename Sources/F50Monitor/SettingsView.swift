@@ -183,7 +183,8 @@ public struct SettingsView: View {
             }
         }
         .padding(16)
-        .frame(width: 340, height: 450)
+        .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             tempURL = fetcher.baseURLString
             tempPassword = fetcher.password

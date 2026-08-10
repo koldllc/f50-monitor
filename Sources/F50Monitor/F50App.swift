@@ -22,13 +22,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // 1. Setup Popover
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 340, height: 450)
         popover.behavior = .transient
         popover.animates = true
         
-        popover.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: F50PopoverView(fetcher: fetcher)
         )
+        hostingController.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hostingController
         
         // 2. Setup Menu Bar StatusItem with monospaced font
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

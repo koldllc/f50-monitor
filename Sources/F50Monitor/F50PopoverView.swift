@@ -16,6 +16,7 @@ struct F50PopoverView: View {
                 }
             }
         }
-        .frame(width: 340, height: 500)
+        .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
