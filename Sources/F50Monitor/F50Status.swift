@@ -43,6 +43,9 @@ public struct F50Status: Equatable {
     
     public var monthlyRx: UInt64 = 0
     public var monthlyTx: UInt64 = 0
+    public var realtimeRx: UInt64 = 0
+    public var realtimeTx: UInt64 = 0
+    public var trafficLimit: UInt64 = 0
     
     public var lastUpdated: Date = Date()
     
@@ -151,8 +154,10 @@ public struct F50Status: Equatable {
             return String(format: "%.1f KB", dBytes / 1024.0)
         } else if dBytes < 1024 * 1024 * 1024 {
             return String(format: "%.2f MB", dBytes / (1024.0 * 1024.0))
-        } else {
+        } else if dBytes < 1024 * 1024 * 1024 * 1024 {
             return String(format: "%.2f GB", dBytes / (1024.0 * 1024.0 * 1024.0))
+        } else {
+            return String(format: "%.2f TB", dBytes / (1024.0 * 1024.0 * 1024.0 * 1024.0))
         }
     }
     

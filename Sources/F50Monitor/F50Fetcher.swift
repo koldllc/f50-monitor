@@ -141,7 +141,7 @@ public class F50Fetcher: ObservableObject {
     }
     
     private func executeFetch(cleanBase: String, hostOnly: String, generation: UInt, isRetryAfterLogin: Bool = false) {
-        let cmdList = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
+        let cmdList = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,data_volume_limit_size,data_volume_limit_unit,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
         
         let targetURLString = "\(hostOnly)/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd=\(cmdList)"
         
@@ -658,6 +658,16 @@ public class F50Fetcher: ObservableObject {
         if let val = dict["monthly_tx_bytes"] {
             newStatus.monthlyTx = parseUInt64(val)
         }
+        if let val = dict["realtime_rx_bytes"] {
+            newStatus.realtimeRx = parseUInt64(val)
+        }
+        if let val = dict["realtime_tx_bytes"] {
+            newStatus.realtimeTx = parseUInt64(val)
+        }
+        newStatus.trafficLimit = F50ResponseParser.parseTrafficLimit(
+            size: dict["data_volume_limit_size"],
+            unit: dict["data_volume_limit_unit"]
+        )
         
         self.status = newStatus
     }

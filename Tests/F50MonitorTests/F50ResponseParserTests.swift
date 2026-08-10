@@ -29,6 +29,18 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50ResponseParser.parseUInt64("12345 bytes"), 12345)
     }
 
+    func testParsesTrafficLimitFromRouterPayload() {
+        XCTAssertEqual(
+            F50ResponseParser.parseTrafficLimit(size: "1536_1", unit: "data"),
+            1536 * 1024 * 1024
+        )
+        XCTAssertEqual(F50ResponseParser.parseTrafficLimit(size: "1536", unit: "time"), 0)
+    }
+
+    func testFormatsTerabytes() {
+        XCTAssertEqual(F50Status.formatBytes(1536 * 1024 * 1024 * 1024), "1.50 TB")
+    }
+
     func testBaseRefreshKeepsExistingHardwareMetricsWhenPayloadHasNoValidValues() {
         var status = F50Status()
         status.cpuUsage = 32

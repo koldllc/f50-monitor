@@ -67,6 +67,17 @@ enum F50ResponseParser {
         return 0
     }
 
+    static func parseTrafficLimit(size: Any?, unit: Any?) -> UInt64 {
+        guard String(describing: unit ?? "").lowercased() == "data" else { return 0 }
+
+        let parts = String(describing: size ?? "").split(separator: "_", maxSplits: 1)
+        guard let value = Double(parts.first ?? ""), value > 0 else { return 0 }
+        let multiplier = parts.count == 2 ? (Double(parts[1]) ?? 1) : 1
+        let bytes = value * multiplier * 1024 * 1024
+        guard bytes.isFinite, bytes > 0, bytes <= Double(UInt64.max) else { return 0 }
+        return UInt64(bytes)
+    }
+
     private static func formatRate(_ kbps: Double) -> String {
         kbps >= 1000
             ? String(format: "%.0fMbps", kbps / 1000)

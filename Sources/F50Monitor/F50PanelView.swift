@@ -254,6 +254,16 @@ public struct F50PanelView: View {
                 .frame(maxWidth: .infinity)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
             }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("已用流量：\(F50Status.formatBytes(fetcher.status.monthlyRx + fetcher.status.monthlyTx))/总流量：\(fetcher.status.trafficLimit > 0 ? F50Status.formatBytes(fetcher.status.trafficLimit) : "--")")
+                Text("当日流量：\(F50Status.formatBytes(fetcher.status.realtimeRx + fetcher.status.realtimeTx)) / 本月已用：\(F50Status.formatBytes(fetcher.status.monthlyRx + fetcher.status.monthlyTx))")
+            }
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.cyan.opacity(0.08)))
             
             // 3. Hardware Metrics Grid
             VStack(spacing: 8) {
@@ -384,6 +394,6 @@ public struct F50PanelView: View {
             }
         }
         .padding(16)
-        .frame(width: 340, height: 450)
+        .frame(width: 340, height: 500)
     }
 }
