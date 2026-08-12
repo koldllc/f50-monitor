@@ -147,11 +147,26 @@ public class F50Fetcher: ObservableObject {
             hostOnly = "http://192.168.0.1"
         }
 
-        executeFetch(cleanBase: cleanBase, hostOnly: hostOnly, generation: generation)
+        let shouldRefreshTraffic = Date().timeIntervalSince(lastTrafficRefreshDate)
+            >= F50Configuration.trafficRefreshInterval
+        executeFetch(
+            cleanBase: cleanBase,
+            hostOnly: hostOnly,
+            generation: generation,
+            refreshTraffic: shouldRefreshTraffic
+        )
     }
 
-    private func executeFetch(cleanBase: String, hostOnly: String, generation: UInt, isRetryAfterLogin: Bool = false) {
-        let cmdList = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,day_rx_bytes,day_tx_bytes,total_rx_bytes,total_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_limit_switch,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
+    private func executeFetch(
+        cleanBase: String,
+        hostOnly: String,
+        generation: UInt,
+        refreshTraffic: Bool,
+        isRetryAfterLogin: Bool = false
+    ) {
+        let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
+        let trafficCommands = "realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,day_rx_bytes,day_tx_bytes,total_rx_bytes,total_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_limit_switch"
+        let cmdList = refreshTraffic ? "\(statusCommands),\(trafficCommands)" : statusCommands
 
         let targetURLString = "\(hostOnly)/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd=\(cmdList)"
 
@@ -186,7 +201,13 @@ public class F50Fetcher: ObservableObject {
                 self.performZTELogin(hostOnly: hostOnly) { [weak self] success in
                     guard let self, generation == self.requestGeneration else { return }
                     if success {
-                        self.executeFetch(cleanBase: cleanBase, hostOnly: hostOnly, generation: generation, isRetryAfterLogin: true)
+                        self.executeFetch(
+                            cleanBase: cleanBase,
+                            hostOnly: hostOnly,
+                            generation: generation,
+                            refreshTraffic: refreshTraffic,
+                            isRetryAfterLogin: true
+                        )
                     } else {
                         self.updateStatusFailed("口令/密码错误(401)", generation: generation)
                     }
@@ -203,14 +224,12 @@ public class F50Fetcher: ObservableObject {
                 if let dict = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
                     DispatchQueue.main.async {
                         guard generation == self.requestGeneration else { return }
-                        let shouldRefreshTraffic = Date().timeIntervalSince(self.lastTrafficRefreshDate)
-                            >= F50Configuration.trafficRefreshInterval
                         self.parseStatusDict(
                             dict,
                             preserveQos: true,
-                            refreshTraffic: shouldRefreshTraffic
+                            refreshTraffic: refreshTraffic
                         )
-                        if shouldRefreshTraffic {
+                        if refreshTraffic {
                             self.lastTrafficRefreshDate = Date()
                         }
                         self.isFetching = false
@@ -218,7 +237,7 @@ public class F50Fetcher: ObservableObject {
                         self.fetchExtensionMetricsIfNeeded(
                             hostOnly: hostOnly,
                             generation: generation,
-                            refreshTraffic: shouldRefreshTraffic
+                            refreshTraffic: refreshTraffic
                         )
                     }
                 } else {
