@@ -43,7 +43,7 @@ public struct F50PanelView: View {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.blue)
-                    Text("ZTE F50 5G MiFi")
+                    Text("F50 Monitor")
                         .font(.system(size: 15, weight: .bold))
                 }
 

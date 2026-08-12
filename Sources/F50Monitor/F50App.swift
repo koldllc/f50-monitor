@@ -36,7 +36,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
             button.alignment = .center
-            button.title = "⚡ F50 Monitor"
+            let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+            button.image = NSImage(
+                systemSymbolName: "antenna.radiowaves.left.and.right",
+                accessibilityDescription: "F50 Monitor"
+            )?.withSymbolConfiguration(symbolConfiguration)
+            button.imagePosition = .imageLeading
+            button.title = "F50 Monitor"
             button.target = self
             button.action = #selector(togglePopover(_:))
         }
@@ -71,50 +77,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         guard status.isOnline else {
             statusItem.length = 50
-            button.title = "⚡ 离线"
+            button.title = "离线"
             return
         }
         
         switch mode {
         case .iconOnly:
             statusItem.length = 26
-            button.title = "⚡"
+            button.title = ""
             
         case .speeds:
             statusItem.length = 175
             let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
             let ulStr = F50Status.formatSpeedFixedWidth(status.ulSpeed)
-            button.title = "⚡ ⬇\(dlStr) ⬆\(ulStr)"
+            button.title = "⬇\(dlStr) ⬆\(ulStr)"
             
         case .cpuMem:
             statusItem.length = 120
             if status.cpuUsage > 0 || status.memUsage > 0 {
-                button.title = String(format: "⚡ C:%2.0f%% M:%2.0f%%", status.cpuUsage, status.memUsage)
+                button.title = String(format: "C:%2.0f%% M:%2.0f%%", status.cpuUsage, status.memUsage)
             } else {
                 let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
-                button.title = "⚡ ⬇\(dlStr)"
+                button.title = "⬇\(dlStr)"
             }
             
         case .temperature:
             statusItem.length = 85
             if status.temperature > 0 {
-                button.title = String(format: "⚡ %4.1f℃", status.temperature)
+                button.title = String(format: "%4.1f℃", status.temperature)
             } else {
-                button.title = "⚡ \(status.networkType)"
+                button.title = status.networkType
             }
             
         case .devices:
             statusItem.length = 70
-            button.title = "⚡ \(status.connectedDevices)台"
+            button.title = "\(status.connectedDevices)台"
             
         case .full:
             statusItem.length = 170
             let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
             let type = status.networkType.replacingOccurrences(of: "5G ", with: "")
             if status.temperature > 0 {
-                button.title = String(format: "⚡ %@ ⬇%@ %.0f℃", type, dlStr, status.temperature)
+                button.title = String(format: "%@ ⬇%@ %.0f℃", type, dlStr, status.temperature)
             } else {
-                button.title = String(format: "⚡ %@ ⬇%@", type, dlStr)
+                button.title = String(format: "%@ ⬇%@", type, dlStr)
             }
         }
     }
