@@ -158,7 +158,7 @@ public struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             HStack {
-                Text("F50 Monitor v1.2.0")
+                Text("F50 Monitor v1.2.1")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                 Spacer()
