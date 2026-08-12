@@ -8,7 +8,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "CC-BY-NC-4.0",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "puppeteer-core": "^25.5.0"
