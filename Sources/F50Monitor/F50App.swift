@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var fetcher: F50Fetcher!
     var updateManager: UpdateManager!
     private var cancellables = Set<AnyCancellable>()
+    private let smsNotificationManager = SMSNotificationManager()
     
     static func main() {
         let app = NSApplication.shared
@@ -54,6 +55,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status, mode in
                 self?.updateMenuBarText(status: status, mode: mode)
+            }
+            .store(in: &cancellables)
+
+        fetcher.$status
+            .compactMap { status in
+                status.isOnline ? status.smsUnreadCount : nil
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] unreadCount in
+                self?.smsNotificationManager.updateUnreadCount(unreadCount)
             }
             .store(in: &cancellables)
 

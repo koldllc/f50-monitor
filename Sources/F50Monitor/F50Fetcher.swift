@@ -1062,6 +1062,7 @@ public class F50Fetcher: ObservableObject {
         newStatus.cpuUsage = status.cpuUsage
         newStatus.memUsage = status.memUsage
         newStatus.temperature = status.temperature
+        newStatus.smsUnreadCount = status.smsUnreadCount
         newStatus.mergeHardwareMetrics(from: dict)
 
         // Signal bar (signalbar, rssi, network_signalbar)

@@ -81,24 +81,6 @@ public struct F50PanelView: View {
                     .help(updateManager.statusText)
                 }
 
-                Button(action: onOpenSMS) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: fetcher.status.smsUnreadCount > 0 ? "envelope.badge.fill" : "envelope")
-                            .font(.system(size: 13, weight: .semibold))
-                        if fetcher.status.smsUnreadCount > 0 {
-                            Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
-                                .font(.system(size: 7, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(Capsule().fill(Color.red))
-                                .offset(x: 8, y: -7)
-                        }
-                    }
-                }
-                .buttonStyle(.borderless)
-                .help("读取短信")
-
                 Button(action: {
                     fetcher.fetchData()
                 }) {
@@ -466,6 +448,31 @@ public struct F50PanelView: View {
 
             // 4. Actions
             HStack(spacing: 10) {
+                    // SMS Button
+                    Button(action: onOpenSMS) {
+                        HStack(spacing: 4) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "envelope")
+                                    .font(.system(size: 11, weight: .medium))
+                                if fetcher.status.smsUnreadCount > 0 {
+                                    Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 3)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.red))
+                                        .offset(x: 9, y: -7)
+                                }
+                            }
+                            Text("短信")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("读取短信")
+
                     // Open Web Dashboard Button
                     Button(action: {
                         if let url = URL(string: fetcher.baseURLString) {
