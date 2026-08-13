@@ -46,6 +46,26 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertNil(F50ResponseParser.parseCellularUsage(["result": "failed"]))
     }
 
+    func testNormalizesUFIBaseDeviceInfoAliases() {
+        let normalized = F50ResponseParser.normalizeUFIPayload([
+            "battery": 86,
+            "cpu_temp": 60_620,
+            "daily_data": "1024",
+            "monthly_data": "4096",
+            "client_count": 3,
+            "operator": "中国联通",
+            "network_mode": "5G SA"
+        ])
+
+        XCTAssertEqual(F50ResponseParser.parseInt(normalized["battery_value"] ?? 0), 86)
+        XCTAssertEqual(F50ResponseParser.parseDouble(normalized["cpu_temp"] ?? 0), 60.62, accuracy: 0.001)
+        XCTAssertEqual(F50ResponseParser.parseUInt64(normalized["day_rx_bytes"] ?? 0), 1024)
+        XCTAssertEqual(F50ResponseParser.parseUInt64(normalized["monthly_rx_bytes"] ?? 0), 4096)
+        XCTAssertEqual(F50ResponseParser.parseInt(normalized["wifi_access_sta_num"] ?? 0), 3)
+        XCTAssertEqual(normalized["network_provider"] as? String, "中国联通")
+        XCTAssertEqual(normalized["network_type"] as? String, "5G SA")
+    }
+
     func testParsesTrafficLimitFromRouterPayload() {
         XCTAssertEqual(
             F50ResponseParser.parseTrafficLimit(size: "1536_1", unit: "data"),

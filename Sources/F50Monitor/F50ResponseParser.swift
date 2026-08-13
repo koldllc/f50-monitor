@@ -7,6 +7,50 @@ struct ParsedQos: Equatable {
 }
 
 enum F50ResponseParser {
+    static func normalizeUFIPayload(_ payload: [String: Any]) -> [String: Any] {
+        var normalized = payload
+
+        copyFirstValue(in: &normalized, to: "battery_value", from: ["battery", "battery_percent"])
+        copyFirstValue(in: &normalized, to: "battery_charging", from: ["is_charging", "charging"])
+        copyFirstValue(in: &normalized, to: "wifi_access_sta_num", from: ["station_num", "client_count", "connected_devices"])
+        copyFirstValue(in: &normalized, to: "network_provider", from: ["carrier", "operator", "operator_name"])
+        copyFirstValue(in: &normalized, to: "network_type", from: ["network_mode", "rat"])
+        copyFirstValue(in: &normalized, to: "signalbar", from: ["signal_bar", "signal_level"])
+        copyFirstValue(in: &normalized, to: "realtime_rx_thrpt", from: ["download_speed", "rx_speed"])
+        copyFirstValue(in: &normalized, to: "realtime_tx_thrpt", from: ["upload_speed", "tx_speed"])
+
+        copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_rx_bytes", "today_rx_bytes"])
+        copyFirstValue(in: &normalized, to: "day_tx_bytes", from: ["daily_tx_bytes", "today_tx_bytes"])
+        if normalized["day_rx_bytes"] == nil && normalized["day_tx_bytes"] == nil {
+            copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_data", "day_data"])
+        }
+        if normalized["monthly_rx_bytes"] == nil && normalized["monthly_tx_bytes"] == nil {
+            copyFirstValue(in: &normalized, to: "monthly_rx_bytes", from: ["monthly_data", "month_data"])
+        }
+
+        if let temperature = normalized["cpu_temp"] {
+            let value = parseDouble(temperature)
+            if value > 1_000 {
+                normalized["cpu_temp"] = value / 1_000
+            }
+        }
+        return normalized
+    }
+
+    private static func copyFirstValue(
+        in payload: inout [String: Any],
+        to target: String,
+        from aliases: [String]
+    ) {
+        guard payload[target] == nil else { return }
+        for alias in aliases {
+            if let value = payload[alias] {
+                payload[target] = value
+                return
+            }
+        }
+    }
+
     static func parseQos(_ raw: String) -> ParsedQos? {
         let clean = raw.replacingOccurrences(of: "*", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)

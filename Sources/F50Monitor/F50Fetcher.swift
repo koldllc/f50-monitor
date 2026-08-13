@@ -3,6 +3,12 @@ import Combine
 import CryptoKit
 
 public class F50Fetcher: ObservableObject {
+    private enum ConnectionMode {
+        case automatic
+        case zteRouter
+        case ufiAPI
+    }
+
     @Published public var status: F50Status = F50Status()
     @Published public var baseURLString: String {
         didSet {
@@ -58,6 +64,7 @@ public class F50Fetcher: ObservableObject {
     private var pendingExtensionRequests = 0
     private var isApplyingConfiguration = false
     private var lastTrafficRefreshDate = Date.distantPast
+    private var connectionMode: ConnectionMode = .automatic
 
     // CPU delta tracking
     private var prevTotalCpu: Double = 0
@@ -140,29 +147,165 @@ public class F50Fetcher: ObservableObject {
         let generation = requestGeneration
 
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-        let hostOnly: String
-        if let url = URL(string: cleanBase), let host = url.host {
-            hostOnly = "\(url.scheme ?? "http")://\(host)"
-        } else {
-            hostOnly = "http://192.168.0.1"
-        }
+        let endpoints = connectionEndpoints(from: cleanBase)
 
         let shouldRefreshTraffic = Date().timeIntervalSince(lastTrafficRefreshDate)
             >= F50Configuration.trafficRefreshInterval
-        executeFetch(
-            cleanBase: cleanBase,
-            hostOnly: hostOnly,
+        if connectionMode == .ufiAPI {
+            executeUFIFetch(
+                ufiBaseURL: endpoints.ufiBaseURL,
+                generation: generation,
+                refreshTraffic: shouldRefreshTraffic
+            )
+        } else {
+            executeFetch(
+                cleanBase: cleanBase,
+                hostOnly: endpoints.routerBaseURL,
+                ufiBaseURL: endpoints.ufiBaseURL,
+                generation: generation,
+                refreshTraffic: shouldRefreshTraffic,
+                allowsUFIFallback: connectionMode == .automatic
+            )
+        }
+    }
+
+    private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
+        guard let url = URL(string: cleanBase), let host = url.host else {
+            return ("http://192.168.0.1", "http://192.168.0.1:2333")
+        }
+
+        let scheme = url.scheme ?? "http"
+        let routerBaseURL = "\(scheme)://\(host)"
+        let port = url.port ?? 2333
+        return (routerBaseURL, "\(scheme)://\(host):\(port)")
+    }
+
+    private func handleRouterFailure(
+        _ message: String,
+        ufiBaseURL: String,
+        generation: UInt,
+        refreshTraffic: Bool,
+        allowsUFIFallback: Bool
+    ) {
+        guard allowsUFIFallback else {
+            updateStatusFailed(message, generation: generation)
+            return
+        }
+        executeUFIFetch(
+            ufiBaseURL: ufiBaseURL,
             generation: generation,
-            refreshTraffic: shouldRefreshTraffic
+            refreshTraffic: refreshTraffic
         )
+    }
+
+    private func executeUFIFetch(
+        ufiBaseURL: String,
+        generation: UInt,
+        refreshTraffic: Bool,
+        candidateTokens: [String]? = nil
+    ) {
+        guard generation == requestGeneration else { return }
+        let tokens = candidateTokens ?? self.candidateTokens()
+        guard let token = tokens.first,
+              let url = URL(string: "\(ufiBaseURL)/api/baseDeviceInfo") else {
+            updateStatusFailed("UFI API 地址无效", generation: generation)
+            return
+        }
+
+        baseTask = URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+            guard let self, generation == self.requestGeneration else { return }
+
+            if let http = response as? HTTPURLResponse,
+               http.statusCode == 200,
+               let data,
+               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                self.fetchUFISignalPayload(
+                    ufiBaseURL: ufiBaseURL,
+                    token: token,
+                    generation: generation
+                ) { signalPayload in
+                    var merged = payload
+                    signalPayload?.forEach { merged[$0.key] = $0.value }
+                    merged = F50ResponseParser.normalizeUFIPayload(merged)
+                    DispatchQueue.main.async {
+                        guard generation == self.requestGeneration else { return }
+                        self.connectionMode = .ufiAPI
+                        self.parseStatusDict(merged, preserveQos: true, refreshTraffic: refreshTraffic)
+                        if refreshTraffic {
+                            self.lastTrafficRefreshDate = Date()
+                        }
+                        self.isFetching = false
+                        self.fetchExtensionMetricsIfNeeded(
+                            ufiBaseURL: ufiBaseURL,
+                            generation: generation,
+                            refreshTraffic: refreshTraffic
+                        )
+                    }
+                }
+            } else if tokens.count > 1 {
+                self.executeUFIFetch(
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    candidateTokens: Array(tokens.dropFirst())
+                )
+            } else {
+                self.connectionMode = .automatic
+                self.updateStatusFailed(
+                    error?.localizedDescription ?? "无法连接设备的 Router 或 UFI API",
+                    generation: generation
+                )
+            }
+        }
+        baseTask?.resume()
+    }
+
+    private func fetchUFISignalPayload(
+        ufiBaseURL: String,
+        token: String,
+        generation: UInt,
+        completion: @escaping ([String: Any]?) -> Void
+    ) {
+        let commands = "network_type,network_provider,signalbar,network_signalbar,nr_rsrp,nr_rsrq,Nr_snr,Z5g_rsrp,Z5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band"
+        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?is_all=true&cmd=\(commands)") else {
+            completion(nil)
+            return
+        }
+
+        URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+            guard let self, generation == self.requestGeneration else { return }
+            guard let http = response as? HTTPURLResponse,
+                  http.statusCode == 200,
+                  let data,
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                completion(nil)
+                return
+            }
+            completion(payload)
+        }.resume()
+    }
+
+    private func signedUFIRequest(url: URL, token: String) -> URLRequest {
+        let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
+        let key = "minikano_kOyXz0Ciz4V7wR0IeKmJFYFQ20jd"
+        let sign = calcKanoSign(key: key, data: "minikanoGET\(url.path)\(timestamp)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 4.0
+        request.setValue(timestamp, forHTTPHeaderField: "kano-t")
+        request.setValue(sign, forHTTPHeaderField: "kano-sign")
+        request.setValue(token, forHTTPHeaderField: "authorization")
+        return request
     }
 
     private func executeFetch(
         cleanBase: String,
         hostOnly: String,
+        ufiBaseURL: String,
         generation: UInt,
         refreshTraffic: Bool,
-        isRetryAfterLogin: Bool = false
+        isRetryAfterLogin: Bool = false,
+        allowsUFIFallback: Bool
     ) {
         let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
         let trafficCommands = "realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,day_rx_bytes,day_tx_bytes,total_rx_bytes,total_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_limit_switch"
@@ -171,7 +314,13 @@ public class F50Fetcher: ObservableObject {
         let targetURLString = "\(hostOnly)/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd=\(cmdList)"
 
         guard let url = URL(string: targetURLString) else {
-            updateStatusFailed("无效的 URL", generation: generation)
+            handleRouterFailure(
+                "无效的 URL",
+                ufiBaseURL: ufiBaseURL,
+                generation: generation,
+                refreshTraffic: refreshTraffic,
+                allowsUFIFallback: allowsUFIFallback
+            )
             return
         }
 
@@ -188,12 +337,24 @@ public class F50Fetcher: ObservableObject {
             guard let self = self, generation == self.requestGeneration else { return }
 
             if let error = error {
-                self.updateStatusFailed(error.localizedDescription, generation: generation)
+                self.handleRouterFailure(
+                    error.localizedDescription,
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    allowsUFIFallback: allowsUFIFallback
+                )
                 return
             }
 
             guard let httpRes = response as? HTTPURLResponse else {
-                self.updateStatusFailed("网络响应错误", generation: generation)
+                self.handleRouterFailure(
+                    "网络响应错误",
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    allowsUFIFallback: allowsUFIFallback
+                )
                 return
             }
 
@@ -204,19 +365,33 @@ public class F50Fetcher: ObservableObject {
                         self.executeFetch(
                             cleanBase: cleanBase,
                             hostOnly: hostOnly,
+                            ufiBaseURL: ufiBaseURL,
                             generation: generation,
                             refreshTraffic: refreshTraffic,
-                            isRetryAfterLogin: true
+                            isRetryAfterLogin: true,
+                            allowsUFIFallback: allowsUFIFallback
                         )
                     } else {
-                        self.updateStatusFailed("口令/密码错误(401)", generation: generation)
+                        self.handleRouterFailure(
+                            "口令/密码错误(401)",
+                            ufiBaseURL: ufiBaseURL,
+                            generation: generation,
+                            refreshTraffic: refreshTraffic,
+                            allowsUFIFallback: allowsUFIFallback
+                        )
                     }
                 }
                 return
             }
 
             guard httpRes.statusCode == 200, let data = data else {
-                self.updateStatusFailed("HTTP 错误: \(httpRes.statusCode)", generation: generation)
+                self.handleRouterFailure(
+                    "HTTP 错误: \(httpRes.statusCode)",
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    allowsUFIFallback: allowsUFIFallback
+                )
                 return
             }
 
@@ -224,6 +399,7 @@ public class F50Fetcher: ObservableObject {
                 if let dict = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
                     DispatchQueue.main.async {
                         guard generation == self.requestGeneration else { return }
+                        self.connectionMode = .zteRouter
                         self.parseStatusDict(
                             dict,
                             preserveQos: true,
@@ -235,16 +411,28 @@ public class F50Fetcher: ObservableObject {
                         self.isFetching = false
                         self.fetchBandMetrics(hostOnly: hostOnly, generation: generation)
                         self.fetchExtensionMetricsIfNeeded(
-                            hostOnly: hostOnly,
+                            ufiBaseURL: ufiBaseURL,
                             generation: generation,
                             refreshTraffic: refreshTraffic
                         )
                     }
                 } else {
-                    self.updateStatusFailed("解析 JSON 失败", generation: generation)
+                    self.handleRouterFailure(
+                        "解析 JSON 失败",
+                        ufiBaseURL: ufiBaseURL,
+                        generation: generation,
+                        refreshTraffic: refreshTraffic,
+                        allowsUFIFallback: allowsUFIFallback
+                    )
                 }
             } catch {
-                self.updateStatusFailed(error.localizedDescription, generation: generation)
+                self.handleRouterFailure(
+                    error.localizedDescription,
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    allowsUFIFallback: allowsUFIFallback
+                )
             }
         }
         baseTask?.resume()
@@ -263,6 +451,7 @@ public class F50Fetcher: ObservableObject {
         isFetching = false
         isFetchingExtensions = false
         sessionCookie = nil
+        connectionMode = .automatic
         status.qci = ""
         status.qosDl = ""
         status.qosUl = ""
@@ -273,7 +462,7 @@ public class F50Fetcher: ObservableObject {
     }
 
     private func fetchExtensionMetricsIfNeeded(
-        hostOnly: String,
+        ufiBaseURL: String,
         generation: UInt,
         refreshTraffic: Bool
     ) {
@@ -286,11 +475,11 @@ public class F50Fetcher: ObservableObject {
 
         isFetchingExtensions = true
         pendingExtensionRequests = refreshTraffic ? 3 : 2
-        fetchQosMetrics(hostOnly: hostOnly, candidateTokens: tokens, generation: generation)
+        fetchQosMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
         if refreshTraffic {
-            fetchCellularUsageMetrics(hostOnly: hostOnly, candidateTokens: tokens, generation: generation)
+            fetchCellularUsageMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
         }
-        fetchLinuxShellMetrics(hostOnly: hostOnly, candidateTokens: tokens, generation: generation)
+        fetchLinuxShellMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
     }
 
     private func fetchBandMetrics(hostOnly: String, generation: UInt) {
@@ -353,10 +542,10 @@ public class F50Fetcher: ObservableObject {
         return uniqueTokens
     }
 
-    private func fetchQosMetrics(hostOnly: String, candidateTokens: [String], generation: UInt) {
+    private func fetchQosMetrics(ufiBaseURL: String, candidateTokens: [String], generation: UInt) {
         guard generation == requestGeneration else { return }
         guard let tokenHash = candidateTokens.first,
-              let url = URL(string: "\(hostOnly):2333/api/AT?command=AT%2BCGEQOSRDP%3D1&slot=0") else {
+              let url = URL(string: "\(ufiBaseURL)/api/AT?command=AT%2BCGEQOSRDP%3D1&slot=0") else {
             failQos(generation: generation)
             return
         }
@@ -388,7 +577,7 @@ public class F50Fetcher: ObservableObject {
                 }
             } else if candidateTokens.count > 1 {
                 self.fetchQosMetrics(
-                    hostOnly: hostOnly,
+                    ufiBaseURL: ufiBaseURL,
                     candidateTokens: Array(candidateTokens.dropFirst()),
                     generation: generation
                 )
@@ -399,7 +588,7 @@ public class F50Fetcher: ObservableObject {
         qosTask?.resume()
     }
 
-    private func fetchCellularUsageMetrics(hostOnly: String, candidateTokens: [String], generation: UInt) {
+    private func fetchCellularUsageMetrics(ufiBaseURL: String, candidateTokens: [String], generation: UInt) {
         guard generation == requestGeneration else { return }
         let calendar = Calendar.current
         let now = Date()
@@ -419,7 +608,7 @@ public class F50Fetcher: ObservableObject {
 
         group.enter()
         fetchCellularUsage(
-            hostOnly: hostOnly,
+            ufiBaseURL: ufiBaseURL,
             start: todayStart,
             end: todayEnd,
             candidateTokens: candidateTokens,
@@ -433,7 +622,7 @@ public class F50Fetcher: ObservableObject {
 
         group.enter()
         fetchCellularUsage(
-            hostOnly: hostOnly,
+            ufiBaseURL: ufiBaseURL,
             start: monthStart,
             end: todayEnd,
             candidateTokens: candidateTokens,
@@ -462,7 +651,7 @@ public class F50Fetcher: ObservableObject {
     }
 
     private func fetchCellularUsage(
-        hostOnly: String,
+        ufiBaseURL: String,
         start: Date,
         end: Date,
         candidateTokens: [String],
@@ -471,7 +660,7 @@ public class F50Fetcher: ObservableObject {
     ) {
         guard generation == requestGeneration,
               let tokenHash = candidateTokens.first,
-              var components = URLComponents(string: "\(hostOnly):2333/api/cellularUsage") else {
+              var components = URLComponents(string: "\(ufiBaseURL)/api/cellularUsage") else {
             completion(nil)
             return
         }
@@ -506,7 +695,7 @@ public class F50Fetcher: ObservableObject {
                 completion(usage)
             } else if candidateTokens.count > 1 {
                 self.fetchCellularUsage(
-                    hostOnly: hostOnly,
+                    ufiBaseURL: ufiBaseURL,
                     start: start,
                     end: end,
                     candidateTokens: Array(candidateTokens.dropFirst()),
@@ -519,10 +708,10 @@ public class F50Fetcher: ObservableObject {
         }.resume()
     }
 
-    private func fetchLinuxShellMetrics(hostOnly: String, candidateTokens: [String], generation: UInt) {
+    private func fetchLinuxShellMetrics(ufiBaseURL: String, candidateTokens: [String], generation: UInt) {
         guard generation == requestGeneration else { return }
         guard let tokenHash = candidateTokens.first,
-              let url = URL(string: "\(hostOnly):2333/api/user_shell") else {
+              let url = URL(string: "\(ufiBaseURL)/api/user_shell") else {
             DispatchQueue.main.async {
                 guard generation == self.requestGeneration else { return }
                 self.status.ufiAuthFailed = true
@@ -569,7 +758,7 @@ public class F50Fetcher: ObservableObject {
                 }
             } else if candidateTokens.count > 1 {
                 self.fetchLinuxShellMetrics(
-                    hostOnly: hostOnly,
+                    ufiBaseURL: ufiBaseURL,
                     candidateTokens: Array(candidateTokens.dropFirst()),
                     generation: generation
                 )
