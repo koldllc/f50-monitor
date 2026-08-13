@@ -13,7 +13,7 @@ let package = Package(
         .executableTarget(
             name: "F50Monitor",
             path: "Sources/F50Monitor",
-            exclude: ["AppIcon.icns"]
+            exclude: ["AppIcon.icns", "ChinaMobileLogo.svg"]
         ),
         .testTarget(
             name: "F50MonitorTests",

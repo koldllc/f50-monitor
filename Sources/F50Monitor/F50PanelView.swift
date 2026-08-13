@@ -1,4 +1,10 @@
+import AppKit
 import SwiftUI
+
+private enum CarrierLogoAssets {
+    static let chinaMobile = Bundle.main.url(forResource: "ChinaMobileLogo", withExtension: "svg")
+        .flatMap(NSImage.init(contentsOf:))
+}
 
 public struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
@@ -48,7 +54,7 @@ public struct F50PanelView: View {
         let carrier = fetcher.status.carrier.lowercased()
 
         if carrier.contains("移动") || carrier.contains("mobile") {
-            return ("wave.3.right.circle.fill", .blue)
+            return ("m.circle.fill", .blue)
         }
         if carrier.contains("联通") || carrier.contains("unicom") {
             return ("link.circle.fill", .red)
@@ -60,6 +66,22 @@ public struct F50PanelView: View {
             return ("tv.circle.fill", .green)
         }
         return ("simcard.fill", .secondary)
+    }
+
+    @ViewBuilder
+    private var carrierLogoView: some View {
+        let carrier = fetcher.status.carrier.lowercased()
+
+        if (carrier.contains("移动") || carrier.contains("mobile")),
+           let image = CarrierLogoAssets.chinaMobile {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+        } else {
+            Image(systemName: carrierLogo.name)
+                .foregroundColor(carrierLogo.color)
+        }
     }
 
     public var body: some View {
@@ -139,8 +161,7 @@ public struct F50PanelView: View {
                         HStack(spacing: 6) {
                             if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
                                 HStack(spacing: 4) {
-                                    Image(systemName: carrierLogo.name)
-                                        .foregroundColor(carrierLogo.color)
+                                    carrierLogoView
                                     Text(fetcher.status.carrier)
                                 }
                                 .font(.system(size: 16, weight: .bold))
