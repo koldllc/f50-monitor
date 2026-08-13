@@ -86,6 +86,8 @@ public struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("连接设置")
@@ -170,9 +172,16 @@ public struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
-                Toggle("自动下载并安装新版本", isOn: $updateManager.automaticallyInstallsUpdates)
-                    .font(.system(size: 12, weight: .semibold))
-                    .toggleStyle(.switch)
+                HStack {
+                    Text("自动下载并安装新版本")
+                        .font(.system(size: 12, weight: .semibold))
+
+                    Spacer()
+
+                    Toggle("", isOn: $updateManager.automaticallyInstallsUpdates)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
