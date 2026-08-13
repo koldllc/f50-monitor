@@ -216,6 +216,8 @@ public struct SettingsView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                 Spacer()
+                Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                    .font(.system(size: 10))
             }
 
             HStack {
