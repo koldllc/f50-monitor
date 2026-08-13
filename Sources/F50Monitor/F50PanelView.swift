@@ -2,8 +2,32 @@ import AppKit
 import SwiftUI
 
 private enum CarrierLogoAssets {
-    static let chinaMobile = Bundle.main.url(forResource: "ChinaMobileLogo", withExtension: "svg")
-        .flatMap(NSImage.init(contentsOf:))
+    private static let images: [String: NSImage] = {
+        let sourceDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let names = [
+            "ChinaMobileLogo",
+            "ChinaUnicomLogo",
+            "ChinaTelecomLogo",
+            "ChinaBroadnetLogo"
+        ]
+
+        return Dictionary(uniqueKeysWithValues: names.compactMap { name in
+            let urls = [
+                Bundle.main.url(forResource: name, withExtension: "svg"),
+                sourceDirectory.appendingPathComponent("\(name).svg")
+            ]
+            for case let url? in urls {
+                if let image = NSImage(contentsOf: url) {
+                    return (name, image)
+                }
+            }
+            return nil
+        })
+    }()
+
+    static func image(named name: String) -> NSImage? {
+        images[name]
+    }
 }
 
 public struct F50PanelView: View {
@@ -50,37 +74,35 @@ public struct F50PanelView: View {
         return parts.joined(separator: "  ")
     }
 
-    private var carrierLogo: (name: String, color: Color) {
+    private var carrierLogoAssetName: String? {
         let carrier = fetcher.status.carrier.lowercased()
 
         if carrier.contains("移动") || carrier.contains("mobile") {
-            return ("m.circle.fill", .blue)
+            return "ChinaMobileLogo"
         }
         if carrier.contains("联通") || carrier.contains("unicom") {
-            return ("link.circle.fill", .red)
+            return "ChinaUnicomLogo"
         }
         if carrier.contains("电信") || carrier.contains("telecom") {
-            return ("antenna.radiowaves.left.and.right.circle.fill", .blue)
+            return "ChinaTelecomLogo"
         }
         if carrier.contains("广电") || carrier.contains("broadcast") {
-            return ("tv.circle.fill", .green)
+            return "ChinaBroadnetLogo"
         }
-        return ("simcard.fill", .secondary)
+        return nil
     }
 
     @ViewBuilder
     private var carrierLogoView: some View {
-        let carrier = fetcher.status.carrier.lowercased()
-
-        if (carrier.contains("移动") || carrier.contains("mobile")),
-           let image = CarrierLogoAssets.chinaMobile {
+        if let assetName = carrierLogoAssetName,
+           let image = CarrierLogoAssets.image(named: assetName) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
         } else {
-            Image(systemName: carrierLogo.name)
-                .foregroundColor(carrierLogo.color)
+            Image(systemName: "simcard.fill")
+                .foregroundColor(.secondary)
         }
     }
 

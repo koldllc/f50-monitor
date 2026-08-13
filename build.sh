@@ -15,9 +15,9 @@ cp .build/release/F50Monitor "$MACOS_DIR/F50Monitor"
 if [ -f "Sources/F50Monitor/AppIcon.icns" ]; then
     cp Sources/F50Monitor/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
 fi
-if [ -f "Sources/F50Monitor/ChinaMobileLogo.svg" ]; then
-    cp Sources/F50Monitor/ChinaMobileLogo.svg "$RESOURCES_DIR/ChinaMobileLogo.svg"
-fi
+for logo in Sources/F50Monitor/China*Logo.svg; do
+    cp "$logo" "$RESOURCES_DIR/$(basename "$logo")"
+done
 
 cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
