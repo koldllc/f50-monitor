@@ -8,6 +8,7 @@ APP_DIR="F50 Monitor.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 
+rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
@@ -15,7 +16,8 @@ cp .build/release/F50Monitor "$MACOS_DIR/F50Monitor"
 if [ -f "Sources/F50Monitor/AppIcon.icns" ]; then
     cp Sources/F50Monitor/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
 fi
-for logo in Sources/F50Monitor/China*Logo.svg; do
+for logo in Sources/F50Monitor/China*Logo.svg Sources/F50Monitor/China*Logo.png; do
+    [ -f "$logo" ] || continue
     cp "$logo" "$RESOURCES_DIR/$(basename "$logo")"
 done
 

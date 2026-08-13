@@ -18,7 +18,7 @@ let package = Package(
                 "ChinaMobileLogo.svg",
                 "ChinaUnicomLogo.svg",
                 "ChinaTelecomLogo.svg",
-                "ChinaBroadnetLogo.svg"
+                "ChinaBroadnetLogo.png"
             ]
         ),
         .testTarget(

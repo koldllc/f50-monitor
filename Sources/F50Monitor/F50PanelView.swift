@@ -12,11 +12,14 @@ private enum CarrierLogoAssets {
         ]
 
         return Dictionary(uniqueKeysWithValues: names.compactMap { name in
-            let urls = [
-                Bundle.main.url(forResource: name, withExtension: "svg"),
-                sourceDirectory.appendingPathComponent("\(name).svg")
-            ]
-            for case let url? in urls {
+            let extensions = ["svg", "png"]
+            let bundleURLs = extensions.compactMap {
+                Bundle.main.url(forResource: name, withExtension: $0)
+            }
+            let sourceURLs = extensions.map {
+                sourceDirectory.appendingPathComponent("\(name).\($0)")
+            }
+            for url in bundleURLs + sourceURLs {
                 if let image = NSImage(contentsOf: url) {
                     return (name, image)
                 }
