@@ -52,6 +52,41 @@ public struct SettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("登录时自动启动")
+                        .font(.system(size: 12, weight: .semibold))
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { launchAtLogin.isEnabled },
+                        set: { launchAtLogin.setEnabled($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(launchAtLogin.isUpdating)
+                }
+
+                if launchAtLogin.requiresApproval {
+                    HStack(spacing: 4) {
+                        Text("需要在系统设置中允许")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Button("前往设置") {
+                            launchAtLogin.openSystemSettings()
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 10))
+                    }
+                } else if let errorMessage = launchAtLogin.errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("连接设置")
                     .font(.system(size: 11, weight: .semibold))
@@ -126,35 +161,6 @@ public struct SettingsView: View {
                     .labelsHidden()
                 }
 
-                Divider()
-
-                Toggle(isOn: Binding(
-                    get: { launchAtLogin.isEnabled },
-                    set: { launchAtLogin.setEnabled($0) }
-                )) {
-                    Text("登录时自动启动")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .toggleStyle(.switch)
-                .disabled(launchAtLogin.isUpdating)
-
-                if launchAtLogin.requiresApproval {
-                    HStack(spacing: 4) {
-                        Text("需要在系统设置中允许")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        Button("前往设置") {
-                            launchAtLogin.openSystemSettings()
-                        }
-                        .buttonStyle(.link)
-                        .font(.system(size: 10))
-                    }
-                } else if let errorMessage = launchAtLogin.errorMessage {
-                    Text(errorMessage)
-                        .font(.system(size: 10))
-                        .foregroundColor(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
