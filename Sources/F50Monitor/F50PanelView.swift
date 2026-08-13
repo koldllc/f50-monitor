@@ -493,25 +493,20 @@ public struct F50PanelView: View {
             HStack(spacing: 10) {
                     // SMS Button
                     Button(action: onOpenSMS) {
-                        HStack(spacing: 4) {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: "envelope")
-                                    .font(.system(size: 11, weight: .medium))
-                                if fetcher.status.smsUnreadCount > 0 {
-                                    Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
-                                        .font(.system(size: 7, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 3)
-                                        .padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.red))
-                                        .offset(x: 9, y: -7)
-                                }
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "envelope")
+                                .font(.system(size: 11, weight: .medium))
+                            if fetcher.status.smsUnreadCount > 0 {
+                                Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 3)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.red))
+                                    .offset(x: 9, y: -7)
                             }
-                            Text("短信")
                         }
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 4)
+                        .padding(6)
                     }
                     .buttonStyle(.bordered)
                     .help("读取短信")
@@ -537,15 +532,12 @@ public struct F50PanelView: View {
                     Button(action: {
                         onOpenSettings()
                     }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gearshape")
-                            Text("设置")
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 12)
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(6)
                     }
                     .buttonStyle(.bordered)
+                    .help("设置")
 
                     // Quit Button
                     Button(action: {
