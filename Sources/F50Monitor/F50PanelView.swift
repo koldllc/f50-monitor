@@ -44,6 +44,24 @@ public struct F50PanelView: View {
         return parts.joined(separator: "  ")
     }
 
+    private var carrierLogo: (name: String, color: Color) {
+        let carrier = fetcher.status.carrier.lowercased()
+
+        if carrier.contains("移动") || carrier.contains("mobile") {
+            return ("wave.3.right.circle.fill", .blue)
+        }
+        if carrier.contains("联通") || carrier.contains("unicom") {
+            return ("link.circle.fill", .red)
+        }
+        if carrier.contains("电信") || carrier.contains("telecom") {
+            return ("antenna.radiowaves.left.and.right.circle.fill", .blue)
+        }
+        if carrier.contains("广电") || carrier.contains("broadcast") {
+            return ("tv.circle.fill", .green)
+        }
+        return ("simcard.fill", .secondary)
+    }
+
     public var body: some View {
         VStack(spacing: 10) {
             // Header: Model & Connection Status
@@ -119,18 +137,22 @@ public struct F50PanelView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
                         HStack(spacing: 6) {
-                            Text(fetcher.status.networkType)
+                            if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
+                                HStack(spacing: 4) {
+                                    Image(systemName: carrierLogo.name)
+                                        .foregroundColor(carrierLogo.color)
+                                    Text(fetcher.status.carrier)
+                                }
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.primary)
-
-                            if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
-                                Text(fetcher.status.carrier)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.blue.opacity(0.15)))
-                                    .foregroundColor(.blue)
                             }
+
+                            Text(fetcher.status.networkType)
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.blue.opacity(0.15)))
+                                .foregroundColor(.blue)
 
                             if !fetcher.status.currentBands.isEmpty {
                                 Text(fetcher.status.currentBands)
