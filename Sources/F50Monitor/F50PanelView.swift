@@ -2,10 +2,12 @@ import SwiftUI
 
 public struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
+    @ObservedObject var updateManager: UpdateManager
     var onOpenSettings: () -> Void
 
-    public init(fetcher: F50Fetcher, onOpenSettings: @escaping () -> Void) {
+    init(fetcher: F50Fetcher, updateManager: UpdateManager, onOpenSettings: @escaping () -> Void) {
         self.fetcher = fetcher
+        self.updateManager = updateManager
         self.onOpenSettings = onOpenSettings
     }
 
@@ -61,6 +63,16 @@ public struct F50PanelView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.secondary.opacity(0.15)))
+
+                if updateManager.availableVersion != nil {
+                    Button(action: updateManager.installAvailableUpdate) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.green)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(updateManager.statusText)
+                }
 
                 Button(action: {
                     fetcher.fetchData()

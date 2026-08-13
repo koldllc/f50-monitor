@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher
+    @ObservedObject var updateManager: UpdateManager
     var onClose: () -> Void
     
     @State private var tempURL: String = ""
@@ -11,8 +12,9 @@ public struct SettingsView: View {
     @State private var tempDisplayMode: MenuBarDisplayMode = .full
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     
-    public init(fetcher: F50Fetcher, onClose: @escaping () -> Void) {
+    init(fetcher: F50Fetcher, updateManager: UpdateManager, onClose: @escaping () -> Void) {
         self.fetcher = fetcher
+        self.updateManager = updateManager
         self.onClose = onClose
     }
 
@@ -157,8 +159,45 @@ public struct SettingsView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("软件更新")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                Toggle("自动下载并安装新版本", isOn: $updateManager.automaticallyInstallsUpdates)
+                    .font(.system(size: 12, weight: .semibold))
+                    .toggleStyle(.switch)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("F50 Monitor v\(updateManager.currentVersion)")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(updateManager.statusText)
+                            .font(.system(size: 10))
+                            .foregroundColor(updateManager.availableVersion == nil ? .secondary : .green)
+                    }
+
+                    Spacer()
+
+                    if updateManager.availableVersion != nil {
+                        Button("立即更新") {
+                            updateManager.installAvailableUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button("检查更新") {
+                            updateManager.checkForUpdates(installAutomatically: false)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .disabled(updateManager.isBusy)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
             HStack {
-                Text("F50 Monitor v1.2.1")
+                Text("更新来源：GitHub Releases")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                 Spacer()

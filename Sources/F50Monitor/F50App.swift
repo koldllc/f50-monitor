@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var popover: NSPopover!
     var fetcher: F50Fetcher!
+    var updateManager: UpdateManager!
     private var cancellables = Set<AnyCancellable>()
     
     static func main() {
@@ -19,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         fetcher = F50Fetcher()
+        updateManager = UpdateManager()
         
         // 1. Setup Popover
         popover = NSPopover()
@@ -26,7 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
         
         let hostingController = NSHostingController(
-            rootView: F50PopoverView(fetcher: fetcher)
+            rootView: F50PopoverView(fetcher: fetcher, updateManager: updateManager)
         )
         hostingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hostingController
@@ -54,6 +56,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateMenuBarText(status: status, mode: mode)
             }
             .store(in: &cancellables)
+
+        updateManager.checkForUpdates()
     }
     
     @objc func togglePopover(_ sender: AnyObject?) {
