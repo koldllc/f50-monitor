@@ -19,7 +19,7 @@
 
 ### 直接下载
 
-前往 [Releases](https://github.com/kelvinsze/f50-monitor/releases) 下载最新版本的 `F50.Monitor.zip`，解压后双击运行即可。
+前往 [Releases](https://github.com/koldllc/f50-monitor/releases) 下载最新版本的 `F50.Monitor.zip`，解压后双击运行即可。
 
 > **提示**：首次运行时若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。
 
@@ -29,7 +29,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/kelvinsze/f50-monitor.git
+git clone https://github.com/koldllc/f50-monitor.git
 cd f50-monitor
 
 # 编译并生成 F50 Monitor.app

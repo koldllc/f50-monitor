@@ -66,7 +66,7 @@ final class UpdateManager: ObservableObject {
         }
     }
 
-    private static let releaseAPI = URL(string: "https://api.github.com/repos/kelvinsze/f50-monitor/releases/latest")!
+    private static let releaseAPI = URL(string: "https://api.github.com/repos/koldllc/f50-monitor/releases/latest")!
     private static let expectedAssetName = "F50.Monitor.zip"
     private static let automaticUpdatesKey = "F50_AutomaticUpdates"
 
