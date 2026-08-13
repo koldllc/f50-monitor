@@ -192,7 +192,7 @@ public struct SettingsView: View {
             }
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             tempURL = fetcher.baseURLString

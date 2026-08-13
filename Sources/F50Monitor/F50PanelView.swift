@@ -474,7 +474,7 @@ public struct F50PanelView: View {
             }
         }
         .padding(16)
-        .frame(width: 340)
+        .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
