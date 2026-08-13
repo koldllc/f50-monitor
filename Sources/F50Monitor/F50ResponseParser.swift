@@ -7,6 +7,27 @@ struct ParsedQos: Equatable {
 }
 
 enum F50ResponseParser {
+    static func parseSMSMessages(_ json: [String: Any]) -> [F50SMSMessage]? {
+        guard let rows = json["messages"] as? [[String: Any]] else { return nil }
+
+        return rows.compactMap { row in
+            let id = stringValue(row["id"])
+            guard !id.isEmpty else { return nil }
+
+            let encodedContent = stringValue(row["content"])
+            let decodedContent = Data(base64Encoded: encodedContent, options: .ignoreUnknownCharacters)
+                .flatMap { String(data: $0, encoding: .utf8) }
+
+            return F50SMSMessage(
+                id: id,
+                number: stringValue(row["number"]),
+                content: decodedContent ?? encodedContent,
+                dateText: formatSMSDate(stringValue(row["date"])),
+                tag: stringValue(row["tag"])
+            )
+        }
+    }
+
     static func normalizeUFIPayload(_ payload: [String: Any]) -> [String: Any] {
         var normalized = payload
 
@@ -49,6 +70,17 @@ enum F50ResponseParser {
                 return
             }
         }
+    }
+
+    private static func stringValue(_ value: Any?) -> String {
+        guard let value, !(value is NSNull) else { return "" }
+        return String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func formatSMSDate(_ raw: String) -> String {
+        let values = raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        guard values.count >= 6 else { return raw }
+        return "\(values[0])-\(values[1])-\(values[2]) \(values[3]):\(values[4]):\(values[5])"
     }
 
     static func parseQos(_ raw: String) -> ParsedQos? {

@@ -35,6 +35,7 @@ public struct F50Status: Equatable {
     public var ulSpeed: Double = 0.0        // Bytes per sec
 
     public var connectedDevices: Int = 0
+    public var smsUnreadCount: Int = 0
     public var cpuUsage: Double = 0.0       // 0 - 100%
     public var memUsage: Double = 0.0       // 0 - 100%
     public var temperature: Double = 0.0    // ℃

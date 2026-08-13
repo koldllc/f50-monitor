@@ -4,11 +4,18 @@ public struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
     var onOpenSettings: () -> Void
+    var onOpenSMS: () -> Void
 
-    init(fetcher: F50Fetcher, updateManager: UpdateManager, onOpenSettings: @escaping () -> Void) {
+    init(
+        fetcher: F50Fetcher,
+        updateManager: UpdateManager,
+        onOpenSettings: @escaping () -> Void,
+        onOpenSMS: @escaping () -> Void
+    ) {
         self.fetcher = fetcher
         self.updateManager = updateManager
         self.onOpenSettings = onOpenSettings
+        self.onOpenSMS = onOpenSMS
     }
 
     private var subscriptionText: String {
@@ -73,6 +80,24 @@ public struct F50PanelView: View {
                     .buttonStyle(.borderless)
                     .help(updateManager.statusText)
                 }
+
+                Button(action: onOpenSMS) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: fetcher.status.smsUnreadCount > 0 ? "envelope.badge.fill" : "envelope")
+                            .font(.system(size: 13, weight: .semibold))
+                        if fetcher.status.smsUnreadCount > 0 {
+                            Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.red))
+                                .offset(x: 8, y: -7)
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .help("读取短信")
 
                 Button(action: {
                     fetcher.fetchData()

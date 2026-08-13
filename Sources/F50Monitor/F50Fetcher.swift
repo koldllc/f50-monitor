@@ -51,6 +51,9 @@ public class F50Fetcher: ObservableObject {
             }
         }
     }
+    @Published public private(set) var smsMessages: [F50SMSMessage] = []
+    @Published public private(set) var isFetchingSMS = false
+    @Published public private(set) var smsErrorMessage: String?
 
     private var timer: Timer?
     private var isFetching: Bool = false
@@ -60,6 +63,7 @@ public class F50Fetcher: ObservableObject {
     private var bandTask: URLSessionDataTask?
     private var shellTask: URLSessionDataTask?
     private var qosTask: URLSessionDataTask?
+    private var smsTask: URLSessionDataTask?
     private var isFetchingExtensions = false
     private var pendingExtensionRequests = 0
     private var isApplyingConfiguration = false
@@ -169,6 +173,97 @@ public class F50Fetcher: ObservableObject {
         }
     }
 
+    public func fetchSMSMessages() {
+        guard !isFetchingSMS else { return }
+
+        let generation = requestGeneration
+        let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
+        let tokens = candidateTokens()
+
+        guard !tokens.isEmpty else {
+            smsErrorMessage = "请先配置 UFI-TOOLS 登录口令"
+            return
+        }
+
+        isFetchingSMS = true
+        smsErrorMessage = nil
+        fetchSMSMessages(
+            ufiBaseURL: ufiBaseURL,
+            candidateTokens: tokens,
+            generation: generation
+        )
+    }
+
+    private func fetchSMSMessages(
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        generation: UInt
+    ) {
+        guard generation == requestGeneration,
+              let token = candidateTokens.first,
+              var components = URLComponents(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process") else {
+            finishSMSFetch(message: "短信接口地址无效", generation: generation)
+            return
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "multi_data", value: "1"),
+            URLQueryItem(name: "isTest", value: "false"),
+            URLQueryItem(name: "cmd", value: "sms_data_total"),
+            URLQueryItem(name: "page", value: "0"),
+            URLQueryItem(name: "data_per_page", value: "100"),
+            URLQueryItem(name: "mem_store", value: "1"),
+            URLQueryItem(name: "tags", value: "100"),
+            URLQueryItem(name: "order_by", value: "order by id desc"),
+            URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
+        ]
+
+        guard let url = components.url else {
+            finishSMSFetch(message: "短信接口地址无效", generation: generation)
+            return
+        }
+
+        smsTask = URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+            guard let self, generation == self.requestGeneration else { return }
+
+            if let http = response as? HTTPURLResponse,
+               http.statusCode == 200,
+               let data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let messages = F50ResponseParser.parseSMSMessages(json) {
+                DispatchQueue.main.async {
+                    guard generation == self.requestGeneration else { return }
+                    self.smsMessages = messages
+                    self.smsErrorMessage = nil
+                    self.isFetchingSMS = false
+                    self.smsTask = nil
+                }
+            } else if candidateTokens.count > 1 {
+                self.fetchSMSMessages(
+                    ufiBaseURL: ufiBaseURL,
+                    candidateTokens: Array(candidateTokens.dropFirst()),
+                    generation: generation
+                )
+            } else {
+                self.finishSMSFetch(
+                    message: error?.localizedDescription ?? "无法读取短信，请检查 UFI-TOOLS 登录口令与短信权限",
+                    generation: generation
+                )
+            }
+        }
+        smsTask?.resume()
+    }
+
+    private func finishSMSFetch(message: String, generation: UInt) {
+        DispatchQueue.main.async {
+            guard generation == self.requestGeneration else { return }
+            self.smsErrorMessage = message
+            self.isFetchingSMS = false
+            self.smsTask = nil
+        }
+    }
+
     private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
         guard let url = URL(string: cleanBase), let host = url.host else {
             return ("http://192.168.0.1", "http://192.168.0.1:2333")
@@ -266,7 +361,7 @@ public class F50Fetcher: ObservableObject {
         generation: UInt,
         completion: @escaping ([String: Any]?) -> Void
     ) {
-        let commands = "network_type,network_provider,signalbar,network_signalbar,nr_rsrp,nr_rsrq,Nr_snr,Z5g_rsrp,Z5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band"
+        let commands = "network_type,network_provider,signalbar,network_signalbar,nr_rsrp,nr_rsrq,Nr_snr,Z5g_rsrp,Z5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band"
         guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?is_all=true&cmd=\(commands)") else {
             completion(nil)
             return
@@ -444,12 +539,17 @@ public class F50Fetcher: ObservableObject {
         bandTask?.cancel()
         shellTask?.cancel()
         qosTask?.cancel()
+        smsTask?.cancel()
         baseTask = nil
         bandTask = nil
         shellTask = nil
         qosTask = nil
+        smsTask = nil
         isFetching = false
         isFetchingExtensions = false
+        isFetchingSMS = false
+        smsMessages = []
+        smsErrorMessage = nil
         sessionCookie = nil
         connectionMode = .automatic
         status.qci = ""
@@ -981,6 +1081,9 @@ public class F50Fetcher: ObservableObject {
         // Connected devices
         if let val = dict["wifi_access_sta_num"] ?? dict["station_num"] {
             newStatus.connectedDevices = parseInt(val)
+        }
+        if let val = dict["sms_unread_num"] ?? dict["sms_sim_unread_num"] {
+            newStatus.smsUnreadCount = parseInt(val)
         }
 
         // Network type parsing (20 -> 5G SA, 19 -> 5G NSA, 10/11 -> 4G LTE)

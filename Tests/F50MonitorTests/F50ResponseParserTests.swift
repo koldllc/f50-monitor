@@ -46,6 +46,29 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertNil(F50ResponseParser.parseCellularUsage(["result": "failed"]))
     }
 
+    func testParsesBase64EncodedSMSMessages() {
+        let payload: [String: Any] = [
+            "messages": [[
+                "id": 42,
+                "number": "10086",
+                "content": Data("验证码 123456".utf8).base64EncodedString(),
+                "date": "2026,08,13,14,25,09,+08",
+                "tag": "1"
+            ]]
+        ]
+
+        XCTAssertEqual(
+            F50ResponseParser.parseSMSMessages(payload),
+            [F50SMSMessage(
+                id: "42",
+                number: "10086",
+                content: "验证码 123456",
+                dateText: "2026-08-13 14:25:09",
+                tag: "1"
+            )]
+        )
+    }
+
     func testNormalizesUFIBaseDeviceInfoAliases() {
         let normalized = F50ResponseParser.normalizeUFIPayload([
             "battery": 86,
