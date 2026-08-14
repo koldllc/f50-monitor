@@ -3,6 +3,7 @@ import SwiftUI
 public struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
+    @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onClose: () -> Void
     
     @State private var tempURL: String = ""
@@ -12,11 +13,13 @@ public struct SettingsView: View {
     @State private var tempDisplayMode: MenuBarDisplayMode = .full
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     
-    init(fetcher: F50Fetcher, updateManager: UpdateManager, onClose: @escaping () -> Void) {
+    init(fetcher: F50Fetcher, updateManager: UpdateManager, screenMirroringManager: ScreenMirroringManager, onClose: @escaping () -> Void) {
         self.fetcher = fetcher
         self.updateManager = updateManager
+        self.screenMirroringManager = screenMirroringManager
         self.onClose = onClose
     }
+
 
     private var trimmedURL: String {
         tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -162,7 +165,80 @@ public struct SettingsView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("无线投屏 (scrcpy)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Text("启用无线投屏功能")
+                        .font(.system(size: 12, weight: .semibold))
+
+                    Spacer()
+
+                    Toggle("", isOn: $screenMirroringManager.isEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                if screenMirroringManager.isEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("依赖组件状态：")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 8) {
+                                Label("adb", systemImage: screenMirroringManager.hasAdb ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(screenMirroringManager.hasAdb ? .green : .red)
+                                    .font(.system(size: 10, weight: .semibold))
+                                Label("scrcpy", systemImage: screenMirroringManager.hasScrcpy ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(screenMirroringManager.hasScrcpy ? .green : .red)
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                        }
+
+                        if !screenMirroringManager.isDependenciesInstalled {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("未检测到投屏所需组件 (scrcpy 与 ADB)。")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.orange)
+
+                                Button(action: {
+                                    screenMirroringManager.requestInstallDependencies()
+                                }) {
+                                    HStack(spacing: 4) {
+                                        if screenMirroringManager.isDownloadingDependencies {
+                                            ProgressView().controlSize(.small)
+                                        } else {
+                                            Image(systemName: "arrow.down.circle")
+                                        }
+                                        Text(screenMirroringManager.isDownloadingDependencies ? "正在下载配置中..." : "一键自动下载并配置组件")
+                                    }
+                                    .font(.system(size: 11, weight: .medium))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.blue)
+                                .disabled(screenMirroringManager.isDownloadingDependencies)
+                            }
+                        }
+
+                        if let msg = screenMirroringManager.installStatusMessage ?? screenMirroringManager.statusMessage {
+                            Text(msg)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                }
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
@@ -227,6 +303,7 @@ public struct SettingsView: View {
                     tempUFIToken = F50Configuration.defaultCredential
                     tempInterval = F50Configuration.defaultRefreshInterval
                     tempDisplayMode = .full
+                    // 不重置投屏开关：避免意外重新启用用户已关闭的功能
                 }
                 .buttonStyle(.bordered)
 
@@ -257,6 +334,17 @@ public struct SettingsView: View {
             tempInterval = fetcher.refreshInterval
             tempDisplayMode = fetcher.displayMode
             launchAtLogin.refresh()
+            screenMirroringManager.checkDependencies()
+        }
+        .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
+            Button("允许并下载") {
+                screenMirroringManager.downloadAndInstallStandaloneDependencies()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
         }
     }
 }
+
+

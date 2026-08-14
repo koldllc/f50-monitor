@@ -183,8 +183,7 @@ final class UpdateManager: ObservableObject {
             throw UpdateError.missingDigest
         }
 
-        let archiveData = try Data(contentsOf: temporaryURL)
-        let actualDigest = SHA256.hash(data: archiveData).map { String(format: "%02x", $0) }.joined()
+        let actualDigest = try sha256Digest(of: temporaryURL)
         guard "sha256:\(actualDigest)" == expectedDigest else {
             throw UpdateError.digestMismatch
         }
@@ -212,6 +211,18 @@ final class UpdateManager: ObservableObject {
         }
 
         return applicationURL
+    }
+
+    /// 分块计算文件 SHA-256，避免将整个更新包(数十 MB)一次性读入内存
+    private func sha256Digest(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1 << 20) {
+            hasher.update(data: chunk)
+        }
+        let digest = hasher.finalize()
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func launchInstaller(for stagedApplication: URL) throws {
@@ -262,6 +273,12 @@ final class UpdateManager: ObservableObject {
     }
 
     private static func isVersion(_ candidate: String, newerThan current: String) -> Bool {
-        normalizedVersion(current).compare(normalizedVersion(candidate), options: .numeric) == .orderedAscending
+        let normalizedCurrent = normalizedVersion(current)
+        let normalizedCandidate = normalizedVersion(candidate)
+        // 当前版本无法解析为数字版本（如开发构建 "开发版"）时不提示更新
+        guard normalizedCurrent.contains(".") || normalizedCurrent.first?.isNumber == true else {
+            return false
+        }
+        return normalizedCurrent.compare(normalizedCandidate, options: .numeric) == .orderedAscending
     }
 }

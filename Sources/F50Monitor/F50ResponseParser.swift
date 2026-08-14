@@ -42,12 +42,25 @@ enum F50ResponseParser {
 
         copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_rx_bytes", "today_rx_bytes"])
         copyFirstValue(in: &normalized, to: "day_tx_bytes", from: ["daily_tx_bytes", "today_tx_bytes"])
-        if normalized["day_rx_bytes"] == nil && normalized["day_tx_bytes"] == nil {
-            copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_data", "day_data"])
-        }
+        // 注意：daily_data/monthly_data 是“自某时刻起的累计值”（设备重置后从 0 累计），
+        // 不能当作“当日/本月”精确用量；当日/本月由 /api/cellularUsage 按日期区间查询。
         if normalized["monthly_rx_bytes"] == nil && normalized["monthly_tx_bytes"] == nil {
             copyFirstValue(in: &normalized, to: "monthly_rx_bytes", from: ["monthly_data", "month_data"])
         }
+        copyFirstValue(in: &normalized, to: "data_volume_clear_date", from: [
+            "monthly_clear_date",
+            "clear_date",
+            "data_volume_clear_day",
+            "monthly_clear_day",
+            "clear_day",
+            "data_volume_reset_day",
+            "billing_day",
+            "reset_day",
+            "monthly_reset_day",
+            "traffic_clear_day",
+            "traffic_clear_date",
+            "billing_date"
+        ])
 
         if let temperature = normalized["cpu_temp"] {
             let value = parseDouble(temperature)
@@ -112,11 +125,71 @@ enum F50ResponseParser {
         return raw
     }
 
+    static func extractFirstValidResetDay(from dict: [String: Any]) -> Int {
+        // 同时覆盖 ZTE 路由器路径的 *_day 键与 UFI 路径归一化后的 *_date 键
+        let candidateKeys = [
+            "traffic_clear_date",
+            "data_volume_clear_date",
+            "monthly_clear_date",
+            "clear_date",
+            "data_volume_reset_date",
+            "billing_date",
+            "data_volume_clear_day",
+            "monthly_clear_day",
+            "clear_day",
+            "data_volume_reset_day",
+            "billing_day",
+            "reset_day",
+            "monthly_reset_day",
+            "traffic_clear_day"
+        ]
+        for key in candidateKeys {
+            if let val = dict[key] {
+                let day = parseResetDayValue(val)
+                if day > 0 && day <= 31 {
+                    return day
+                }
+            }
+        }
+        return 0
+    }
+
+    /// 从清零日取值中提取“日”。支持纯数字日（如 "16"）以及完整日期（如
+    /// "2026-08-16" / "2026/8/16" / "2026年8月16日"）。
+    private static func parseResetDayValue(_ value: Any) -> Int {
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return 0 }
+
+            // 若看起来像完整日期，优先按日期解析并取其日分量
+            if trimmed.contains("-") || trimmed.contains("/") || trimmed.contains(".") || trimmed.contains("年") {
+                let formats = ["yyyy-MM-dd", "yyyy/M/d", "yyyy.M.d", "yyyy年M月d日"]
+                for format in formats {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = format
+                    formatter.locale = Locale(identifier: "en_US_POSIX")
+                    if let date = formatter.date(from: trimmed) {
+                        let day = Calendar.current.component(.day, from: date)
+                        if day > 0 && day <= 31 {
+                            return day
+                        }
+                    }
+                }
+            }
+        }
+        return parseInt(value)
+    }
+
     static func parseInt(_ value: Any) -> Int {
         if let number = value as? Int { return number }
+        if let number = value as? NSNumber { return number.intValue }
         if let string = value as? String {
-            let clean = string.trimmingCharacters(in: CharacterSet.decimalDigits.inverted)
-            return Int(clean) ?? 0
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let val = Int(trimmed) { return val }
+            if let firstNumericPart = string.components(separatedBy: CharacterSet.decimalDigits.inverted).first(where: { !$0.isEmpty }),
+               let val = Int(firstNumericPart) {
+                return val
+            }
         }
         return 0
     }
@@ -137,6 +210,7 @@ enum F50ResponseParser {
         if let number = value as? NSNumber {
             return number.uint64Value
         }
+        // JSON 数值都是 NSNumber，此分支覆盖纯 Swift UInt64 值（如测试/本地构造）
         if let number = value as? UInt64 {
             return number
         }

@@ -82,7 +82,9 @@ final class F50ResponseParserTests: XCTestCase {
 
         XCTAssertEqual(F50ResponseParser.parseInt(normalized["battery_value"] ?? 0), 86)
         XCTAssertEqual(F50ResponseParser.parseDouble(normalized["cpu_temp"] ?? 0), 60.62, accuracy: 0.001)
-        XCTAssertEqual(F50ResponseParser.parseUInt64(normalized["day_rx_bytes"] ?? 0), 1024)
+        // daily_data/monthly_data 是“自某时刻起的累计”，不再复制进 day_rx_bytes/monthly_rx_bytes
+        // （当日/本月统一由 /api/cellularUsage 按日期区间查询）
+        XCTAssertNil(normalized["day_rx_bytes"])
         XCTAssertEqual(F50ResponseParser.parseUInt64(normalized["monthly_rx_bytes"] ?? 0), 4096)
         XCTAssertEqual(F50ResponseParser.parseInt(normalized["wifi_access_sta_num"] ?? 0), 3)
         XCTAssertEqual(normalized["network_provider"] as? String, "中国联通")
@@ -124,6 +126,80 @@ final class F50ResponseParserTests: XCTestCase {
         status.dailyRx = 250
         status.dailyTx = 250
         XCTAssertEqual(status.dailyTotal, 500)
+    }
+
+    func testExtractsResetDayFromDayKeysUsedByZTERouter() {
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["data_volume_clear_day": "16"]), 16)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["monthly_clear_day": "1"]), 1)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["clear_day": 25]), 25)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["billing_day": "31"]), 31)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["data_volume_clear_day": "0"]), 0)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: [:]), 0)
+    }
+
+    func testExtractsResetDayFromFullDateValues() {
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["data_volume_clear_date": "2026-08-16"]), 16)
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["clear_date": "2026/8/16"]), 16)
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["billing_date": "2026年8月16日"]), 16)
+        // 无效/占位值应被忽略
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["data_volume_clear_date": "0"]), 0)
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["clear_date": NSNull()]), 0)
+    }
+
+    func testExtractsResetDayFromTrafficClearDateField() {
+        // F50 设备（80/2333 后台）实际使用的字段
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["traffic_clear_date": "18"]), 18)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["traffic_clear_date": 18]), 18)
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: ["traffic_clear_date": "2026-08-18"]), 18)
+        XCTAssertEqual(
+            F50ResponseParser.extractFirstValidResetDay(from: ["traffic_clear_date": "0"]), 0)
+    }
+
+    func testUFIPayloadNormalizationPreservesResetDay() {
+        let payload = F50ResponseParser.normalizeUFIPayload(["data_volume_clear_day": "16"])
+        XCTAssertEqual(F50ResponseParser.extractFirstValidResetDay(from: payload), 16)
+    }
+
+    func testDaysUntilResetIsNilWhenResetDayUnknown() {
+        let status = F50Status() // trafficResetDay == 0（未知）
+        XCTAssertNil(status.daysUntilReset)
+    }
+
+    func testDaysUntilResetMatchesExplicitResetDay() {
+        var status = F50Status()
+        status.trafficResetDay = 16
+        guard let days = status.daysUntilReset else {
+            XCTFail("显式设置清零日后应返回天数")
+            return
+        }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let currentDay = calendar.component(.day, from: today)
+        let resetDay = 16
+
+        let target: Date
+        if currentDay <= resetDay {
+            var comps = calendar.dateComponents([.year, .month], from: today)
+            let range = calendar.range(of: .day, in: .month, for: today) ?? 1..<31
+            comps.day = min(resetDay, range.count)
+            target = calendar.date(from: comps) ?? today
+        } else {
+            guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: today) else {
+                XCTFail("无法计算下月日期")
+                return
+            }
+            var comps = calendar.dateComponents([.year, .month], from: nextMonth)
+            let range = calendar.range(of: .day, in: .month, for: nextMonth) ?? 1..<31
+            comps.day = min(resetDay, range.count)
+            target = calendar.date(from: comps) ?? today
+        }
+        let expected = max(0, calendar.dateComponents([.day], from: today, to: target).day ?? 0)
+        XCTAssertEqual(days, expected)
     }
 
     func testFormatsTerabytes() {
@@ -194,5 +270,48 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(status.cpuUsage, 0)
         XCTAssertEqual(status.memUsage, 0)
         XCTAssertEqual(status.temperature, 0)
+    }
+
+    func testMonthlyTotalClampsHugeValuesWithoutCrash() {
+        var status = F50Status()
+        // 设备脏数据：UInt64.max，直接 Int64 转换会 trap
+        status.monthlyRx = UInt64.max
+        status.monthlyTx = 0
+        status.monthlyOffsetBytes = -1
+        XCTAssertGreaterThan(status.monthlyTotal, 0)
+    }
+
+    func testTrafficUsageRatioPrefersPackageTotal() {
+        var status = F50Status()
+        // 套餐账单周期累计（Router 80 端口）优先于 UFI 月度值
+        status.packageRx = 138 * 1024 * 1024 * 1024
+        status.packageTx = 2 * 1024 * 1024 * 1024
+        status.monthlyRx = 7 * 1024 * 1024 * 1024
+        status.monthlyTx = 0
+        status.trafficLimit = 350 * 1024 * 1024 * 1024
+
+        // ratio 基于 packageTotal (140GB)，而非 UFI 月度值 (7GB)
+        XCTAssertEqual(status.packageTotal, 140 * 1024 * 1024 * 1024)
+        XCTAssertEqual(status.trafficUsageRatio, 0.4, accuracy: 0.001)
+    }
+
+    func testTrafficUsageRatioFallsBackToMonthlyTotalWithoutPackageData() {
+        var status = F50Status()
+        status.monthlyRx = 10 * 1024 * 1024 * 1024
+        status.monthlyTx = 0
+        status.monthlyOffsetBytes = 5 * 1024 * 1024 * 1024 // 校准 +5GB
+        status.trafficLimit = 20 * 1024 * 1024 * 1024
+
+        // 无套餐数据时回退 monthlyTotal（含校准偏移）
+        XCTAssertEqual(status.packageTotal, 0)
+        XCTAssertEqual(status.trafficUsageRatio, 0.75, accuracy: 0.001)
+    }
+
+    func testTrafficUsageRatioClampsToRange() {
+        var status = F50Status()
+        status.packageRx = 30 * 1024 * 1024 * 1024
+        status.trafficLimit = 20 * 1024 * 1024 * 1024
+        XCTAssertEqual(status.trafficUsageRatio, 1.0)
+        XCTAssertEqual(F50Status().trafficUsageRatio, 0.0)
     }
 }

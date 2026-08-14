@@ -21,7 +21,7 @@ struct SMSListView: View {
 
                 Spacer()
 
-                Button(action: fetcher.fetchSMSMessages) {
+                Button(action: { fetcher.fetchSMSMessages() }) {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 12, weight: .semibold))
                 }
@@ -48,7 +48,7 @@ struct SMSListView: View {
                         Text(error)
                             .font(.system(size: 11))
                             .multilineTextAlignment(.center)
-                        Button("重试", action: fetcher.fetchSMSMessages)
+                        Button("重试") { fetcher.fetchSMSMessages() }
                             .buttonStyle(.bordered)
                     }
                     .frame(maxWidth: .infinity, minHeight: 240)
@@ -76,7 +76,7 @@ struct SMSListView: View {
         }
         .padding(16)
         .frame(width: 380)
-        .onAppear(perform: fetcher.fetchSMSMessages)
+        .onAppear { fetcher.fetchSMSMessages() }
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {

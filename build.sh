@@ -60,3 +60,9 @@ fi
 cp -R "$APP_DIR" "/Applications/$APP_DIR"
 
 echo "✅ 构建完成！已自动更新至 /Applications/$APP_DIR"
+
+echo "🔄 正在重启 F50 Monitor..."
+killall F50Monitor 2>/dev/null || true
+sleep 0.5
+open "/Applications/$APP_DIR"
+

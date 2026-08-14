@@ -3,6 +3,7 @@ import SwiftUI
 struct F50PopoverView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
+    @ObservedObject var screenMirroringManager: ScreenMirroringManager
     @State private var isShowingSettings = false
     @State private var isShowingSMS = false
 
@@ -13,18 +14,24 @@ struct F50PopoverView: View {
                     isShowingSMS = false
                 }
             } else if isShowingSettings {
-                SettingsView(fetcher: fetcher, updateManager: updateManager) {
+                SettingsView(
+                    fetcher: fetcher,
+                    updateManager: updateManager,
+                    screenMirroringManager: screenMirroringManager
+                ) {
                     isShowingSettings = false
                 }
             } else {
                 F50PanelView(
                     fetcher: fetcher,
                     updateManager: updateManager,
+                    screenMirroringManager: screenMirroringManager,
                     onOpenSettings: { isShowingSettings = true },
                     onOpenSMS: { isShowingSMS = true }
                 )
             }
         }
+
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
     }

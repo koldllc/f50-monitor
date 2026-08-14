@@ -3,10 +3,18 @@ import UserNotifications
 
 final class SMSNotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private var lastUnreadCount: Int?
+    private var hasRequestedAuthorization = false
 
     override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+    }
+
+    /// 在启动时请求一次通知授权，避免每次新短信都重复请求
+    func requestAuthorizationIfNeeded() {
+        guard !hasRequestedAuthorization else { return }
+        hasRequestedAuthorization = true
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     func updateUnreadCount(_ unreadCount: Int) {
@@ -15,24 +23,19 @@ final class SMSNotificationManager: NSObject, UNUserNotificationCenterDelegate {
               unreadCount > previousCount else { return }
 
         let newMessageCount = unreadCount - previousCount
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "F50 收到新短信"
+        content.body = newMessageCount == 1
+            ? "有 1 条新短信，点击菜单栏查看。"
+            : "有 \(newMessageCount) 条新短信，点击菜单栏查看。"
+        content.sound = .default
 
-            let content = UNMutableNotificationContent()
-            content.title = "F50 收到新短信"
-            content.body = newMessageCount == 1
-                ? "有 1 条新短信，点击菜单栏查看。"
-                : "有 \(newMessageCount) 条新短信，点击菜单栏查看。"
-            content.sound = .default
-
-            let request = UNNotificationRequest(
-                identifier: "f50-sms-\(UUID().uuidString)",
-                content: content,
-                trigger: nil
-            )
-            center.add(request)
-        }
+        let request = UNNotificationRequest(
+            identifier: "f50-sms-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     func userNotificationCenter(

@@ -36,20 +36,24 @@ private enum CarrierLogoAssets {
 public struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
+    @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onOpenSettings: () -> Void
     var onOpenSMS: () -> Void
 
     init(
         fetcher: F50Fetcher,
         updateManager: UpdateManager,
+        screenMirroringManager: ScreenMirroringManager,
         onOpenSettings: @escaping () -> Void,
         onOpenSMS: @escaping () -> Void
     ) {
         self.fetcher = fetcher
         self.updateManager = updateManager
+        self.screenMirroringManager = screenMirroringManager
         self.onOpenSettings = onOpenSettings
         self.onOpenSMS = onOpenSMS
     }
+
 
     private var subscriptionText: String {
         let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
@@ -179,12 +183,8 @@ public struct F50PanelView: View {
             // 1. Network & 3 Signal Metrics Card
             VStack(spacing: 8) {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("蜂窝网络")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
+                    HStack(spacing: 6) {
+                        if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
                                 HStack(spacing: 4) {
                                     carrierLogoView
                                     Text(fetcher.status.carrier)
@@ -209,7 +209,6 @@ public struct F50PanelView: View {
                                     .foregroundColor(.purple)
                             }
                         }
-                    }
 
                     Spacer()
 
@@ -222,15 +221,18 @@ public struct F50PanelView: View {
                         }
                     }
                 }
+                .padding(.top, 4)
+                .padding(.horizontal, 4)
 
                 // Subscription Status / QCI Line
                 HStack(spacing: 6) {
                     Text("签约状态:")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text(subscriptionText)
+                    let subText = subscriptionText
+                    Text(subText)
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(subscriptionText == "无数据" ? .secondary : .primary)
+                        .foregroundColor(subText == "无数据" ? .secondary : .primary)
                     Spacer()
                 }
                 .padding(.horizontal, 8)
@@ -366,22 +368,44 @@ public struct F50PanelView: View {
                     Spacer()
 
                     if fetcher.status.trafficLimit > 0 {
-                        Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
-                            .foregroundColor(fetcher.status.trafficUsageColor)
+                        HStack(spacing: 6) {
+                            Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
+                                .foregroundColor(fetcher.status.trafficUsageColor)
+
+                            if let days = fetcher.status.daysUntilReset {
+                                Text(days == 0 ? "今天重置" : "\(days)天后重置")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     } else {
-                        Text("已用流量：\(F50Status.formatBytes(fetcher.status.packageUsed))")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundColor(.primary)
+                        HStack(spacing: 6) {
+                            // 套餐已用优先取 Router 账单周期值（packageTotal），无则回退 UFI 月度值
+                            let packageUsed = fetcher.status.packageTotal > 0
+                                ? fetcher.status.packageTotal
+                                : fetcher.status.monthlyTotal
+                            Text("已用流量：\(F50Status.formatBytes(packageUsed))")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.primary)
+                            if let days = fetcher.status.daysUntilReset {
+                                Text(days == 0 ? "(今天重置)" : "(\(days)天后重置)")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
 
                 if fetcher.status.trafficLimit > 0 {
                     HStack {
-                        Text("已用流量：\(F50Status.formatBytes(fetcher.status.packageUsed))")
+                        let packageUsed = fetcher.status.packageTotal > 0
+                            ? fetcher.status.packageTotal
+                            : fetcher.status.monthlyTotal
+                        Text("已用流量：\(F50Status.formatBytes(packageUsed))")
                         Spacer()
                         Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
                     }
@@ -406,7 +430,11 @@ public struct F50PanelView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        Text(F50Status.formatBytes(fetcher.status.dailyTotal))
+                        // 当日流量优先用 UFI cellularUsage 精确查询，无则回退设备当日字段
+                        let daily = fetcher.status.ufiDailyUsage > 0
+                            ? fetcher.status.ufiDailyUsage
+                            : fetcher.status.dailyTotal
+                        Text(F50Status.formatBytes(daily))
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                     }
                     .frame(maxWidth: .infinity)
@@ -423,7 +451,11 @@ public struct F50PanelView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        Text(F50Status.formatBytes(fetcher.status.monthlyTotal))
+                        // 本月已用优先用 UFI cellularUsage 精确查询，无则回退 UFI monthly_data 等
+                        let monthly = fetcher.status.ufiMonthlyUsage > 0
+                            ? fetcher.status.ufiMonthlyUsage
+                            : fetcher.status.monthlyTotal
+                        Text(F50Status.formatBytes(monthly))
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                     }
                     .frame(maxWidth: .infinity)
@@ -512,10 +544,73 @@ public struct F50PanelView: View {
                 }
             }
 
+            if screenMirroringManager.isEnabled, let msg = screenMirroringManager.statusMessage, !msg.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: screenMirroringManager.isConnecting ? "arrow.triangle.2.circlepath" : "info.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.purple)
+                    Text(msg)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button(action: { screenMirroringManager.clearStatusMessage() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.1)))
+            }
+
             Divider()
 
             // 4. Actions
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                    // Open Web Dashboard Button (First!)
+                    Button(action: {
+                        if let url = URL(string: fetcher.baseURLString) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "safari")
+                            Text("打开 Web 后台")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+
+                    // Screen Mirroring Button (Icon-only, no text, no color tint)
+                    if screenMirroringManager.isEnabled {
+                        Button(action: {
+                            if screenMirroringManager.isDependenciesInstalled {
+                                screenMirroringManager.startMirroring(baseURLString: fetcher.baseURLString)
+                            } else {
+                                screenMirroringManager.requestInstallDependencies()
+                            }
+                        }) {
+                            Group {
+                                if screenMirroringManager.isConnecting {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "tv")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .padding(6)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
+                        .help(screenMirroringManager.isDependenciesInstalled ? "无线 ADB 投屏" : "未检测到投屏组件，点击配置")
+                    }
+
                     // SMS Button
                     Button(action: onOpenSMS) {
                         ZStack(alignment: .topTrailing) {
@@ -535,23 +630,6 @@ public struct F50PanelView: View {
                     }
                     .buttonStyle(.bordered)
                     .help("读取短信")
-
-                    // Open Web Dashboard Button
-                    Button(action: {
-                        if let url = URL(string: fetcher.baseURLString) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "safari")
-                            Text("打开 Web 后台")
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
 
                     // Settings Button
                     Button(action: {
@@ -580,5 +658,15 @@ public struct F50PanelView: View {
         .padding(16)
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
+        .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
+            Button("允许并下载") {
+                screenMirroringManager.downloadAndInstallStandaloneDependencies()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
+        }
     }
 }
+
+

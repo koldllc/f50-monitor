@@ -50,8 +50,42 @@ public struct F50Status: Equatable {
     public var dailyRx: UInt64 = 0
     public var dailyTx: UInt64 = 0
     public var trackedDaily: UInt64 = 0
-    public var packageUsed: UInt64 = 0
     public var trafficLimit: UInt64 = 0
+    // 套餐账单周期累计（Router 80 端口 monthly_rx_bytes/monthly_tx_bytes，如 138.67GB）
+    // 与 UFI 的“本月已用”不同：此字段用于“套餐已用”与进度条
+    public var packageRx: UInt64 = 0
+    public var packageTx: UInt64 = 0
+    public var packageTotal: UInt64 { packageRx + packageTx }
+    // UFI cellularUsage 按日期范围精确查询（与 F50 后台“当日/本月”同口径）
+    public var ufiDailyUsage: UInt64 = 0
+    public var ufiMonthlyUsage: UInt64 = 0
+    // 0 表示未知/尚未检测到；此时不显示重置天数
+    public var trafficResetDay: Int = 0
+
+    public var daysUntilReset: Int? {
+        guard (1...31).contains(trafficResetDay) else { return nil }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let currentDay = calendar.component(.day, from: today)
+        let resetDayToUse = trafficResetDay
+        
+        let targetDate: Date
+        if currentDay <= resetDayToUse {
+            var components = calendar.dateComponents([.year, .month], from: today)
+            let range = calendar.range(of: .day, in: .month, for: today) ?? 1..<31
+            components.day = min(resetDayToUse, range.count)
+            targetDate = calendar.date(from: components) ?? today
+        } else {
+            guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: today) else { return 0 }
+            var components = calendar.dateComponents([.year, .month], from: nextMonth)
+            let range = calendar.range(of: .day, in: .month, for: nextMonth) ?? 1..<31
+            components.day = min(resetDayToUse, range.count)
+            targetDate = calendar.date(from: components) ?? today
+        }
+        
+        let diff = calendar.dateComponents([.day], from: today, to: targetDate)
+        return max(0, diff.day ?? 0)
+    }
 
     public var monthlyOffsetBytes: Int64 = 0
     public var dailyOffsetBytes: Int64 = 0
@@ -59,7 +93,8 @@ public struct F50Status: Equatable {
     public var monthlyTotal: UInt64 {
         let raw = monthlyRx + monthlyTx
         if monthlyOffsetBytes != 0 {
-            let adjusted = Int64(raw) + monthlyOffsetBytes
+            // Int64(clamping:) 防止设备上报的极端大值(如 UInt64.max 脏数据)导致崩溃
+            let adjusted = Int64(clamping: raw) + monthlyOffsetBytes
             return UInt64(max(0, adjusted))
         }
         return raw
@@ -71,7 +106,7 @@ public struct F50Status: Equatable {
         let nativeDaily = dailyRx + dailyTx
         let raw = nativeDaily > 0 ? nativeDaily : max(trackedDaily, sessionTotal)
         if dailyOffsetBytes != 0 {
-            let adjusted = Int64(raw) + dailyOffsetBytes
+            let adjusted = Int64(clamping: raw) + dailyOffsetBytes
             return UInt64(max(0, adjusted))
         }
         return raw
@@ -79,7 +114,9 @@ public struct F50Status: Equatable {
 
     public var trafficUsageRatio: Double {
         guard trafficLimit > 0 else { return 0 }
-        return min(1.0, max(0.0, Double(packageUsed) / Double(trafficLimit)))
+        // 优先用套餐账单周期累计（Router），无则回退 UFI 月度值
+        let used = packageTotal > 0 ? packageTotal : monthlyTotal
+        return min(1.0, max(0.0, Double(used) / Double(trafficLimit)))
     }
 
     public var trafficUsageColor: Color {
@@ -210,14 +247,8 @@ public struct F50Status: Equatable {
 
     public var signalIconName: String {
         guard isOnline else { return "wifi.slash" }
-        switch signalBar {
-        case 5: return "cellularbars"
-        case 4: return "cellularbars"
-        case 3: return "cellularbars"
-        case 2: return "cellularbars"
-        case 1: return "cellularbars"
-        default: return "antenna.radiowaves.left.and.right"
-        }
+        // 有信号时统一使用蜂窝图标（iOS 风格 4 格图标，SFSymbol 无动态格数变体）
+        return signalBar > 0 ? "cellularbars" : "antenna.radiowaves.left.and.right"
     }
 
     public var tempColor: Color {

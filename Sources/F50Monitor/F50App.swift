@@ -3,11 +3,13 @@ import SwiftUI
 import Combine
 
 @main
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var popover: NSPopover!
     var fetcher: F50Fetcher!
     var updateManager: UpdateManager!
+    var screenMirroringManager: ScreenMirroringManager!
     private var cancellables = Set<AnyCancellable>()
     private let smsNotificationManager = SMSNotificationManager()
     
@@ -22,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         fetcher = F50Fetcher()
         updateManager = UpdateManager()
+        screenMirroringManager = ScreenMirroringManager()
         
         // 1. Setup Popover
         popover = NSPopover()
@@ -29,10 +32,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
         
         let hostingController = NSHostingController(
-            rootView: F50PopoverView(fetcher: fetcher, updateManager: updateManager)
+            rootView: F50PopoverView(
+                fetcher: fetcher,
+                updateManager: updateManager,
+                screenMirroringManager: screenMirroringManager
+            )
         )
         hostingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hostingController
+
         
         // 2. Setup Menu Bar StatusItem with monospaced font
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -54,7 +62,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Publishers.CombineLatest(fetcher.$status, fetcher.$displayMode)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status, mode in
-                self?.updateMenuBarText(status: status, mode: mode)
+                Task<Void, Never> { @MainActor in
+                    guard let self else { return }
+                    self.updateMenuBarText(status: status, mode: mode)
+                }
             }
             .store(in: &cancellables)
 
@@ -65,10 +76,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] unreadCount in
-                self?.smsNotificationManager.updateUnreadCount(unreadCount)
+                Task<Void, Never> { @MainActor in
+                    guard let self else { return }
+                    self.smsNotificationManager.updateUnreadCount(unreadCount)
+                }
             }
             .store(in: &cancellables)
 
+        smsNotificationManager.requestAuthorizationIfNeeded()
         updateManager.checkForUpdates()
     }
     
@@ -87,9 +102,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func updateMenuBarText(status: F50Status, mode: MenuBarDisplayMode) {
         guard let button = statusItem.button else { return }
-        
-        button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        button.alignment = .center
         
         guard status.isOnline else {
             statusItem.length = 50
