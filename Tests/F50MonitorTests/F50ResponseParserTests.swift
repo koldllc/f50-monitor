@@ -1,5 +1,5 @@
 import XCTest
-@testable import F50Monitor
+@testable import F50Core
 
 final class F50ResponseParserTests: XCTestCase {
     func testDefaultsUseAdminForBothCredentials() {

@@ -1,4 +1,5 @@
 import AppKit
+import F50Core
 import Combine
 import CryptoKit
 import Foundation

@@ -1,4 +1,5 @@
 import SwiftUI
+import F50Core
 
 public struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher

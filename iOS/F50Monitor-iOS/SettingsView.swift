@@ -1,0 +1,99 @@
+import SwiftUI
+import F50Core
+
+/// iOS 设置：连接参数、刷新频率、流量校准
+struct SettingsView: View {
+    @ObservedObject var fetcher: F50Fetcher
+    @State private var tempURL = ""
+    @State private var tempPassword = ""
+    @State private var tempUFIToken = ""
+    @State private var tempInterval: Double = 2.0
+
+    private var trimmedURL: String {
+        tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isURLValid: Bool {
+        guard let url = URL(string: trimmedURL),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return false }
+        return url.host?.isEmpty == false
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("连接设置") {
+                    TextField("后台 API 地址", text: $tempURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    if !isURLValid {
+                        Text("请输入包含 http:// 或 https:// 的有效地址")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    SecureField("路由器管理密码 (80 端口)", text: $tempPassword)
+                    SecureField("UFI-TOOLS 登录口令 (2333 端口)", text: $tempUFIToken)
+                }
+
+                Section("刷新频率") {
+                    Picker("自动刷新", selection: $tempInterval) {
+                        Text("1 秒").tag(1.0)
+                        Text("2 秒").tag(2.0)
+                        Text("3 秒（推荐）").tag(3.0)
+                        Text("5 秒").tag(5.0)
+                        Text("10 秒").tag(10.0)
+                    }
+                    Text("适当拉长刷新间隔可降低设备芯片占用与发热")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Section {
+                    Button("保存") {
+                        fetcher.applyConfiguration(
+                            baseURL: trimmedURL,
+                            password: tempPassword,
+                            ufiToken: tempUFIToken,
+                            refreshInterval: tempInterval,
+                            displayMode: .full
+                        )
+                    }
+                    .disabled(!isURLValid)
+                }
+
+                Section("流量校准") {
+                    calibrationRow("月度流量", offset: fetcher.monthlyOffsetBytes, raw: fetcher.status.monthlyRx + fetcher.status.monthlyTx)
+                    calibrationRow("当日流量", offset: fetcher.dailyOffsetBytes, raw: fetcher.status.dailyRx + fetcher.status.dailyTx)
+                    Button("清零校准") {
+                        fetcher.applyTrafficCalibration(customMonthlyGB: nil, customDailyGB: nil)
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+            .navigationTitle("设置")
+            .onAppear {
+                tempURL = fetcher.baseURLString
+                tempPassword = fetcher.password
+                tempUFIToken = fetcher.ufiToken
+                tempInterval = fetcher.refreshInterval
+            }
+        }
+    }
+
+    private func calibrationRow(_ title: String, offset: Int64, raw: UInt64) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("设备 \(F50Status.formatBytes(raw))")
+                .font(.footnote.monospaced())
+                .foregroundColor(.secondary)
+            if offset != 0 {
+                Text("修正 \(offset > 0 ? "+" : "")\(String(format: "%.2f", Double(offset) / 1_073_741_824))GB")
+                    .font(.footnote.monospaced())
+                    .foregroundColor(.orange)
+            }
+        }
+    }
+}

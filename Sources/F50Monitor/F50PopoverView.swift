@@ -1,4 +1,5 @@
 import SwiftUI
+import F50Core
 
 struct F50PopoverView: View {
     @ObservedObject var fetcher: F50Fetcher

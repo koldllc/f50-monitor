@@ -1,4 +1,5 @@
 import AppKit
+import F50Core
 import SwiftUI
 
 private enum CarrierLogoAssets {

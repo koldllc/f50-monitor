@@ -1,0 +1,46 @@
+name: F50Monitor-iOS
+options:
+  bundleIdPrefix: com.f50
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  F50Core:
+    type: framework
+    platform: iOS
+    sources:
+      - path: ../Sources/F50Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.f50.core
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
+
+  F50Monitor-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: F50Monitor-iOS
+    dependencies:
+      - target: F50Core
+    info:
+      path: F50Monitor-iOS/Info.plist
+      properties:
+        CFBundleDisplayName: F50 Monitor
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: "需要访问本地网络以连接您的 F50 随身 WiFi 设备（192.168.0.1），用于读取信号、流量与短信数据。"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIBackgroundModes:
+          - fetch
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.f50.monitor.ios
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.6.0
+        CODE_SIGN_STYLE: Automatic

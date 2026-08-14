@@ -1,4 +1,5 @@
 import SwiftUI
+import F50Core
 
 struct SMSListView: View {
     @ObservedObject var fetcher: F50Fetcher

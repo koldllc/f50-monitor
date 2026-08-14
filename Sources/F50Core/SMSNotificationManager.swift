@@ -1,23 +1,23 @@
 import Foundation
 import UserNotifications
 
-final class SMSNotificationManager: NSObject, UNUserNotificationCenterDelegate {
+public final class SMSNotificationManager: NSObject, UNUserNotificationCenterDelegate {
     private var lastUnreadCount: Int?
     private var hasRequestedAuthorization = false
 
-    override init() {
+    public override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
     }
 
     /// 在启动时请求一次通知授权，避免每次新短信都重复请求
-    func requestAuthorizationIfNeeded() {
+    public func requestAuthorizationIfNeeded() {
         guard !hasRequestedAuthorization else { return }
         hasRequestedAuthorization = true
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func updateUnreadCount(_ unreadCount: Int) {
+    public func updateUnreadCount(_ unreadCount: Int) {
         defer { lastUnreadCount = unreadCount }
         guard let previousCount = lastUnreadCount,
               unreadCount > previousCount else { return }
@@ -38,7 +38,7 @@ final class SMSNotificationManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request)
     }
 
-    func userNotificationCenter(
+    public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void

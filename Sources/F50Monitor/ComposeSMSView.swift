@@ -1,4 +1,5 @@
 import SwiftUI
+import F50Core
 
 /// 写短信视图：输入号码与内容，通过 UFI-TOOLS 发送
 struct ComposeSMSView: View {
