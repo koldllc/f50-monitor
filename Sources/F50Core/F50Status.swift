@@ -12,7 +12,7 @@ public enum MenuBarDisplayMode: String, CaseIterable, Identifiable, Codable {
     public var id: String { rawValue }
 }
 
-public struct F50Status: Equatable {
+public struct F50Status: Equatable, Codable {
     public var isOnline: Bool = false
     public var errorMessage: String? = nil
     public var ufiAuthFailed: Bool = false  // True if port 2333 returned 401

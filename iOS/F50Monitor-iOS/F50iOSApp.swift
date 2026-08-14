@@ -70,6 +70,8 @@ struct F50iOSApp: App {
                     appDelegate.smsNotificationManager.requestAuthorizationIfNeeded()
                 }
                 .onReceive(fetcher.$status) { status in
+                    // 同步给小组件（App Group 共享存储）
+                    F50WidgetDataStore.saveStatus(status)
                     guard status.isOnline else { return }
                     appDelegate.smsNotificationManager.updateUnreadCount(status.smsUnreadCount)
                 }

@@ -25,6 +25,13 @@ targets:
       - path: F50Monitor-iOS
     dependencies:
       - target: F50Core
+      - target: F50MonitorWidget
+        embed: true
+    entitlements:
+      path: F50Monitor-iOS/F50Monitor.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.f50.monitor
     info:
       path: F50Monitor-iOS/Info.plist
       properties:
@@ -49,6 +56,31 @@ targets:
         CODE_SIGN_STYLE: Automatic
         # 真机运行需在 Xcode 的 Signing & Capabilities 中选择你的 Apple ID 团队
         # （免费账号即可：设置 → 登录 Apple ID → 选 Team → 运行）
+
+  F50MonitorWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: F50MonitorWidget
+    dependencies:
+      - target: F50Core
+    entitlements:
+      path: F50MonitorWidget/F50MonitorWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.f50.monitor
+    info:
+      path: F50MonitorWidget/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.f50.monitor.ios.widget
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
 
 schemes:
   F50Monitor-iOS:

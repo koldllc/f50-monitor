@@ -12,15 +12,19 @@
 		16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */; };
 		1AE5F77524F74BC03CF6B072 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200C7CBFDFAD1274C4C1834A /* Assets.xcassets */; };
 		285817CABF530E542DBF18DE /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1096D2D8034A8D422EADEA /* StatusView.swift */; };
+		3BF85C70A424EE6253182A2D /* F50WidgetDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */; };
 		48EDD3951E186CF1D1D2BF17 /* F50iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */; };
 		4B3D6E7AF0C693A3DBA13587 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE426A585E5ACC39D46A60F /* SettingsView.swift */; };
 		4F5342D65D640BFA9C074A64 /* F50Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89766F43C86001C45B5E81B1 /* F50Status.swift */; };
 		893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */; };
 		8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98379B8BC17A9858D569301 /* F50ResponseParser.swift */; };
+		9BD590C306BAAFC5E150B4B7 /* F50MonitorWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88757B1003B6203002724A0 /* F50MonitorWidget.swift */; };
 		9F0B2E55B01FE592511659E8 /* SMSNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */; };
 		B6EAD7BD5A69AC85A5E2E264 /* F50Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; };
+		C9C74D56E4CD72FF224BE0E2 /* F50MonitorWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D4804E8A708915BF7370847E /* F50MonitorWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D5EEEAB259F505EC13C5C41B /* F50Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */; };
+		F4474EE6CDA29D1CEDA8CBF8 /* F50Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,9 +35,34 @@
 			remoteGlobalIDString = FFB59F242BEBBB5A4EDA7113;
 			remoteInfo = F50Core;
 		};
+		5CC46E5BD4202CA38729099F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6A4A055D2EE1F5FCAD58F39C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FFB59F242BEBBB5A4EDA7113;
+			remoteInfo = F50Core;
+		};
+		76249E8A9EAA236084F8A0F5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6A4A055D2EE1F5FCAD58F39C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 94CC331A541E77596B66A9C5;
+			remoteInfo = F50MonitorWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		096B9016499FFF8ABADE0569 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C9C74D56E4CD72FF224BE0E2 /* F50MonitorWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		478293F9D43302C6162FE913 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -49,23 +78,37 @@
 
 /* Begin PBXFileReference section */
 		0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		1118F60CAA519BD93D0FB79D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		200C7CBFDFAD1274C4C1834A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Fetcher.swift; sourceTree = "<group>"; };
 		37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Configuration.swift; sourceTree = "<group>"; };
 		56EF02DAC980BCBC4A16C254 /* F50Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = F50Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50SMSMessage.swift; sourceTree = "<group>"; };
+		7732F1A3FEA24F865A12BA48 /* F50Monitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = F50Monitor.entitlements; sourceTree = "<group>"; };
 		89766F43C86001C45B5E81B1 /* F50Status.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Status.swift; sourceTree = "<group>"; };
 		8A6E537BE8C7321F883183A0 /* SMSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSView.swift; sourceTree = "<group>"; };
 		8F1096D2D8034A8D422EADEA /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
 		A98379B8BC17A9858D569301 /* F50ResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50ResponseParser.swift; sourceTree = "<group>"; };
+		AE4B0A9065739D0B0D24B8B7 /* F50MonitorWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = F50MonitorWidget.entitlements; sourceTree = "<group>"; };
 		BF707A8982A0FFBFBA4F2A71 /* F50Monitor-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "F50Monitor-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CACBC8FF3BE2D3C40D80CF3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50iOSApp.swift; sourceTree = "<group>"; };
 		D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSNotificationManager.swift; sourceTree = "<group>"; };
+		D4804E8A708915BF7370847E /* F50MonitorWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = F50MonitorWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E88757B1003B6203002724A0 /* F50MonitorWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50MonitorWidget.swift; sourceTree = "<group>"; };
 		ECE426A585E5ACC39D46A60F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50WidgetDataStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		1F0BE6E9537F7E7F114FEF9C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4474EE6CDA29D1CEDA8CBF8 /* F50Core.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F0DB9965AA015E1BF85B99D5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -82,6 +125,7 @@
 			children = (
 				200C7CBFDFAD1274C4C1834A /* Assets.xcassets */,
 				CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */,
+				7732F1A3FEA24F865A12BA48 /* F50Monitor.entitlements */,
 				CACBC8FF3BE2D3C40D80CF3B /* Info.plist */,
 				ECE426A585E5ACC39D46A60F /* SettingsView.swift */,
 				8A6E537BE8C7321F883183A0 /* SMSView.swift */,
@@ -107,6 +151,7 @@
 				A98379B8BC17A9858D569301 /* F50ResponseParser.swift */,
 				66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */,
 				89766F43C86001C45B5E81B1 /* F50Status.swift */,
+				F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */,
 				0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */,
 				D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */,
 			);
@@ -118,8 +163,19 @@
 			children = (
 				56EF02DAC980BCBC4A16C254 /* F50Core.framework */,
 				BF707A8982A0FFBFBA4F2A71 /* F50Monitor-iOS.app */,
+				D4804E8A708915BF7370847E /* F50MonitorWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9FA26D2A3AB8DE69B91AB51B /* F50MonitorWidget */ = {
+			isa = PBXGroup;
+			children = (
+				AE4B0A9065739D0B0D24B8B7 /* F50MonitorWidget.entitlements */,
+				E88757B1003B6203002724A0 /* F50MonitorWidget.swift */,
+				1118F60CAA519BD93D0FB79D /* Info.plist */,
+			);
+			path = F50MonitorWidget;
 			sourceTree = "<group>";
 		};
 		A25435CED54B8E79EF1C9ACA = {
@@ -127,6 +183,7 @@
 			children = (
 				629C69FEDE6D1B0FE5561264 /* F50 */,
 				47B9F6DB0A044D206EAD66BF /* F50Monitor-iOS */,
+				9FA26D2A3AB8DE69B91AB51B /* F50MonitorWidget */,
 				708620932BAFDD3A95D0C1D3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -149,12 +206,14 @@
 				D3BD09BDDB658A70F9C5D99F /* Sources */,
 				AA5AD3916991E9735E8DF37B /* Resources */,
 				F0DB9965AA015E1BF85B99D5 /* Frameworks */,
+				096B9016499FFF8ABADE0569 /* Embed Foundation Extensions */,
 				478293F9D43302C6162FE913 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				90240EAF9CC0D6792D15B8BB /* PBXTargetDependency */,
+				7EA14B448CA1DA6B8A8032A6 /* PBXTargetDependency */,
 			);
 			name = "F50Monitor-iOS";
 			packageProductDependencies = (
@@ -162,6 +221,25 @@
 			productName = "F50Monitor-iOS";
 			productReference = BF707A8982A0FFBFBA4F2A71 /* F50Monitor-iOS.app */;
 			productType = "com.apple.product-type.application";
+		};
+		94CC331A541E77596B66A9C5 /* F50MonitorWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 69C542529F24FF52C1B4FF35 /* Build configuration list for PBXNativeTarget "F50MonitorWidget" */;
+			buildPhases = (
+				314BCCBE41B4DCE5D7482C76 /* Sources */,
+				1F0BE6E9537F7E7F114FEF9C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				735C35425A941DC2F4A2A817 /* PBXTargetDependency */,
+			);
+			name = F50MonitorWidget;
+			packageProductDependencies = (
+			);
+			productName = F50MonitorWidget;
+			productReference = D4804E8A708915BF7370847E /* F50MonitorWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		FFB59F242BEBBB5A4EDA7113 /* F50Core */ = {
 			isa = PBXNativeTarget;
@@ -192,6 +270,9 @@
 					4728A2511DEC3F4E68E3A075 = {
 						ProvisioningStyle = Automatic;
 					};
+					94CC331A541E77596B66A9C5 = {
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = F71965F1EA7BD58BE02BC372 /* Build configuration list for PBXProject "F50Monitor-iOS" */;
@@ -210,6 +291,7 @@
 			targets = (
 				FFB59F242BEBBB5A4EDA7113 /* F50Core */,
 				4728A2511DEC3F4E68E3A075 /* F50Monitor-iOS */,
+				94CC331A541E77596B66A9C5 /* F50MonitorWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -235,8 +317,17 @@
 				8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */,
 				893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */,
 				4F5342D65D640BFA9C074A64 /* F50Status.swift in Sources */,
+				3BF85C70A424EE6253182A2D /* F50WidgetDataStore.swift in Sources */,
 				16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */,
 				9F0B2E55B01FE592511659E8 /* SMSNotificationManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		314BCCBE41B4DCE5D7482C76 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9BD590C306BAAFC5E150B4B7 /* F50MonitorWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,6 +345,16 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		735C35425A941DC2F4A2A817 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FFB59F242BEBBB5A4EDA7113 /* F50Core */;
+			targetProxy = 5CC46E5BD4202CA38729099F /* PBXContainerItemProxy */;
+		};
+		7EA14B448CA1DA6B8A8032A6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 94CC331A541E77596B66A9C5 /* F50MonitorWidget */;
+			targetProxy = 76249E8A9EAA236084F8A0F5 /* PBXContainerItemProxy */;
+		};
 		90240EAF9CC0D6792D15B8BB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = FFB59F242BEBBB5A4EDA7113 /* F50Core */;
@@ -262,6 +363,26 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		53F751CB764DBB86E0E263CF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = F50MonitorWidget/F50MonitorWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = F50MonitorWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.f50.monitor.ios.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		A505D4F242D56E972795F4B6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -366,10 +487,31 @@
 			};
 			name = Release;
 		};
+		BE81307830DE65980DC25A97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = F50MonitorWidget/F50MonitorWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = F50MonitorWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.f50.monitor.ios.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		DB06B34F6477311ABE545979 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "F50Monitor-iOS/F50Monitor.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -390,6 +532,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "F50Monitor-iOS/F50Monitor.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -477,6 +620,15 @@
 			buildConfigurations = (
 				A648C123A513508198479979 /* Debug */,
 				AE5C4CCFF27898A89B49E11D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		69C542529F24FF52C1B4FF35 /* Build configuration list for PBXNativeTarget "F50MonitorWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				53F751CB764DBB86E0E263CF /* Debug */,
+				BE81307830DE65980DC25A97 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
