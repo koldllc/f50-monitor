@@ -47,7 +47,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.f50.monitor.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.kold.f50.monitor.ios
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CURRENT_PROJECT_VERSION: 1
@@ -76,7 +76,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.f50.monitor.ios.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.kold.f50.monitor.ios.widget
         SWIFT_VERSION: "5.0"
         SKIP_INSTALL: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
