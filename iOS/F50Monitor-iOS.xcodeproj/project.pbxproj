@@ -10,6 +10,7 @@
 		0C2E0D9C7B835A94415EAC44 /* SMSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E537BE8C7321F883183A0 /* SMSView.swift */; };
 		0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */; };
 		16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */; };
+		1AE5F77524F74BC03CF6B072 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200C7CBFDFAD1274C4C1834A /* Assets.xcassets */; };
 		285817CABF530E542DBF18DE /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1096D2D8034A8D422EADEA /* StatusView.swift */; };
 		48EDD3951E186CF1D1D2BF17 /* F50iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */; };
 		4B3D6E7AF0C693A3DBA13587 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE426A585E5ACC39D46A60F /* SettingsView.swift */; };
@@ -48,6 +49,7 @@
 
 /* Begin PBXFileReference section */
 		0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		200C7CBFDFAD1274C4C1834A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Fetcher.swift; sourceTree = "<group>"; };
 		37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Configuration.swift; sourceTree = "<group>"; };
 		56EF02DAC980BCBC4A16C254 /* F50Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = F50Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +80,7 @@
 		47B9F6DB0A044D206EAD66BF /* F50Monitor-iOS */ = {
 			isa = PBXGroup;
 			children = (
+				200C7CBFDFAD1274C4C1834A /* Assets.xcassets */,
 				CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */,
 				CACBC8FF3BE2D3C40D80CF3B /* Info.plist */,
 				ECE426A585E5ACC39D46A60F /* SettingsView.swift */,
@@ -144,6 +147,7 @@
 			buildConfigurationList = 7177C2A74257DAFD1B0F9A3E /* Build configuration list for PBXNativeTarget "F50Monitor-iOS" */;
 			buildPhases = (
 				D3BD09BDDB658A70F9C5D99F /* Sources */,
+				AA5AD3916991E9735E8DF37B /* Resources */,
 				F0DB9965AA015E1BF85B99D5 /* Frameworks */,
 				478293F9D43302C6162FE913 /* Embed Frameworks */,
 			);
@@ -209,6 +213,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA5AD3916991E9735E8DF37B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1AE5F77524F74BC03CF6B072 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		03BB66EA92AC6FC37EFC548A /* Sources */ = {
