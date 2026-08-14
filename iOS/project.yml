@@ -44,3 +44,13 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 1.6.0
         CODE_SIGN_STYLE: Automatic
+        # 真机运行需在 Xcode 的 Signing & Capabilities 中选择你的 Apple ID 团队
+        # （免费账号即可：设置 → 登录 Apple ID → 选 Team → 运行）
+
+schemes:
+  F50Monitor-iOS:
+    build:
+      targets:
+        F50Monitor-iOS: all
+    run:
+      config: Debug

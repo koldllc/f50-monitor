@@ -25,10 +25,16 @@ struct StatusView: View {
             .navigationTitle("F50 Monitor")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        fetcher.fetchData()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 16) {
+                        Link(destination: URL(string: fetcher.baseURLString) ?? URL(string: "http://192.168.0.1:2333")!) {
+                            Image(systemName: "safari")
+                        }
+                        .help("打开 Web 后台")
+                        Button {
+                            fetcher.fetchData()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
                 }
             }
@@ -97,6 +103,20 @@ struct StatusView: View {
                 signalMetric("SINR", value: status.snr, quality: status.snrQuality)
                 signalMetric("RSRQ", value: status.rsrq, quality: status.rsrqQuality)
             }
+
+            // 签约状态（QCI & 上下行签约速率）
+            HStack {
+                Text("签约状态")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(subscriptionText)
+                    .font(.caption.bold().monospaced())
+                    .foregroundColor(subscriptionText == "无数据" ? .secondary : .primary)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.blue.opacity(0.06)))
         }
         .cardStyle()
     }
@@ -109,6 +129,27 @@ struct StatusView: View {
                     .frame(width: 5, height: CGFloat(bar * 4 + 4))
             }
         }
+    }
+
+    /// 签约状态（QCI & 上下行签约速率），与 macOS 面板一致
+    private var subscriptionText: String {
+        let qciVal = status.qci.trimmingCharacters(in: .whitespaces)
+        let dlVal = status.qosDl.trimmingCharacters(in: .whitespaces)
+        let ulVal = status.qosUl.trimmingCharacters(in: .whitespaces)
+
+        if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
+            return "无数据"
+        }
+
+        var parts: [String] = []
+        parts.append(qciVal.isEmpty ? "QCI：-" : "QCI：\(qciVal)")
+        if !dlVal.isEmpty {
+            parts.append("⬇️ \(dlVal)")
+        }
+        if !ulVal.isEmpty {
+            parts.append("⬆️ \(ulVal)")
+        }
+        return parts.joined(separator: "  ")
     }
 
     private func signalMetric(_ title: String, value: String, quality: (label: String, color: Color, ratio: Double)) -> some View {

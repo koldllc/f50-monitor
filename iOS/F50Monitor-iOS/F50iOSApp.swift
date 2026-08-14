@@ -34,6 +34,7 @@ struct ContentView: View {
                 .tabItem { Label("状态", systemImage: "antenna.radiowaves.left.and.right") }
             SMSView(fetcher: fetcher)
                 .tabItem { Label("短信", systemImage: "envelope.fill") }
+                .badge(fetcher.status.smsUnreadCount > 0 ? fetcher.status.smsUnreadCount : 0)
             SettingsView(fetcher: fetcher)
                 .tabItem { Label("设置", systemImage: "gearshape.fill") }
         }

@@ -63,13 +63,9 @@ struct SettingsView: View {
                     .disabled(!isURLValid)
                 }
 
-                Section("流量校准") {
-                    calibrationRow("月度流量", offset: fetcher.monthlyOffsetBytes, raw: fetcher.status.monthlyRx + fetcher.status.monthlyTx)
-                    calibrationRow("当日流量", offset: fetcher.dailyOffsetBytes, raw: fetcher.status.dailyRx + fetcher.status.dailyTx)
-                    Button("清零校准") {
-                        fetcher.applyTrafficCalibration(customMonthlyGB: nil, customDailyGB: nil)
-                    }
-                    .foregroundColor(.red)
+                Section("关于") {
+                    LabeledContent("版本", value: "1.6.0")
+                    Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
                 }
             }
             .navigationTitle("设置")
@@ -78,21 +74,6 @@ struct SettingsView: View {
                 tempPassword = fetcher.password
                 tempUFIToken = fetcher.ufiToken
                 tempInterval = fetcher.refreshInterval
-            }
-        }
-    }
-
-    private func calibrationRow(_ title: String, offset: Int64, raw: UInt64) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text("设备 \(F50Status.formatBytes(raw))")
-                .font(.footnote.monospaced())
-                .foregroundColor(.secondary)
-            if offset != 0 {
-                Text("修正 \(offset > 0 ? "+" : "")\(String(format: "%.2f", Double(offset) / 1_073_741_824))GB")
-                    .font(.footnote.monospaced())
-                    .foregroundColor(.orange)
             }
         }
     }
