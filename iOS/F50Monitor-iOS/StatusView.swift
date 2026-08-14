@@ -82,12 +82,23 @@ struct StatusView: View {
             cardTitle("蜂窝信号", icon: "cellularbars", color: .blue)
 
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(status.networkType)
-                        .font(.headline)
-                    Text(status.carrier)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    if let assetName = carrierLogoAssetName {
+                        Image(assetName)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                    } else {
+                        Image(systemName: "simcard.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(status.networkType)
+                            .font(.headline)
+                        Text(status.carrier)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                     if !status.currentBands.isEmpty {
                         Text(status.currentBands)
                             .font(.caption.monospaced())
@@ -129,6 +140,24 @@ struct StatusView: View {
                     .frame(width: 5, height: CGFloat(bar * 4 + 4))
             }
         }
+    }
+
+    /// 运营商 logo 资源名（与 macOS 版匹配逻辑一致）
+    private var carrierLogoAssetName: String? {
+        let carrier = status.carrier.lowercased()
+        if carrier.contains("移动") || carrier.contains("mobile") {
+            return "ChinaMobileLogo"
+        }
+        if carrier.contains("联通") || carrier.contains("unicom") {
+            return "ChinaUnicomLogo"
+        }
+        if carrier.contains("电信") || carrier.contains("telecom") {
+            return "ChinaTelecomLogo"
+        }
+        if carrier.contains("广电") || carrier.contains("broadcast") {
+            return "ChinaBroadnetLogo"
+        }
+        return nil
     }
 
     /// 签约状态（QCI & 上下行签约速率），与 macOS 面板一致
