@@ -11,3 +11,6 @@ node_modules/
 # Apps & Archives
 *.app/
 *.zip
+
+# Xcode user data
+iOS/F50Monitor-iOS.xcodeproj/xcuserdata/

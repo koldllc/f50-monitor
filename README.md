@@ -32,6 +32,19 @@
 - 四大运营商官方标志适配与网络标识布局优化。
 - 登录时自动启动、GitHub Releases 自动更新及 U60 UFI API 连接路径适配。
 
+## 📱 iOS 版（开发中）
+
+F50 Monitor 已移植到 **iPhone**（iOS 16+），支持信号/速度/流量/硬件状态监控、短信读写、新短信通知（含后台刷新提醒）。投屏、自动更新、登录启动等 macOS 专属功能已按平台能力裁剪。
+
+### 构建运行
+
+1. 打开 `iOS/F50Monitor-iOS.xcodeproj`（需 Xcode 16+）。
+2. 在 **Signing & Capabilities** 选择你的 Apple ID 团队（免费账号即可真机运行）。
+3. 选择真机运行；首次安装后需在手机 **设置 → 通用 → VPN 与设备管理** 中信任开发者。
+4. 手机需连接 F50 的 WiFi 才能访问设备后台。
+
+> 工程由 XcodeGen 维护（`iOS/project.yml`），修改后运行 `cd iOS && xcodegen generate` 重新生成。
+
 ## 📥 安装与使用
 
 ### 直接下载

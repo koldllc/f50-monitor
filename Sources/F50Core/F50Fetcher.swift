@@ -57,7 +57,7 @@ public class F50Fetcher: ObservableObject {
     @Published public private(set) var smsErrorMessage: String?
 
     private var timer: Timer?
-    private var isFetching: Bool = false
+     public private(set) var isFetching = false
     private var sessionCookie: String? = nil
     private var requestGeneration: UInt = 0
     private var baseTask: URLSessionDataTask?

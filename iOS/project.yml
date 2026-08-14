@@ -35,6 +35,8 @@ targets:
           NSAllowsLocalNetworking: true
         UIBackgroundModes:
           - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.f50.monitor.ios.refresh
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
