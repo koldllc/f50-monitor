@@ -309,6 +309,235 @@ public class F50Fetcher: ObservableObject {
         smsTask = nil
     }
 
+    // MARK: - 发送短信
+
+    @Published public private(set) var isSendingSMS = false
+    @Published public private(set) var smsSendErrorMessage: String?
+    @Published public private(set) var smsSendSuccess = false
+
+    public func sendSMSMessage(to number: String, content: String) {
+        guard !isSendingSMS else { return }
+        let cleanNumber = number.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNumber.isEmpty, !cleanContent.isEmpty else {
+            smsSendErrorMessage = "请填写手机号和短信内容"
+            return
+        }
+
+        let generation = requestGeneration
+        let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
+        let tokens = candidateTokens()
+        guard let token = tokens.first else {
+            smsSendErrorMessage = "请先配置 UFI-TOOLS 登录口令"
+            return
+        }
+
+        isSendingSMS = true
+        smsSendErrorMessage = nil
+        smsSendSuccess = false
+
+        smsLogin(
+            ufiBaseURL: ufiBaseURL,
+            token: token,
+            generation: generation
+        ) { [weak self] cookie in
+            guard let self else { return }
+            guard let cookie, !cookie.isEmpty else {
+                self.finishSMSFailed("登录失败，请检查 UFI-TOOLS 登录口令")
+                return
+            }
+            self.computeSMSAD(
+                ufiBaseURL: ufiBaseURL,
+                token: token,
+                cookie: cookie,
+                generation: generation
+            ) { [weak self] ad in
+                guard let self else { return }
+                guard let ad, !ad.isEmpty else {
+                    self.finishSMSFailed("签名校验失败，请重试")
+                    return
+                }
+                self.performSMSSend(
+                    ufiBaseURL: ufiBaseURL,
+                    token: token,
+                    cookie: cookie,
+                    ad: ad,
+                    number: cleanNumber,
+                    content: cleanContent,
+                    generation: generation
+                )
+            }
+        }
+    }
+
+    /// UFI-TOOLS 登录：LD 挑战 → LOGIN，返回 kano-cookie
+    private func smsLogin(
+        ufiBaseURL: String,
+        token: String,
+        generation: UInt,
+        completion: @escaping (String?) -> Void
+    ) {
+        let ts = String(Int64(Date().timeIntervalSince1970 * 1000))
+        // 注意：minikano goform 要求 cmd 参数放在第一位
+        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=LD&isTest=false&_=\(ts)") else {
+            completion(nil)
+            return
+        }
+
+        URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+            Task { @MainActor in
+                guard let self, generation == self.requestGeneration else { return }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data,
+                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let ld = dict["LD"] as? String, !ld.isEmpty else {
+                    completion(nil)
+                    return
+                }
+
+                let pwdHash = self.sha256(self.sha256(token) + ld).uppercased()
+                let bodyString = "goformId=LOGIN&isTest=false&password=\(pwdHash)&user=admin"
+                guard let loginURL = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
+                      let body = bodyString.data(using: .utf8) else {
+                    completion(nil)
+                    return
+                }
+
+                let request = self.signedUFIRequest(
+                    url: loginURL,
+                    token: token,
+                    method: "POST",
+                    body: body,
+                    contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+                )
+
+                URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+                    Task { @MainActor in
+                        guard let self, generation == self.requestGeneration else { return }
+                        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                            completion(nil)
+                            return
+                        }
+                        let cookie = (http.value(forHTTPHeaderField: "kano-cookie") ?? "")
+                            .components(separatedBy: ";").first
+                        completion(cookie)
+                    }
+                }.resume()
+            }
+        }.resume()
+    }
+
+    /// 计算 AD 签名：AD = SHA256(SHA256(wa_inner_version + cr_version) + RD)
+    private func computeSMSAD(
+        ufiBaseURL: String,
+        token: String,
+        cookie: String,
+        generation: UInt,
+        completion: @escaping (String?) -> Void
+    ) {
+        let ts = String(Int64(Date().timeIntervalSince1970 * 1000))
+        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_=\(ts)") else {
+            completion(nil)
+            return
+        }
+        var request = signedUFIRequest(url: url, token: token)
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            Task { @MainActor in
+                guard let self, generation == self.requestGeneration else { return }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data,
+                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let wa = dict["wa_inner_version"] as? String,
+                      let cr = dict["cr_version"] as? String,
+                      !wa.isEmpty, !cr.isEmpty else {
+                    completion(nil)
+                    return
+                }
+
+                let ts2 = String(Int64(Date().timeIntervalSince1970 * 1000))
+                guard let rdURL = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=RD&isTest=false&_=\(ts2)") else {
+                    completion(nil)
+                    return
+                }
+                var rdRequest = self.signedUFIRequest(url: rdURL, token: token)
+                rdRequest.setValue(cookie, forHTTPHeaderField: "Cookie")
+
+                URLSession.shared.dataTask(with: rdRequest) { data, response, _ in
+                    Task { @MainActor in
+                        guard generation == self.requestGeneration else { return }
+                        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                              let data,
+                              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let rd = dict["RD"] as? String, !rd.isEmpty else {
+                            completion(nil)
+                            return
+                        }
+                        let ad = self.sha256(self.sha256(wa + cr) + rd).uppercased()
+                        completion(ad)
+                    }
+                }.resume()
+            }
+        }.resume()
+    }
+
+    /// 发送短信：POST goformId=SEND_SMS
+    private func performSMSSend(
+        ufiBaseURL: String,
+        token: String,
+        cookie: String,
+        ad: String,
+        number: String,
+        content: String,
+        generation: UInt
+    ) {
+        let encodedNumber = number.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? number
+        let bodyString = "goformId=SEND_SMS&Number=\(encodedNumber)&MessageBody=\(F50ResponseParser.gsmEncode(content))&isTest=false&AD=\(ad)"
+        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
+              let body = bodyString.data(using: .utf8) else {
+            finishSMSFailed("短信接口地址无效")
+            return
+        }
+        var request = signedUFIRequest(
+            url: url,
+            token: token,
+            method: "POST",
+            body: body,
+            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+        )
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            Task { @MainActor in
+                guard let self, generation == self.requestGeneration else { return }
+                defer { self.isSendingSMS = false }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data else {
+                    self.finishSMSFailed("发送请求失败，请重试")
+                    return
+                }
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   (dict["result"] as? Int) == 0 {
+                    self.smsSendSuccess = true
+                    self.smsSendErrorMessage = nil
+                } else {
+                    let raw = String(data: data, encoding: .utf8) ?? ""
+                    self.finishSMSFailed(raw.isEmpty ? "发送失败，请重试" : "发送失败：\(raw)")
+                }
+            }
+        }.resume()
+    }
+
+    private func finishSMSFailed(_ message: String) {
+        guard !smsSendSuccess else { return }
+        smsSendErrorMessage = message
+        isSendingSMS = false
+    }
+
     private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
         guard let url = URL(string: cleanBase), let host = url.host else {
             return ("http://192.168.0.1", "http://192.168.0.1:2333")
@@ -444,7 +673,13 @@ public class F50Fetcher: ObservableObject {
     }
 
     /// 构建带 UFI-TOOLS 签名头部的请求（GET/POST 统一入口）
-    private func signedUFIRequest(url: URL, token: String, method: String = "GET", body: Data? = nil) -> URLRequest {
+    private func signedUFIRequest(
+        url: URL,
+        token: String,
+        method: String = "GET",
+        body: Data? = nil,
+        contentType: String = "application/json"
+    ) -> URLRequest {
         let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
         let sign = calcKanoSign(
             key: F50Configuration.kanoSignKey,
@@ -458,7 +693,7 @@ public class F50Fetcher: ObservableObject {
         request.setValue(token, forHTTPHeaderField: "authorization")
         if let body {
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
         return request
     }

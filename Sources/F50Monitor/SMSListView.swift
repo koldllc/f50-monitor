@@ -3,13 +3,31 @@ import SwiftUI
 struct SMSListView: View {
     @ObservedObject var fetcher: F50Fetcher
     var onClose: () -> Void
+    @State private var isComposing = false
 
     var body: some View {
+        Group {
+            if isComposing {
+                ComposeSMSView(
+                    fetcher: fetcher,
+                    onClose: { isComposing = false },
+                    onSent: {
+                        isComposing = false
+                        fetcher.fetchSMSMessages()
+                    }
+                )
+            } else {
+                smsList
+            }
+        }
+    }
+
+    private var smsList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Button(action: onClose) {
                     Label("返回", systemImage: "chevron.left")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.blue)
@@ -21,9 +39,16 @@ struct SMSListView: View {
 
                 Spacer()
 
+                Button(action: { isComposing = true }) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .help("写短信")
+
                 Button(action: { fetcher.fetchSMSMessages() }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 16, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .disabled(fetcher.isFetchingSMS)
@@ -83,7 +108,7 @@ struct SMSListView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(message.didFailToSend ? .red : (message.isOutgoing ? .blue : .green))
                 Text(message.number.isEmpty ? "未知号码" : message.number)
                     .font(.system(size: 12, weight: message.isUnread ? .bold : .semibold))

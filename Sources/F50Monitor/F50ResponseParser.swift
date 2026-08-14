@@ -245,6 +245,27 @@ enum F50ResponseParser {
         }
     }
 
+    /// UFI-TOOLS 短信发送的消息体编码：UTF-16BE 的 hex 字符串
+    /// （与 UFI 后台 gsmEncode 一致，非 GSM 7-bit）
+    static func gsmEncode(_ text: String) -> String {
+        var bytes: [UInt8] = []
+        for scalar in text.unicodeScalars {
+            let cp = scalar.value
+            if cp <= 0xFFFF {
+                bytes.append(UInt8((cp >> 8) & 0xFF))
+                bytes.append(UInt8(cp & 0xFF))
+            } else {
+                let high = 0xD800 + ((cp - 0x10000) >> 10)
+                let low = 0xDC00 + ((cp - 0x10000) & 0x3FF)
+                bytes.append(UInt8((high >> 8) & 0xFF))
+                bytes.append(UInt8(high & 0xFF))
+                bytes.append(UInt8((low >> 8) & 0xFF))
+                bytes.append(UInt8(low & 0xFF))
+            }
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
     static func parseTrafficLimit(size: Any?, unit: Any?) -> UInt64 {
         let sizeStr = String(describing: size ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let unitStr = String(describing: unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

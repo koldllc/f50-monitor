@@ -206,6 +206,22 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50Status.formatBytes(1536 * 1024 * 1024 * 1024), "1.50 TB")
     }
 
+    func testGSMEncodeMatchesUFIUTF16BEHex() {
+        // UFI-TOOLS 短信编码 = UTF-16BE 的 hex（非 GSM 7-bit）
+        XCTAssertEqual(F50ResponseParser.gsmEncode("A"), "0041")
+        XCTAssertEqual(F50ResponseParser.gsmEncode("hello"), "00680065006c006c006f")
+        // 中文“测” U+6D4B
+        XCTAssertEqual(F50ResponseParser.gsmEncode("测"), "6d4b")
+        // 混合：测=6D4B 试=8BD5 空格=0020 hello
+        XCTAssertEqual(F50ResponseParser.gsmEncode("测试 hello"), "6d4b8bd5002000680065006c006c006f")
+        // 完整对照 python 验证值（与 UFI 后台一致）
+        XCTAssertEqual(
+            F50ResponseParser.gsmEncode("测试短信 hello"),
+            "6d4b8bd577ed4fe1002000680065006c006c006f"
+        )
+        XCTAssertEqual(F50ResponseParser.gsmEncode(""), "")
+    }
+
     func testParsesCurrentBandsForNetworkType() {
         let payload: [String: Any] = [
             "wan_active_band": "LTE BAND 3",
