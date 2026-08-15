@@ -4,10 +4,10 @@ import SwiftUI
 public enum MenuBarDisplayMode: String, CaseIterable, Identifiable, Codable {
     case iconOnly = "仅图标"
     case speeds = "图标 + 速率"
+    case traffic = "图标 + 套餐用量"
     case cpuMem = "图标 + CPU/内存"
     case temperature = "图标 + 温度"
-    case devices = "图标 + 设备数"
-    case full = "完整显示"
+    case devices = "图标 + Wi-Fi 设备数"
 
     public var id: String { rawValue }
 }
@@ -120,14 +120,14 @@ public struct F50Status: Equatable, Codable {
     }
 
     public var trafficUsageColor: Color {
-        guard trafficLimit > 0 else { return .cyan }
+        guard trafficLimit > 0 else { return F50Theme.cyan }
         let ratio = trafficUsageRatio
         if ratio >= 0.9 {
-            return .red
+            return F50Theme.red
         } else if ratio >= 0.75 {
-            return .orange
+            return F50Theme.orange
         } else {
-            return .cyan
+            return F50Theme.cyan
         }
     }
 
@@ -168,13 +168,13 @@ public struct F50Status: Equatable, Codable {
     public var rsrpQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(rsrp) else { return ("-", .secondary, 0.0) }
         if val >= -85 {
-            return ("极佳", .green, 1.0)
+            return ("极佳", F50Theme.green, 1.0)
         } else if val >= -95 {
-            return ("良好", .blue, 0.75)
+            return ("良好", F50Theme.blue, 0.75)
         } else if val >= -105 {
-            return ("一般", .orange, 0.50)
+            return ("一般", F50Theme.orange, 0.50)
         } else {
-            return ("较差", .red, 0.25)
+            return ("较差", F50Theme.red, 0.25)
         }
     }
 
@@ -182,13 +182,13 @@ public struct F50Status: Equatable, Codable {
     public var snrQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(snr) else { return ("-", .secondary, 0.0) }
         if val >= 20 {
-            return ("极佳", .green, 1.0)
+            return ("极佳", F50Theme.green, 1.0)
         } else if val >= 13 {
-            return ("良好", .blue, 0.75)
+            return ("良好", F50Theme.blue, 0.75)
         } else if val >= 3 {
-            return ("一般", .orange, 0.50)
+            return ("一般", F50Theme.orange, 0.50)
         } else {
-            return ("较差", .red, 0.25)
+            return ("较差", F50Theme.red, 0.25)
         }
     }
 
@@ -196,13 +196,13 @@ public struct F50Status: Equatable, Codable {
     public var rsrqQuality: (label: String, color: Color, ratio: Double) {
         guard let val = parseVal(rsrq) else { return ("-", .secondary, 0.0) }
         if val >= -10 {
-            return ("极佳", .green, 1.0)
+            return ("极佳", F50Theme.green, 1.0)
         } else if val >= -15 {
-            return ("良好", .blue, 0.75)
+            return ("良好", F50Theme.blue, 0.75)
         } else if val >= -20 {
-            return ("一般", .orange, 0.50)
+            return ("一般", F50Theme.orange, 0.50)
         } else {
-            return ("较差", .red, 0.25)
+            return ("较差", F50Theme.red, 0.25)
         }
     }
 
@@ -247,7 +247,6 @@ public struct F50Status: Equatable, Codable {
 
     public var signalIconName: String {
         guard isOnline else { return "wifi.slash" }
-        // 有信号时统一使用蜂窝图标（iOS 风格 4 格图标，SFSymbol 无动态格数变体）
         return signalBar > 0 ? "cellularbars" : "antenna.radiowaves.left.and.right"
     }
 
@@ -255,11 +254,11 @@ public struct F50Status: Equatable, Codable {
         if temperature <= 0 {
             return .secondary
         } else if temperature < 45 {
-            return .green
+            return F50Theme.green
         } else if temperature < 60 {
-            return .orange
+            return F50Theme.orange
         } else {
-            return .red
+            return F50Theme.red
         }
     }
 
@@ -267,11 +266,11 @@ public struct F50Status: Equatable, Codable {
         if cpuUsage <= 0 {
             return .secondary
         } else if cpuUsage < 50 {
-            return .green
+            return F50Theme.green
         } else if cpuUsage < 80 {
-            return .orange
+            return F50Theme.orange
         } else {
-            return .red
+            return F50Theme.red
         }
     }
 
@@ -279,11 +278,22 @@ public struct F50Status: Equatable, Codable {
         if memUsage <= 0 {
             return .secondary
         } else if memUsage < 60 {
-            return .green
+            return F50Theme.green
         } else if memUsage < 85 {
-            return .orange
+            return F50Theme.orange
         } else {
-            return .red
+            return F50Theme.red
         }
     }
+}
+
+/// 高级低饱和度调色盘与全局主题规范
+public enum F50Theme {
+    public static let green = Color(red: 0.22, green: 0.65, blue: 0.46)    // 翡翠绿 (52% 饱和度)
+    public static let blue = Color(red: 0.28, green: 0.52, blue: 0.84)     // 霁蓝 (55% 饱和度)
+    public static let orange = Color(red: 0.86, green: 0.55, blue: 0.25)   // 琥珀金 (60% 饱和度)
+    public static let red = Color(red: 0.82, green: 0.35, blue: 0.35)      // 绯红 (55% 饱和度)
+    public static let purple = Color(red: 0.52, green: 0.46, blue: 0.78)   // 鸢尾紫 (40% 饱和度)
+    public static let cyan = Color(red: 0.24, green: 0.62, blue: 0.72)     // 烟青蓝 (50% 饱和度)
+    public static let gray = Color(red: 0.55, green: 0.58, blue: 0.62)     // 岩灰
 }

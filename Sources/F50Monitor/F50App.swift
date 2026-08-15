@@ -103,54 +103,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func updateMenuBarText(status: F50Status, mode: MenuBarDisplayMode) {
         guard let button = statusItem.button else { return }
-        
+        statusItem.length = NSStatusItem.variableLength
+
         guard status.isOnline else {
-            statusItem.length = 50
-            button.title = "离线"
+            if mode == .iconOnly {
+                button.title = ""
+            } else {
+                button.title = "离线"
+            }
+            button.toolTip = "F50 Monitor (未连接后台)"
             return
         }
-        
+
         switch mode {
         case .iconOnly:
-            statusItem.length = 26
             button.title = ""
-            
+            button.toolTip = "F50 Monitor (\(status.networkType) · \(status.carrier))\n下载: \(F50Status.formatSpeed(status.dlSpeed))  上传: \(F50Status.formatSpeed(status.ulSpeed))"
+
         case .speeds:
-            statusItem.length = 175
-            let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
-            let ulStr = F50Status.formatSpeedFixedWidth(status.ulSpeed)
-            button.title = "⬇\(dlStr) ⬆\(ulStr)"
-            
+            button.title = "⬇ \(F50Status.formatSpeed(status.dlSpeed))  ⬆ \(F50Status.formatSpeed(status.ulSpeed))"
+            button.toolTip = "F50 Monitor: 实时速率"
+
         case .cpuMem:
-            statusItem.length = 120
             if status.cpuUsage > 0 || status.memUsage > 0 {
-                button.title = String(format: "C:%2.0f%% M:%2.0f%%", status.cpuUsage, status.memUsage)
+                button.title = String(format: "CPU %.0f%%  内存 %.0f%%", status.cpuUsage, status.memUsage)
             } else {
-                let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
-                button.title = "⬇\(dlStr)"
+                button.title = "⬇ \(F50Status.formatSpeed(status.dlSpeed))"
             }
-            
+            button.toolTip = "F50 Monitor: 硬件负载"
+
         case .temperature:
-            statusItem.length = 85
             if status.temperature > 0 {
-                button.title = String(format: "%4.1f℃", status.temperature)
+                button.title = String(format: "%.1f℃", status.temperature)
             } else {
                 button.title = status.networkType
             }
-            
+            button.toolTip = "F50 Monitor: 芯片温度"
+
         case .devices:
-            statusItem.length = 70
-            button.title = "\(status.connectedDevices)台"
-            
-        case .full:
-            statusItem.length = 170
-            let dlStr = F50Status.formatSpeedFixedWidth(status.dlSpeed)
-            let type = status.networkType.replacingOccurrences(of: "5G ", with: "")
-            if status.temperature > 0 {
-                button.title = String(format: "%@ ⬇%@ %.0f℃", type, dlStr, status.temperature)
+            button.title = "Wi-Fi: \(status.connectedDevices) 台"
+            button.toolTip = "F50 Monitor: Wi-Fi 连接设备数 (\(status.connectedDevices) 台)"
+
+        case .traffic:
+            let packageUsed = status.packageTotal > 0 ? status.packageTotal : status.monthlyTotal
+            if status.trafficLimit > 0 {
+                button.title = "\(F50Status.formatBytes(packageUsed)) / \(F50Status.formatBytes(status.trafficLimit))"
             } else {
-                button.title = String(format: "%@ ⬇%@", type, dlStr)
+                button.title = "已用 \(F50Status.formatBytes(packageUsed))"
             }
+            button.toolTip = "F50 Monitor: 套餐流量 (已用: \(F50Status.formatBytes(packageUsed)) / 总量: \(status.trafficLimit > 0 ? F50Status.formatBytes(status.trafficLimit) : "不限"))"
         }
     }
 }

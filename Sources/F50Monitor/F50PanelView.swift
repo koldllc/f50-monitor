@@ -121,9 +121,9 @@ public struct F50PanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.blue)
+                        .foregroundColor(F50Theme.blue)
                     Text("F50 Monitor")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                 }
 
                 Spacer()
@@ -131,21 +131,21 @@ public struct F50PanelView: View {
                 // Status Badge
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(fetcher.status.isOnline ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
+                        .fill(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
+                        .frame(width: 7, height: 7)
                     Text(fetcher.status.isOnline ? "在线" : "未在线")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                .background(Capsule().fill((fetcher.status.isOnline ? F50Theme.green : F50Theme.red).opacity(0.12)))
 
                 if updateManager.availableVersion != nil {
                     Button(action: updateManager.installAvailableUpdate) {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.green)
+                            .foregroundColor(F50Theme.green)
                     }
                     .buttonStyle(.borderless)
                     .help(updateManager.statusText)
@@ -167,7 +167,7 @@ public struct F50PanelView: View {
                 VStack(spacing: 6) {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(F50Theme.orange)
                         Text(fetcher.status.errorMessage ?? "无法连接到 F50 后台")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.primary)
@@ -178,7 +178,7 @@ public struct F50PanelView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.orange.opacity(0.12)))
             }
 
             // 1. Network & 3 Signal Metrics Card
@@ -186,30 +186,30 @@ public struct F50PanelView: View {
                 HStack {
                     HStack(spacing: 6) {
                         if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
-                                HStack(spacing: 4) {
-                                    carrierLogoView
-                                    Text(fetcher.status.carrier)
-                                }
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.primary)
+                            HStack(spacing: 4) {
+                                carrierLogoView
+                                Text(fetcher.status.carrier)
                             }
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                        }
 
-                            Text(fetcher.status.networkType)
-                                .font(.system(size: 11, weight: .semibold))
+                        Text(fetcher.status.networkType)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(F50Theme.blue.opacity(0.12)))
+                            .foregroundColor(F50Theme.blue)
+
+                        if !fetcher.status.currentBands.isEmpty {
+                            Text(fetcher.status.currentBands)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.blue.opacity(0.15)))
-                                .foregroundColor(.blue)
-
-                            if !fetcher.status.currentBands.isEmpty {
-                                Text(fetcher.status.currentBands)
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.purple.opacity(0.15)))
-                                    .foregroundColor(.purple)
-                            }
+                                .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
+                                .foregroundColor(F50Theme.purple)
                         }
+                    }
 
                     Spacer()
 
@@ -217,8 +217,8 @@ public struct F50PanelView: View {
                     HStack(alignment: .bottom, spacing: 3) {
                         ForEach(1...5, id: \.self) { bar in
                             RoundedRectangle(cornerRadius: 1.5)
-                                .fill(bar <= fetcher.status.signalBar ? Color.green : Color.gray.opacity(0.3))
-                                .frame(width: 4, height: CGFloat(bar * 3 + 4))
+                                .fill(bar <= fetcher.status.signalBar ? F50Theme.green : Color.primary.opacity(0.12))
+                                .frame(width: 4, height: CGFloat(Double(bar) * 2.8 + 4))
                         }
                     }
                 }
@@ -238,7 +238,7 @@ public struct F50PanelView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.blue.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: 6).fill(F50Theme.blue.opacity(0.06)))
 
                 Divider()
 
@@ -250,7 +250,7 @@ public struct F50PanelView: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                         Text(fetcher.status.rsrp)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
 
                         // Status Bar & Tag
                         let q = fetcher.status.rsrpQuality
@@ -273,7 +273,7 @@ public struct F50PanelView: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                         Text(fetcher.status.snr)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
 
                         // Status Bar & Tag
                         let q = fetcher.status.snrQuality
@@ -296,7 +296,7 @@ public struct F50PanelView: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                         Text(fetcher.status.rsrq)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
 
                         // Status Bar & Tag
                         let q = fetcher.status.rsrqQuality
@@ -321,37 +321,39 @@ public struct F50PanelView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundColor(.green)
+                        .foregroundColor(F50Theme.green)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("实时下载")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                         Text(F50Status.formatSpeed(fetcher.status.dlSpeed))
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(F50Theme.green)
                     }
                     Spacer()
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.green.opacity(0.08)))
 
                 // Upload Speed
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundColor(.blue)
+                        .foregroundColor(F50Theme.blue)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("实时上传")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(.secondary)
                         Text(F50Status.formatSpeed(fetcher.status.ulSpeed))
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(F50Theme.blue)
                     }
                     Spacer()
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.blue.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.blue.opacity(0.08)))
             }
 
             // 3. Traffic Statistics Card
@@ -360,7 +362,7 @@ public struct F50PanelView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "chart.bar.fill")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.cyan)
+                            .foregroundColor(F50Theme.cyan)
                         Text("套餐流量")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
@@ -371,12 +373,11 @@ public struct F50PanelView: View {
                     // 百分比与重置天数已移至进度条下方（trafficLimit > 0 时）
                     if fetcher.status.trafficLimit <= 0 {
                         HStack(spacing: 6) {
-                            // 套餐已用优先取 Router 账单周期值（packageTotal），无则回退 UFI 月度值
                             let packageUsed = fetcher.status.packageTotal > 0
                                 ? fetcher.status.packageTotal
                                 : fetcher.status.monthlyTotal
                             Text("已用流量：\(F50Status.formatBytes(packageUsed))")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundColor(.primary)
                             if let days = fetcher.status.daysUntilReset {
                                 Text(days == 0 ? "(今天重置)" : "(\(days)天后重置)")
@@ -397,7 +398,7 @@ public struct F50PanelView: View {
                             Spacer()
                             Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
                         }
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
 
                         ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
                             .tint(fetcher.status.trafficUsageColor)
@@ -406,7 +407,7 @@ public struct F50PanelView: View {
                         // 进度条下方一行：左侧套餐已用比例，右侧重置天数提醒
                         HStack(spacing: 6) {
                             Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
@@ -430,17 +431,16 @@ public struct F50PanelView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "sun.max.fill")
                                 .font(.system(size: 11))
-                                .foregroundColor(.orange)
+                                .foregroundColor(F50Theme.orange)
                             Text("当日流量")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        // 当日流量优先用 UFI cellularUsage 精确查询，无则回退设备当日字段
                         let daily = fetcher.status.ufiDailyUsage > 0
                             ? fetcher.status.ufiDailyUsage
                             : fetcher.status.dailyTotal
                         Text(F50Status.formatBytes(daily))
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                     }
                     .frame(maxWidth: .infinity)
 
@@ -451,17 +451,16 @@ public struct F50PanelView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "calendar")
                                 .font(.system(size: 11))
-                                .foregroundColor(.purple)
+                                .foregroundColor(F50Theme.purple)
                             Text("本月已用")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
-                        // 本月已用优先用 UFI cellularUsage 精确查询，无则回退 UFI monthly_data 等
                         let monthly = fetcher.status.ufiMonthlyUsage > 0
                             ? fetcher.status.ufiMonthlyUsage
                             : fetcher.status.monthlyTotal
                         Text(F50Status.formatBytes(monthly))
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -480,7 +479,7 @@ public struct F50PanelView: View {
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text(fetcher.status.cpuUsage > 0 ? String(format: "%.0f%%", fetcher.status.cpuUsage) : "--")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundColor(fetcher.status.cpuColor)
                         }
                         ProgressView(value: min(100.0, max(0.0, fetcher.status.cpuUsage)), total: 100.0)
@@ -498,7 +497,7 @@ public struct F50PanelView: View {
                                 .foregroundColor(.secondary)
                             Spacer()
                             Text(fetcher.status.memUsage > 0 ? String(format: "%.0f%%", fetcher.status.memUsage) : "--")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundColor(fetcher.status.memColor)
                         }
                         ProgressView(value: min(100.0, max(0.0, fetcher.status.memUsage)), total: 100.0)
@@ -520,7 +519,7 @@ public struct F50PanelView: View {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                             Text(fetcher.status.temperature > 0 ? String(format: "%.1f ℃", fetcher.status.temperature) : "-- ℃")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
                                 .foregroundColor(fetcher.status.tempColor)
                         }
                         Spacer()
@@ -529,23 +528,23 @@ public struct F50PanelView: View {
                     .frame(maxWidth: .infinity)
                     .background(RoundedRectangle(cornerRadius: 10).fill(fetcher.status.tempColor.opacity(0.08)))
 
-                    // Connected Devices
+                    // Connected Devices (Wi-Fi)
                     HStack(spacing: 8) {
-                        Image(systemName: "laptopcomputer.and.iphone")
+                        Image(systemName: "wifi")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.purple)
+                            .foregroundColor(F50Theme.purple)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("连接设备数")
+                            Text("Wi-Fi 连接设备")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                             Text("\(fetcher.status.connectedDevices) 台")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
                         }
                         Spacer()
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.purple.opacity(0.08)))
                 }
             }
 
@@ -553,7 +552,7 @@ public struct F50PanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: screenMirroringManager.isConnecting ? "arrow.triangle.2.circlepath" : "info.circle.fill")
                         .font(.system(size: 11))
-                        .foregroundColor(.purple)
+                        .foregroundColor(F50Theme.purple)
                     Text(msg)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.primary)
@@ -568,96 +567,96 @@ public struct F50PanelView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.1)))
+                .background(RoundedRectangle(cornerRadius: 6).fill(F50Theme.purple.opacity(0.1)))
             }
 
             Divider()
 
             // 4. Actions
             HStack(spacing: 8) {
-                    // Open Web Dashboard Button (First!)
+                // Open Web Dashboard Button (First!)
+                Button(action: {
+                    if let url = URL(string: fetcher.baseURLString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "safari")
+                        Text("打开 Web 后台")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(F50Theme.blue)
+
+                // Screen Mirroring Button (Icon-only, no text, no color tint)
+                if screenMirroringManager.isEnabled {
                     Button(action: {
-                        if let url = URL(string: fetcher.baseURLString) {
-                            NSWorkspace.shared.open(url)
+                        if screenMirroringManager.isDependenciesInstalled {
+                            screenMirroringManager.startMirroring(baseURLString: fetcher.baseURLString)
+                        } else {
+                            screenMirroringManager.requestInstallDependencies()
                         }
                     }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "safari")
-                            Text("打开 Web 后台")
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-
-                    // Screen Mirroring Button (Icon-only, no text, no color tint)
-                    if screenMirroringManager.isEnabled {
-                        Button(action: {
-                            if screenMirroringManager.isDependenciesInstalled {
-                                screenMirroringManager.startMirroring(baseURLString: fetcher.baseURLString)
+                        Group {
+                            if screenMirroringManager.isConnecting {
+                                ProgressView().controlSize(.small)
                             } else {
-                                screenMirroringManager.requestInstallDependencies()
-                            }
-                        }) {
-                            Group {
-                                if screenMirroringManager.isConnecting {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Image(systemName: "tv")
-                                        .font(.system(size: 11, weight: .medium))
-                                }
-                            }
-                            .padding(6)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
-                        .help(screenMirroringManager.isDependenciesInstalled ? "无线 ADB 投屏" : "未检测到投屏组件，点击配置")
-                    }
-
-                    // SMS Button
-                    Button(action: onOpenSMS) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "envelope")
-                                .font(.system(size: 11, weight: .medium))
-                            if fetcher.status.smsUnreadCount > 0 {
-                                Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
-                                    .font(.system(size: 7, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 3)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.red))
-                                    .offset(x: 9, y: -7)
+                                Image(systemName: "tv")
+                                    .font(.system(size: 11, weight: .medium))
                             }
                         }
                         .padding(6)
                     }
                     .buttonStyle(.bordered)
-                    .help("读取短信")
+                    .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
+                    .help(screenMirroringManager.isDependenciesInstalled ? "无线 ADB 投屏" : "未检测到投屏组件，点击配置")
+                }
 
-                    // Settings Button
-                    Button(action: {
-                        onOpenSettings()
-                    }) {
-                        Image(systemName: "gearshape")
+                // SMS Button
+                Button(action: onOpenSMS) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "envelope")
                             .font(.system(size: 11, weight: .medium))
-                            .padding(6)
+                        if fetcher.status.smsUnreadCount > 0 {
+                            Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
+                                .font(.system(size: 7, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(F50Theme.red))
+                                .offset(x: 9, y: -7)
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    .help("设置")
+                    .padding(6)
+                }
+                .buttonStyle(.bordered)
+                .help("读取短信")
 
-                    // Quit Button
-                    Button(action: {
-                        NSApplication.shared.terminate(nil)
-                    }) {
-                        Image(systemName: "power")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.red)
-                            .padding(6)
-                    }
-                    .buttonStyle(.bordered)
-                    .help("退出程序")
+                // Settings Button
+                Button(action: {
+                    onOpenSettings()
+                }) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(6)
+                }
+                .buttonStyle(.bordered)
+                .help("设置")
+
+                // Quit Button
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    Image(systemName: "power")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(F50Theme.red)
+                        .padding(6)
+                }
+                .buttonStyle(.bordered)
+                .help("退出程序")
             }
         }
         .padding(16)

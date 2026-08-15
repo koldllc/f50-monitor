@@ -35,23 +35,19 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         scheduleBackgroundRefresh()
         let smsManager = smsNotificationManager
 
-        Task { @MainActor in
-            // 临时 fetcher：init 即触发一次设备取数
+        let refreshTask = Task { @MainActor in
             let fetcher = F50Fetcher()
-            // 等待取数完成（最多 20 秒）
-            for _ in 0..<40 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if !fetcher.isFetching { break }
-            }
-            // 新短信提醒（仅当未读数增加时触发本地通知）
+            await fetcher.fetchDataAsync()
+
             if fetcher.status.isOnline {
+                F50WidgetDataStore.saveStatus(fetcher.status)
                 smsManager.updateUnreadCount(fetcher.status.smsUnreadCount)
             }
             task.setTaskCompleted(success: true)
         }
 
-        // 系统到期兜底
         task.expirationHandler = {
+            refreshTask.cancel()
             task.setTaskCompleted(success: false)
         }
     }

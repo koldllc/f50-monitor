@@ -22,16 +22,16 @@ struct ComposeSMSView: View {
             HStack {
                 Button(action: onClose) {
                     Label("返回", systemImage: "chevron.left")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.blue)
+                .foregroundColor(F50Theme.blue)
                 .disabled(fetcher.isSendingSMS)
 
                 Spacer()
 
                 Text("写短信")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
 
                 Spacer()
 
@@ -47,7 +47,7 @@ struct ComposeSMSView: View {
                     .foregroundColor(.secondary)
                 TextField("例如 13800138000", text: $number)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, design: .rounded))
                     .disabled(fetcher.isSendingSMS)
             }
 
@@ -68,10 +68,10 @@ struct ComposeSMSView: View {
             if let error = fetcher.smsSendErrorMessage {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(F50Theme.orange)
                     Text(error)
                         .font(.system(size: 11))
-                        .foregroundColor(.orange)
+                        .foregroundColor(F50Theme.orange)
                 }
             }
 
@@ -94,7 +94,7 @@ struct ComposeSMSView: View {
                     .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                .tint(F50Theme.blue)
                 .disabled(!canSend)
             }
         }

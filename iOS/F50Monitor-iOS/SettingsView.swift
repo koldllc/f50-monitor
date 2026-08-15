@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var tempPassword = ""
     @State private var tempUFIToken = ""
     @State private var tempInterval: Double = 2.0
+    @State private var showSavedNotice = false
 
     private var trimmedURL: String {
         tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,6 +34,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.red)
                     }
+
                     SecureField("路由器管理密码 (80 端口)", text: $tempPassword)
                     SecureField("UFI-TOOLS 登录口令 (2333 端口)", text: $tempUFIToken)
                 }
@@ -51,20 +53,29 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button("保存") {
+                    Button {
                         fetcher.applyConfiguration(
                             baseURL: trimmedURL,
                             password: tempPassword,
                             ufiToken: tempUFIToken,
                             refreshInterval: tempInterval,
-                            displayMode: .full
+                            displayMode: fetcher.displayMode
                         )
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        withAnimation { showSavedNotice = true }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text(showSavedNotice ? "已保存 ✓" : "保存设置")
+                                .bold()
+                            Spacer()
+                        }
                     }
                     .disabled(!isURLValid)
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "1.6.0")
+                    LabeledContent("版本", value: "1.6.2")
                     Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
                 }
             }
@@ -74,6 +85,23 @@ struct SettingsView: View {
                 tempPassword = fetcher.password
                 tempUFIToken = fetcher.ufiToken
                 tempInterval = fetcher.refreshInterval
+            }
+            .overlay(alignment: .bottom) {
+                if showSavedNotice {
+                    Text("配置修改已保存")
+                        .font(.caption.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.green.opacity(0.9)))
+                        .padding(.bottom, 20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showSavedNotice = false }
+                            }
+                        }
+                }
             }
         }
     }

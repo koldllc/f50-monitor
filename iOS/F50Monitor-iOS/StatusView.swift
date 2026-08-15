@@ -10,7 +10,7 @@ struct StatusView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 12) {
                     connectionHeader
                     if !status.isOnline {
                         errorBox
@@ -20,20 +20,30 @@ struct StatusView: View {
                     trafficCard
                     hardwareCard
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
+            .refreshable {
+                await fetcher.fetchDataAsync()
+            }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("F50 Monitor")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 14) {
                         Link(destination: URL(string: fetcher.baseURLString) ?? URL(string: "http://192.168.0.1:2333")!) {
                             Image(systemName: "safari")
+                                .font(.body)
+                                .foregroundColor(F50Theme.blue)
                         }
                         .help("打开 Web 后台")
+
                         Button {
                             fetcher.fetchData()
                         } label: {
                             Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                                .foregroundColor(F50Theme.blue)
                         }
                     }
                 }
@@ -45,104 +55,135 @@ struct StatusView: View {
 
     private var connectionHeader: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(status.isOnline ? "在线" : "未在线")
-                    .font(.title3.bold())
-                    .foregroundColor(status.isOnline ? .green : .red)
-                Text("最后更新 \(status.lastUpdated.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(status.isOnline ? F50Theme.green : F50Theme.red)
+                    .frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.isOnline ? "设备已连接" : "设备未在线")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(status.isOnline ? F50Theme.green : F50Theme.red)
+                    Text("更新于 \(status.lastUpdated.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
-            Button("刷新") { fetcher.fetchData() }
-                .buttonStyle(.borderedProminent)
+            Button {
+                fetcher.fetchData()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2.bold())
+                    Text("刷新")
+                        .font(.caption.weight(.medium))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .foregroundColor(.primary)
+            }
+            .buttonStyle(.plain)
         }
-        .padding()
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
     }
 
     private var errorBox: some View {
-        VStack(spacing: 6) {
-            Label(status.errorMessage ?? "无法连接到 F50 后台", systemImage: "exclamationmark.triangle.fill")
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
                 .font(.footnote)
-                .foregroundColor(.orange)
-            Text("请在设置中检查后台地址与口令，并确认手机已连接 F50 的 WiFi")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundColor(F50Theme.orange)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(status.errorMessage ?? "无法连接到 F50 后台")
+                    .font(.footnote.weight(.medium))
+                    .foregroundColor(.primary)
+                Text("请在设置中检查后台地址与口令，并确认手机已连接 F50 WiFi")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
         }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.12)))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(F50Theme.orange.opacity(0.1)))
     }
 
     // MARK: - 信号卡片
 
     private var signalCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            cardTitle("蜂窝信号", icon: "cellularbars", color: .blue)
+        VStack(alignment: .leading, spacing: 12) {
+            cardHeader("蜂窝信号", icon: "cellularbars", color: F50Theme.blue)
 
-            HStack {
-                HStack(spacing: 6) {
-                    if let assetName = carrierLogoAssetName {
-                        Image(assetName)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 22, height: 22)
-                    } else {
-                        Image(systemName: "simcard.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(status.networkType)
-                            .font(.headline)
-                        Text(status.carrier)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    if !status.currentBands.isEmpty {
-                        Text(status.currentBands)
-                            .font(.caption.monospaced())
-                            .foregroundColor(.purple)
-                    }
+            HStack(spacing: 8) {
+                if let assetName = carrierLogoAssetName {
+                    Image(assetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: "simcard.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(F50Theme.gray)
                 }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(status.networkType)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                        if !status.currentBands.isEmpty {
+                            Text(status.currentBands)
+                                .font(.caption2.bold().monospaced())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
+                                .foregroundColor(F50Theme.purple)
+                        }
+                    }
+                    Text(status.carrier)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Spacer()
                 signalBars
             }
 
+            // 信号指标：RSRP / SINR / RSRQ
             HStack(spacing: 8) {
                 signalMetric("RSRP", value: status.rsrp, quality: status.rsrpQuality)
                 signalMetric("SINR", value: status.snr, quality: status.snrQuality)
                 signalMetric("RSRQ", value: status.rsrq, quality: status.rsrqQuality)
             }
 
-            // 签约状态（QCI & 上下行签约速率）
+            // 签约状态（QCI & 上下行速率）
             HStack {
                 Text("签约状态")
-                    .font(.caption)
+                    .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
                 Spacer()
                 Text(subscriptionText)
-                    .font(.caption.bold().monospaced())
+                    .font(.caption.weight(.medium).monospacedDigit())
                     .foregroundColor(subscriptionText == "无数据" ? .secondary : .primary)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.blue.opacity(0.06)))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
         }
-        .cardStyle()
+        .cardContainer()
     }
 
     private var signalBars: some View {
         HStack(alignment: .bottom, spacing: 3) {
             ForEach(1...5, id: \.self) { bar in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(bar <= status.signalBar ? Color.green : Color.gray.opacity(0.25))
-                    .frame(width: 5, height: CGFloat(bar * 4 + 4))
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(bar <= status.signalBar ? F50Theme.green : Color.primary.opacity(0.12))
+                    .frame(width: 4.5, height: CGFloat(Double(bar) * 3.5 + 4))
             }
         }
     }
 
-    /// 运营商 logo 资源名（与 macOS 版匹配逻辑一致）
     private var carrierLogoAssetName: String? {
         let carrier = status.carrier.lowercased()
         if carrier.contains("移动") || carrier.contains("mobile") {
@@ -160,7 +201,6 @@ struct StatusView: View {
         return nil
     }
 
-    /// 签约状态（QCI & 上下行签约速率），与 macOS 面板一致
     private var subscriptionText: String {
         let qciVal = status.qci.trimmingCharacters(in: .whitespaces)
         let dlVal = status.qosDl.trimmingCharacters(in: .whitespaces)
@@ -172,173 +212,205 @@ struct StatusView: View {
 
         var parts: [String] = []
         parts.append(qciVal.isEmpty ? "QCI：-" : "QCI：\(qciVal)")
-        if !dlVal.isEmpty {
-            parts.append("⬇️ \(dlVal)")
-        }
-        if !ulVal.isEmpty {
-            parts.append("⬆️ \(ulVal)")
-        }
+        if !dlVal.isEmpty { parts.append("⬇ \(dlVal)") }
+        if !ulVal.isEmpty { parts.append("⬆ \(ulVal)") }
         return parts.joined(separator: "  ")
     }
 
     private func signalMetric(_ title: String, value: String, quality: (label: String, color: Color, ratio: Double)) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             Text(title)
-                .font(.caption)
+                .font(.caption2.weight(.medium))
                 .foregroundColor(.secondary)
             Text(value)
-                .font(.subheadline.bold().monospaced())
+                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                .lineLimit(1)
             ProgressView(value: quality.ratio)
                 .tint(quality.color)
+                .frame(height: 3)
             Text(quality.label)
-                .font(.caption2.bold())
+                .font(.caption2.weight(.medium))
                 .foregroundColor(quality.color)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemBackground)))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
     // MARK: - 速度卡片
 
     private var speedCard: some View {
-        HStack(spacing: 12) {
-            speedColumn("下载", speed: status.dlSpeed, color: .green, icon: "arrow.down.circle.fill")
-            speedColumn("上传", speed: status.ulSpeed, color: .blue, icon: "arrow.up.circle.fill")
+        HStack(spacing: 10) {
+            speedColumn("下载速率", speed: status.dlSpeed, color: F50Theme.green, icon: "arrow.down.circle.fill")
+            speedColumn("上传速率", speed: status.ulSpeed, color: F50Theme.blue, icon: "arrow.up.circle.fill")
         }
-        .cardStyle()
+        .cardContainer()
     }
 
     private func speedColumn(_ title: String, speed: Double, color: Color, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundColor(color)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
             Text(F50Status.formatSpeed(speed))
-                .font(.title3.bold().monospaced())
+                .font(.system(size: 20, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.08)))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
     // MARK: - 流量卡片
 
     private var trafficCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            cardTitle("套餐流量", icon: "chart.bar.fill", color: .cyan)
-
-            let packageUsed = status.packageTotal > 0 ? status.packageTotal : status.monthlyTotal
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("已用 \(F50Status.formatBytes(packageUsed))")
-                    .font(.subheadline.bold().monospaced())
+                cardHeader("套餐流量", icon: "chart.bar.fill", color: F50Theme.cyan)
                 Spacer()
-                if status.trafficLimit > 0 {
-                    Text("共 \(F50Status.formatBytes(status.trafficLimit))")
-                        .font(.subheadline.monospaced())
+                if let days = status.daysUntilReset {
+                    Text(days == 0 ? "今天重置" : "\(days) 天后重置")
+                        .font(.caption2.weight(.medium))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
                         .foregroundColor(.secondary)
                 }
             }
-            if status.trafficLimit > 0 {
-                ProgressView(value: status.trafficUsageRatio)
-                    .tint(status.trafficUsageColor)
-                HStack {
-                    Text(String(format: "%.1f%%", status.trafficUsageRatio * 100))
-                        .font(.caption.bold())
-                        .foregroundColor(status.trafficUsageColor)
+
+            let packageUsed = status.packageTotal > 0 ? status.packageTotal : status.monthlyTotal
+            VStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("已用 \(F50Status.formatBytes(packageUsed))")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
                     Spacer()
-                    if let days = status.daysUntilReset {
-                        Text(days == 0 ? "今天重置" : "\(days) 天后重置")
-                            .font(.caption)
+                    if status.trafficLimit > 0 {
+                        Text("总量 \(F50Status.formatBytes(status.trafficLimit))")
+                            .font(.caption.weight(.medium).monospacedDigit())
                             .foregroundColor(.secondary)
+                    }
+                }
+
+                if status.trafficLimit > 0 {
+                    ProgressView(value: status.trafficUsageRatio)
+                        .tint(status.trafficUsageColor)
+                    HStack {
+                        Text(String(format: "%.1f%% 已使用", status.trafficUsageRatio * 100))
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(status.trafficUsageColor)
+                        Spacer()
                     }
                 }
             }
 
-            Divider()
-
-            HStack {
-                usageColumn("当日流量", value: status.ufiDailyUsage > 0 ? status.ufiDailyUsage : status.dailyTotal, icon: "sun.max.fill", color: .orange)
-                Divider().frame(height: 30)
-                usageColumn("本月已用", value: status.ufiMonthlyUsage > 0 ? status.ufiMonthlyUsage : status.monthlyTotal, icon: "calendar", color: .purple)
+            // 当日流量 & 本月已用
+            HStack(spacing: 10) {
+                usageColumn("当日流量", value: status.ufiDailyUsage > 0 ? status.ufiDailyUsage : status.dailyTotal, icon: "sun.max.fill", color: F50Theme.orange)
+                usageColumn("本月已用", value: status.ufiMonthlyUsage > 0 ? status.ufiMonthlyUsage : status.monthlyTotal, icon: "calendar", color: F50Theme.purple)
             }
         }
-        .cardStyle()
+        .cardContainer()
     }
 
     private func usageColumn(_ title: String, value: UInt64, icon: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundColor(color)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
             Text(F50Status.formatBytes(value))
-                .font(.subheadline.bold().monospaced())
+                .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
     // MARK: - 硬件卡片
 
     private var hardwareCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            cardTitle("硬件状态", icon: "cpu.fill", color: .indigo)
+        VStack(alignment: .leading, spacing: 12) {
+            cardHeader("硬件状态", icon: "cpu.fill", color: F50Theme.purple)
 
-            HStack(spacing: 12) {
-                metricBar("CPU", value: status.cpuUsage, color: status.cpuColor)
-                metricBar("内存", value: status.memUsage, color: status.memColor)
-            }
-            HStack(spacing: 12) {
-                hardwareValue("芯片温度", value: status.temperature > 0 ? String(format: "%.1f℃", status.temperature) : "--", color: status.tempColor, icon: "thermometer.medium")
-                hardwareValue("连接设备", value: "\(status.connectedDevices) 台", color: .purple, icon: "laptopcomputer.and.iphone")
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    metricBar("CPU", value: status.cpuUsage, color: status.cpuColor)
+                    metricBar("内存", value: status.memUsage, color: status.memColor)
+                }
+                HStack(spacing: 10) {
+                    hardwareValue("芯片温度", value: status.temperature > 0 ? String(format: "%.1f℃", status.temperature) : "--", color: status.tempColor, icon: "thermometer.medium")
+                    hardwareValue("Wi-Fi 连接", value: "\(status.connectedDevices) 台", color: F50Theme.blue, icon: "wifi")
+                }
             }
         }
-        .cardStyle()
+        .cardContainer()
     }
 
     private func metricBar(_ title: String, value: Double, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(title)
-                    .font(.caption)
+                    .font(.caption2.weight(.medium))
                     .foregroundColor(.secondary)
                 Spacer()
                 Text(value > 0 ? String(format: "%.0f%%", value) : "--")
-                    .font(.caption.bold().monospaced())
+                    .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundColor(color)
             }
             ProgressView(value: min(100, max(0, value)), total: 100)
                 .tint(color)
         }
-        .padding(8)
+        .padding(10)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemBackground)))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
     private func hardwareValue(_ title: String, value: String, color: Color, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundColor(color)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
             Text(value)
-                .font(.subheadline.bold().monospaced())
+                .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemBackground)))
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
     }
 
-    // MARK: - 通用
+    // MARK: - 通用标题
 
-    private func cardTitle(_ title: String, icon: String, color: Color) -> some View {
-        Label(title, systemImage: icon)
-            .font(.subheadline.bold())
-            .foregroundColor(color)
+    private func cardHeader(_ title: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(color)
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondary)
+        }
     }
 }
 
 private extension View {
-    func cardStyle() -> some View {
-        self.padding()
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
+    func cardContainer() -> some View {
+        self.padding(16)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
     }
 }
+

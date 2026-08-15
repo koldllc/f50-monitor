@@ -11,7 +11,7 @@ public struct SettingsView: View {
     @State private var tempPassword: String = ""
     @State private var tempUFIToken: String = ""
     @State private var tempInterval: Double = 2.0
-    @State private var tempDisplayMode: MenuBarDisplayMode = .full
+    @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     
     init(fetcher: F50Fetcher, updateManager: UpdateManager, screenMirroringManager: ScreenMirroringManager, onClose: @escaping () -> Void) {
@@ -38,15 +38,15 @@ public struct SettingsView: View {
             HStack {
                 Button(action: onClose) {
                     Label("返回", systemImage: "chevron.left")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.blue)
+                .foregroundColor(F50Theme.blue)
 
                 Spacer()
 
                 Text("设置")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
 
                 Spacer()
 
@@ -86,7 +86,7 @@ public struct SettingsView: View {
                 } else if let errorMessage = launchAtLogin.errorMessage {
                     Text(errorMessage)
                         .font(.system(size: 10))
-                        .foregroundColor(.red)
+                        .foregroundColor(F50Theme.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -107,7 +107,7 @@ public struct SettingsView: View {
                     if !isURLValid {
                         Text("请输入包含 http:// 或 https:// 的有效地址")
                             .font(.system(size: 10))
-                            .foregroundColor(.red)
+                            .foregroundColor(F50Theme.red)
                     }
                 }
 
@@ -165,6 +165,9 @@ public struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
+                    .onChange(of: tempDisplayMode) { newMode in
+                        fetcher.displayMode = newMode
+                    }
                 }
             }
             .padding(12)
@@ -197,10 +200,10 @@ public struct SettingsView: View {
                             
                             HStack(spacing: 8) {
                                 Label("adb", systemImage: screenMirroringManager.hasAdb ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(screenMirroringManager.hasAdb ? .green : .red)
+                                    .foregroundColor(screenMirroringManager.hasAdb ? F50Theme.green : F50Theme.red)
                                     .font(.system(size: 10, weight: .semibold))
                                 Label("scrcpy", systemImage: screenMirroringManager.hasScrcpy ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(screenMirroringManager.hasScrcpy ? .green : .red)
+                                    .foregroundColor(screenMirroringManager.hasScrcpy ? F50Theme.green : F50Theme.red)
                                     .font(.system(size: 10, weight: .semibold))
                             }
                         }
@@ -209,7 +212,7 @@ public struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("未检测到投屏所需组件 (scrcpy 与 ADB)。")
                                     .font(.system(size: 10))
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(F50Theme.orange)
 
                                 Button(action: {
                                     screenMirroringManager.requestInstallDependencies()
@@ -225,7 +228,7 @@ public struct SettingsView: View {
                                     .font(.system(size: 11, weight: .medium))
                                 }
                                 .buttonStyle(.borderedProminent)
-                                .tint(.blue)
+                                .tint(F50Theme.blue)
                                 .disabled(screenMirroringManager.isDownloadingDependencies)
                             }
                         }
@@ -266,7 +269,7 @@ public struct SettingsView: View {
                             .font(.system(size: 11, weight: .semibold))
                         Text(updateManager.statusText)
                             .font(.system(size: 10))
-                            .foregroundColor(updateManager.availableVersion == nil ? .secondary : .green)
+                            .foregroundColor(updateManager.availableVersion == nil ? .secondary : F50Theme.green)
                     }
 
                     Spacer()
@@ -276,6 +279,7 @@ public struct SettingsView: View {
                             updateManager.installAvailableUpdate()
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(F50Theme.green)
                     } else {
                         Button("检查更新") {
                             updateManager.checkForUpdates(installAutomatically: false)
@@ -303,8 +307,7 @@ public struct SettingsView: View {
                     tempPassword = F50Configuration.defaultCredential
                     tempUFIToken = F50Configuration.defaultCredential
                     tempInterval = F50Configuration.defaultRefreshInterval
-                    tempDisplayMode = .full
-                    // 不重置投屏开关：避免意外重新启用用户已关闭的功能
+                    tempDisplayMode = .speeds
                 }
                 .buttonStyle(.bordered)
 
@@ -321,7 +324,7 @@ public struct SettingsView: View {
                     onClose()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                .tint(F50Theme.blue)
                 .disabled(!isURLValid)
             }
         }

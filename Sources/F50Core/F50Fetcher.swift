@@ -138,7 +138,7 @@ public class F50Fetcher: ObservableObject {
            let mode = try? JSONDecoder().decode(MenuBarDisplayMode.self, from: modeData) {
             self.displayMode = mode
         } else {
-            self.displayMode = .full
+            self.displayMode = .speeds
         }
 
         updateEffectiveTrafficResetDay()
@@ -218,6 +218,24 @@ public class F50Fetcher: ObservableObject {
                 refreshTraffic: shouldRefreshTraffic,
                 allowsUFIFallback: true
             )
+        }
+    }
+
+    public func fetchDataAsync() async {
+        fetchData()
+        guard isFetching else { return }
+        for _ in 0..<40 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if !isFetching { break }
+        }
+    }
+
+    public func fetchSMSMessagesAsync() async {
+        fetchSMSMessages()
+        guard isFetchingSMS else { return }
+        for _ in 0..<50 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if !isFetchingSMS { break }
         }
     }
 

@@ -28,28 +28,28 @@ struct SMSListView: View {
             HStack {
                 Button(action: onClose) {
                     Label("返回", systemImage: "chevron.left")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.blue)
+                .foregroundColor(F50Theme.blue)
 
                 Spacer()
 
                 Text("短信")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
 
                 Spacer()
 
                 Button(action: { isComposing = true }) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .help("写短信")
 
                 Button(action: { fetcher.fetchSMSMessages() }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .disabled(fetcher.isFetchingSMS)
@@ -70,7 +70,7 @@ struct SMSListView: View {
                 } else if let error = fetcher.smsErrorMessage, fetcher.smsMessages.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(F50Theme.orange)
                         Text(error)
                             .font(.system(size: 11))
                             .multilineTextAlignment(.center)
@@ -106,21 +106,24 @@ struct SMSListView: View {
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(message.didFailToSend ? .red : (message.isOutgoing ? .blue : .green))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : F50Theme.green))
                 Text(message.number.isEmpty ? "未知号码" : message.number)
-                    .font(.system(size: 12, weight: message.isUnread ? .bold : .semibold))
+                    .font(.system(size: 12, weight: message.isUnread ? .bold : .semibold, design: .rounded))
                 if message.isUnread {
                     Text("未读")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.blue)
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(F50Theme.blue.opacity(0.15)))
+                        .foregroundColor(F50Theme.blue)
                 }
                 Spacer()
                 Text(message.dateText)
-                    .font(.system(size: 9))
+                    .font(.system(size: 9, design: .rounded).monospacedDigit())
                     .foregroundColor(.secondary)
             }
 
@@ -128,12 +131,47 @@ struct SMSListView: View {
                 .font(.system(size: 12))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let code = extractVerificationCode(from: message.content) {
+                Button(action: {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(code, forType: .string)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(.system(size: 10))
+                        Text("复制验证码: \(code)")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                    }
+                    .foregroundColor(F50Theme.blue)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(F50Theme.blue.opacity(0.10)))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(message.isUnread ? Color.blue.opacity(0.10) : Color.primary.opacity(0.04))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(message.isUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04))
         )
+    }
+
+    private func extractVerificationCode(from text: String) -> String? {
+        let pattern = #"(?<!\d)(\d{4,6})(?!\d)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        for match in matches {
+            let matchedString = nsText.substring(with: match.range)
+            if matchedString.count >= 4 && matchedString.count <= 6 {
+                return matchedString
+            }
+        }
+        return nil
     }
 }
