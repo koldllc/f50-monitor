@@ -650,7 +650,11 @@ public class F50Fetcher: ObservableObject {
         generation: UInt,
         completion: @escaping ([String: Any]?) -> Void
     ) {
-        let commands = "network_type,network_provider,signalbar,network_signalbar,nr_rsrp,nr_rsrq,Nr_snr,Z5g_rsrp,Z5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date"
+        // 注意：F50 固件会把“显式请求的 nr_rsrp/nr_rsrq/Nr_snr/nr_snr”对应的
+        // network_information dump 字段清零（返回空串）。因此这里绝不显式请求这
+        // 四个命令，信号值统一由 network_information 的 dump（nr_rsrp/nr_rsrq/Nr_snr）
+        // 提供，Z5g_rsrp 作为独立数据源保留作 RSRP 兑底。
+        let commands = "network_type,network_provider,signalbar,network_signalbar,network_information,Z5g_rsrp,Z5g_rsrq,Z5g_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date"
         // 注意：minikano goform 要求 cmd 参数放在第一位，否则最后一个字段名会被拼坏
         guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=\(commands)&is_all=true") else {
             completion(nil)
@@ -707,7 +711,10 @@ public class F50Fetcher: ObservableObject {
         isRetryAfterLogin: Bool = false,
         allowsUFIFallback: Bool
     ) {
-        let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,nr_rsrp,nr_rsrq,Nr_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
+        // 信号指标（nr_rsrp/nr_rsrq/Nr_snr）由 network_information 的 dump 提供：
+        // F50 固件若在列表中显式请求这四个命令，会把 dump 对应字段清零（返回空串），
+        // 所以这里不显式请求它们，只保留独立数据源 Z5g_rsrp 与其它兑底字段。
+        let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,Z5g_snr,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
         let trafficCommands = "realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,day_rx_bytes,day_tx_bytes,total_rx_bytes,total_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_limit_switch,data_volume_clear_date,monthly_clear_date,clear_date,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,traffic_clear_date"
         let cmdList = refreshTraffic ? "\(statusCommands),\(trafficCommands)" : statusCommands
 
@@ -1505,13 +1512,19 @@ public class F50Fetcher: ObservableObject {
             }
         }
 
-        // Fallback for network type
-        if parsedType.isEmpty || parsedType == "0" {
-            if let rsrpVal = dict["nr_rsrp"] ?? dict["Z5g_rsrp"] ?? dict["5g_rsrp"], parseDouble(rsrpVal) != 0 {
+        // Fallback / refinement for network type
+        // F50 的显式 network_type 只返回泛化的 "5G"（不区分 SA/NSA），
+        // 用信号指标进一步区分：仅 NR 有值=SA，NR+LTE 都有=NSA
+        if parsedType.isEmpty || parsedType == "0" || parsedType == "5G" {
+            let hasNR = F50ResponseParser.firstValidSignalValue(in: dict, keys: ["nr_rsrp", "Z5g_rsrp", "5g_rsrp"]) != nil
+            let hasLTE = F50ResponseParser.firstValidSignalValue(in: dict, keys: ["lte_rsrp"]) != nil
+            if hasNR && !hasLTE {
                 parsedType = "5G SA"
-            } else if let lteVal = dict["lte_rsrp"], parseDouble(lteVal) != 0 {
+            } else if hasNR && hasLTE {
+                parsedType = "5G NSA"
+            } else if hasLTE {
                 parsedType = "4G LTE"
-            } else {
+            } else if parsedType.isEmpty || parsedType == "0" {
                 parsedType = "5G"
             }
         }
@@ -1520,17 +1533,20 @@ public class F50Fetcher: ObservableObject {
         newStatus.currentBands = currentBands.isEmpty ? status.currentBands : currentBands
 
         // 3 Signal Metrics: RSRP, RSRQ, SINR/SNR
-        if let val = dict["nr_rsrp"] ?? dict["Z5g_rsrp"] ?? dict["5g_rsrp"] ?? dict["lte_rsrp"] {
-            let num = parseDouble(val)
-            if num != 0 { newStatus.rsrp = "\(Int(num)) dBm" }
+        // firstValidSignalValue 会跳过 null/"0"/无效值继续尝试下一个候选键，
+        // 避免设备把不适用的字段置 null 时真实值被短路掉（表现为三项全部 N/A）
+        let rsrpKeys = ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp", "Nr_signal_strength"]
+        let rsrqKeys = ["nr_rsrq", "Z5g_rsrq", "5g_rsrq", "lte_rsrq"]
+        let snrKeys = ["Nr_snr", "nr_snr", "Z5g_snr", "5g_snr", "lte_snr", "sinr", "nr_sinr", "5g_sinr", "lte_sinr"]
+
+        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: rsrpKeys) {
+            newStatus.rsrp = "\(Int(num)) dBm"
         }
-        if let val = dict["nr_rsrq"] ?? dict["Z5g_rsrq"] ?? dict["5g_rsrq"] ?? dict["lte_rsrq"] {
-            let num = parseDouble(val)
-            if num != 0 { newStatus.rsrq = "\(Int(num)) dB" }
+        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: rsrqKeys) {
+            newStatus.rsrq = "\(Int(num)) dB"
         }
-        if let val = dict["Nr_snr"] ?? dict["5g_snr"] ?? dict["lte_snr"] {
-            let num = parseDouble(val)
-            if num != 0 { newStatus.snr = "\(Int(num)) dB" }
+        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: snrKeys) {
+            newStatus.snr = "\(Int(num)) dB"
         }
 
         // QCI if returned by network
@@ -1683,22 +1699,6 @@ public class F50Fetcher: ObservableObject {
     /// UFI-TOOLS 设备的签名算法（设备端协议固定）：
     /// HMAC-MD5 后对前/后半段分别做 SHA-256，拼接后再 SHA-256，输出小写 hex。
     private func calcKanoSign(key: String, data: String) -> String {
-        let keyData = Data(key.utf8)
-        let msgData = Data(data.utf8)
-        let hmac = HMAC<Insecure.MD5>.authenticationCode(for: msgData, using: SymmetricKey(data: keyData))
-        let hmacData = Data(hmac)
-        let half = hmacData.count / 2
-        let part1 = hmacData.subdata(in: 0..<half)
-        let part2 = hmacData.subdata(in: half..<hmacData.count)
-
-        let sha1 = SHA256.hash(data: part1)
-        let sha2 = SHA256.hash(data: part2)
-
-        var combined = Data()
-        combined.append(contentsOf: sha1)
-        combined.append(contentsOf: sha2)
-
-        let finalHash = SHA256.hash(data: combined)
-        return finalHash.compactMap { String(format: "%02x", $0) }.joined()
+        F50ResponseParser.kanoSign(key: key, data: data)
     }
 }

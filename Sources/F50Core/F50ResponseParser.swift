@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct ParsedQos: Equatable {
     let qci: String
@@ -180,6 +181,23 @@ enum F50ResponseParser {
         return parseInt(value)
     }
 
+    /// UFI-TOOLS 设备的请求签名（设备端协议固定，已用真实设备抓包验证）：
+    /// HMAC-MD5(data) 拆前后两半，各自对【原始字节】做 SHA-256，拼接后再 SHA-256，
+    /// 输出小写 hex。注意：是对原始字节做哈希，不是对 hex 文本。
+    static func kanoSign(key: String, data: String) -> String {
+        let keyData = Data(key.utf8)
+        let msgData = Data(data.utf8)
+        let hmac = HMAC<Insecure.MD5>.authenticationCode(for: msgData, using: SymmetricKey(data: keyData))
+        let hmacData = Data(hmac)
+        let half = hmacData.count / 2
+        let sha1 = SHA256.hash(data: hmacData.subdata(in: 0..<half))
+        let sha2 = SHA256.hash(data: hmacData.subdata(in: half..<hmacData.count))
+        var combined = Data()
+        combined.append(contentsOf: sha1)
+        combined.append(contentsOf: sha2)
+        return SHA256.hash(data: combined).compactMap { String(format: "%02x", $0) }.joined()
+    }
+
     static func parseInt(_ value: Any) -> Int {
         if let number = value as? Int { return number }
         if let number = value as? NSNumber { return number.intValue }
@@ -198,12 +216,32 @@ enum F50ResponseParser {
         if let number = value as? Double { return number }
         if let number = value as? Int { return Double(number) }
         if let string = value as? String {
+            // 先剥 "dBm" 再剥 "dB"，避免把 "dBm" 拆成 "m"
             let clean = string.replacingOccurrences(of: "℃", with: "")
                 .replacingOccurrences(of: "%", with: "")
+                .replacingOccurrences(of: "dBm", with: "")
+                .replacingOccurrences(of: "dB", with: "")
                 .trimmingCharacters(in: .whitespaces)
             return Double(clean) ?? 0
         }
         return 0
+    }
+
+    /// 信号指标取值：从候选键中依次取第一个可解析为“非零数值”的值。
+    /// - 大小写不敏感（部分固件返回 Nr_snr / nr_snr、5g_rsrp / 5G_rsrp 等变体）
+    /// - 跳过 null / "0" / 无效值：设备在 NSA/4G 等状态下会把不适用的字段置为
+    ///   null 或 0，若用 `??` 链会因首键命中无效值而短路，真实值永远读不到。
+    static func firstValidSignalValue(in dict: [String: Any], keys: [String]) -> Double? {
+        var lowercased: [String: Any] = [:]
+        for (key, value) in dict {
+            lowercased[key.lowercased()] = value
+        }
+        for key in keys {
+            guard let value = lowercased[key.lowercased()] else { continue }
+            let num = parseDouble(value)
+            if num != 0 { return num }
+        }
+        return nil
     }
 
     static func parseUInt64(_ value: Any) -> UInt64 {
@@ -322,7 +360,8 @@ enum F50ResponseParser {
         )
         let nrBand = firstBand(
             in: payload,
-            keys: ["nr5g_action_band", "nr5g_action_nsa_band", "ZCELLINFO_band", "Z5g_CELLINFO_band", "nr_ca_pcell_band"],
+            // Nr_bands 来自 network_information dump（F50 不返回 nr5g_action_band 等字段）
+            keys: ["nr5g_action_band", "nr5g_action_nsa_band", "ZCELLINFO_band", "Z5g_CELLINFO_band", "nr_ca_pcell_band", "Nr_bands"],
             prefix: "n"
         )
 

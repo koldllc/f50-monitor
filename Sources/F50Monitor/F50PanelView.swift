@@ -368,22 +368,8 @@ public struct F50PanelView: View {
 
                     Spacer()
 
-                    if fetcher.status.trafficLimit > 0 {
-                        HStack(spacing: 6) {
-                            Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
-                                .foregroundColor(fetcher.status.trafficUsageColor)
-
-                            if let days = fetcher.status.daysUntilReset {
-                                Text(days == 0 ? "今天重置" : "\(days)天后重置")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    } else {
+                    // 百分比与重置天数已移至进度条下方（trafficLimit > 0 时）
+                    if fetcher.status.trafficLimit <= 0 {
                         HStack(spacing: 6) {
                             // 套餐已用优先取 Router 账单周期值（packageTotal），无则回退 UFI 月度值
                             let packageUsed = fetcher.status.packageTotal > 0
@@ -402,19 +388,37 @@ public struct F50PanelView: View {
                 }
 
                 if fetcher.status.trafficLimit > 0 {
-                    HStack {
-                        let packageUsed = fetcher.status.packageTotal > 0
-                            ? fetcher.status.packageTotal
-                            : fetcher.status.monthlyTotal
-                        Text("已用流量：\(F50Status.formatBytes(packageUsed))")
-                        Spacer()
-                        Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
-                    }
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    VStack(spacing: 4) {
+                        HStack {
+                            let packageUsed = fetcher.status.packageTotal > 0
+                                ? fetcher.status.packageTotal
+                                : fetcher.status.monthlyTotal
+                            Text("已用流量：\(F50Status.formatBytes(packageUsed))")
+                            Spacer()
+                            Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
+                        }
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
 
-                    ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
-                        .tint(fetcher.status.trafficUsageColor)
-                        .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                        ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
+                            .tint(fetcher.status.trafficUsageColor)
+                            .scaleEffect(x: 1, y: 0.8, anchor: .center)
+
+                        // 进度条下方一行：左侧套餐已用比例，右侧重置天数提醒
+                        HStack(spacing: 6) {
+                            Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
+                                .foregroundColor(fetcher.status.trafficUsageColor)
+                            Spacer()
+                            if let days = fetcher.status.daysUntilReset {
+                                Text(days == 0 ? "今天重置" : "\(days)天后重置")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                 }
 
                 Divider()

@@ -94,7 +94,7 @@
 		CACBC8FF3BE2D3C40D80CF3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50iOSApp.swift; sourceTree = "<group>"; };
 		D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSNotificationManager.swift; sourceTree = "<group>"; };
-		D4804E8A708915BF7370847E /* F50MonitorWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = F50MonitorWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4804E8A708915BF7370847E /* F50MonitorWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = F50MonitorWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E88757B1003B6203002724A0 /* F50MonitorWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50MonitorWidget.swift; sourceTree = "<group>"; };
 		ECE426A585E5ACC39D46A60F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50WidgetDataStore.swift; sourceTree = "<group>"; };
@@ -370,6 +370,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = F50MonitorWidget/F50MonitorWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VFB889K3T3;
 				INFOPLIST_FILE = F50MonitorWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -494,6 +495,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = F50MonitorWidget/F50MonitorWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = VFB889K3T3;
 				INFOPLIST_FILE = F50MonitorWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

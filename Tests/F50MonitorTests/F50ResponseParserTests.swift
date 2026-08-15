@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import F50Core
 
 final class F50ResponseParserTests: XCTestCase {
@@ -30,6 +31,150 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50ResponseParser.parseUInt64(NSNumber(value: 9876543210 as UInt64)), 9876543210)
         XCTAssertEqual(F50ResponseParser.parseUInt64("0x1000"), 4096)
         XCTAssertEqual(F50ResponseParser.parseUInt64(123.456), 123)
+    }
+
+    // MARK: - UFI-TOOLS 签名（用真实设备抓包验证过的向量，防止回归）
+
+    func testKanoSignMatchesRealDeviceCapturedVector() {
+        let key = F50Configuration.kanoSignKey
+        // 真实抓包对：ts=1786770481007 的 goform 请求
+        let msg = "minikanoGET/api/goform/goform_get_cmd_process1786770481007"
+        XCTAssertEqual(
+            F50ResponseParser.kanoSign(key: key, data: msg),
+            "094188691724eb9bb7f31b50ae583584dccbf683262d8714a0b00d5c959fee21"
+        )
+        // 另一组抓包对：ts=1786770524826
+        let msg2 = "minikanoGET/api/goform/goform_get_cmd_process1786770524826"
+        XCTAssertEqual(
+            F50ResponseParser.kanoSign(key: key, data: msg2),
+            "b32d5a4da345cf392e97dbedc5dd861eed9f2621228c402ffca53898deaf8f0c"
+        )
+    }
+
+    func testKanoSignHashesRawBytesNotHexText() {
+        // 关键陷阱：若误对 HMAC 结果的 hex 文本做 SHA256，会得到不同的签名。
+        // 真实设备要求对原始字节做哈希。
+        let key = F50Configuration.kanoSignKey
+        let msg = "minikanoGET/api/goform/goform_get_cmd_process1786770481007"
+        let correct = F50ResponseParser.kanoSign(key: key, data: msg)
+        XCTAssertEqual(correct, "094188691724eb9bb7f31b50ae583584dccbf683262d8714a0b00d5c959fee21")
+
+        // 错误实现（对 hex 文本）产生的签名必须与正确实现不同
+        var hmac = HMAC<Insecure.MD5>.authenticationCode(
+            for: Data(msg.utf8),
+            using: SymmetricKey(data: Data(key.utf8))
+        )
+        let hmacData = Data(hmac)
+        let half = hmacData.count / 2
+        func hexString(_ data: Data) -> String {
+            data.map { String(format: "%02x", $0) }.joined()
+        }
+        let s1 = SHA256.hash(data: Data(hexString(hmacData.subdata(in: 0..<half)).utf8))
+        let s2 = SHA256.hash(data: Data(hexString(hmacData.subdata(in: half..<hmacData.count)).utf8))
+        var combined = Data()
+        combined.append(contentsOf: s1)
+        combined.append(contentsOf: s2)
+        let wrong = SHA256.hash(data: combined).map { String(format: "%02x", $0) }.joined()
+        XCTAssertNotEqual(wrong, correct, "对 hex 文本做哈希的实现不应通过")
+    }
+
+    func testSha256OfAdminIsLowercaseUFIToken() {
+        // UFI authorization 头 = SHA256(口令) 小写 hex
+        let digest = SHA256.hash(data: Data("admin".utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hex, "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918")
+    }
+
+    func testParseDoubleStripsSignalUnits() {
+        XCTAssertEqual(F50ResponseParser.parseDouble("-85 dBm"), -85)
+        XCTAssertEqual(F50ResponseParser.parseDouble("-8 dB"), -8)
+        XCTAssertEqual(F50ResponseParser.parseDouble("14.5 dB"), 14.5)
+        XCTAssertEqual(F50ResponseParser.parseDouble(NSNull()), 0)
+    }
+
+    func testFirstValidSignalValueSkipsNullAndZeroPlaceholdersInLeadingKeys() {
+        // 设备在 NSA/4G 等状态下会把不适用的 nr_* 字段置为 null 或 "0"，
+        // 真实值在 Z5g_* / 5g_* / lte_* 中 —— 不能被前置的无效值短路掉
+        let dict: [String: Any] = [
+            "nr_rsrp": NSNull(),
+            "Z5g_rsrp": "-85",
+            "nr_rsrq": "0",
+            "5g_rsrq": "-9",
+            "Nr_snr": NSNull(),
+            "lte_snr": "12"
+        ]
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp"]
+            ), -85
+        )
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["nr_rsrq", "Z5g_rsrq", "5g_rsrq", "lte_rsrq"]
+            ), -9
+        )
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["Nr_snr", "nr_snr", "Z5g_snr", "5g_snr", "lte_snr"]
+            ), 12
+        )
+        XCTAssertNil(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["Nr_snr", "5g_snr"]
+            )
+        )
+    }
+
+    func testFirstValidSignalValueIsCaseInsensitive() {
+        // 部分固件返回 5G_rsrp / nr_snr 等大小写变体
+        let dict: [String: Any] = [
+            "5G_rsrp": "-90",
+            "nr_snr": "14",
+            "LTE_SNR": "8"
+        ]
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp"]
+            ), -90
+        )
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(in: dict, keys: ["Nr_snr", "5g_snr", "lte_snr"]),
+            14
+        )
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(in: dict, keys: ["lte_snr"]),
+            8
+        )
+    }
+
+    func testFirstValidSignalValueParsesValuesWithUnits() {
+        let dict: [String: Any] = [
+            "nr_rsrp": "-85 dBm",
+            "nr_rsrq": "-8 dB",
+            "Nr_snr": "14 dB"
+        ]
+        XCTAssertEqual(F50ResponseParser.firstValidSignalValue(in: dict, keys: ["nr_rsrp"]), -85)
+        XCTAssertEqual(F50ResponseParser.firstValidSignalValue(in: dict, keys: ["nr_rsrq"]), -8)
+        XCTAssertEqual(F50ResponseParser.firstValidSignalValue(in: dict, keys: ["Nr_snr"]), 14)
+    }
+
+    func testFirstValidSignalValuePrefersNrOverLteWhenBothPresent() {
+        // SA 模式下 nr_* 优先于 lte_*（与设备实际状态一致）
+        let dict: [String: Any] = [
+            "nr_rsrp": "-82",
+            "lte_rsrp": "-100"
+        ]
+        XCTAssertEqual(
+            F50ResponseParser.firstValidSignalValue(
+                in: dict,
+                keys: ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp"]
+            ), -82
+        )
     }
 
     func testSumsCellularUsageRowsFromUFIBackend() {
@@ -239,6 +384,18 @@ final class F50ResponseParserTests: XCTestCase {
             ),
             "n78"
         )
+    }
+
+    func testParsesCurrentBandsFromNetworkInformationDump() {
+        // F50 不返回 nr5g_action_band 等字段，频段来自 network_information dump 的 Nr_bands
+        let payload: [String: Any] = [
+            "Nr_bands": 41,
+            "Nr_fcn": 504990
+        ]
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G SA"), "n41")
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "5G"), "n41")
+        // Nr_bands 不适用于 NSA/LTE 的 LTE 主载波判断
+        XCTAssertEqual(F50ResponseParser.parseCurrentBands(from: payload, networkType: "4G LTE"), "")
     }
 
     func testBaseRefreshKeepsExistingHardwareMetricsWhenPayloadHasNoValidValues() {
