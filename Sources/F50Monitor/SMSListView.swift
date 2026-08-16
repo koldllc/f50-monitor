@@ -83,7 +83,7 @@ struct SMSListView: View {
                         Image(systemName: "envelope.open")
                             .font(.system(size: 24))
                             .foregroundColor(.secondary)
-                        Text("暂无短信")
+                        Text("暂无短信记录")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }

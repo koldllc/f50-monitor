@@ -35,19 +35,19 @@ struct SettingsView: View {
                             .foregroundColor(.red)
                     }
 
-                    SecureField("路由器管理密码 (80 端口)", text: $tempPassword)
-                    SecureField("UFI-TOOLS 登录口令 (2333 端口)", text: $tempUFIToken)
+                    SecureField("路由器管理密码 (Port 80)", text: $tempPassword)
+                    SecureField("UFI-TOOLS 登录口令 (Port 2333)", text: $tempUFIToken)
                 }
 
-                Section("刷新频率") {
-                    Picker("自动刷新", selection: $tempInterval) {
-                        Text("1 秒").tag(1.0)
+                Section("刷新与节能") {
+                    Picker("自动刷新频率", selection: $tempInterval) {
+                        Text("3 秒（推荐节能）").tag(3.0)
+                        Text("5 秒（极简降温）").tag(5.0)
+                        Text("10 秒（超低负载）").tag(10.0)
                         Text("2 秒").tag(2.0)
-                        Text("3 秒（推荐）").tag(3.0)
-                        Text("5 秒").tag(5.0)
-                        Text("10 秒").tag(10.0)
+                        Text("1 秒").tag(1.0)
                     }
-                    Text("适当拉长刷新间隔可降低设备芯片占用与发热")
+                    Text("适当拉长刷新间隔可显著降低 F50 设备发热与 CPU 占用")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -75,8 +75,9 @@ struct SettingsView: View {
                 }
 
                 Section("关于") {
-                    LabeledContent("版本", value: "1.6.2")
-                    Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.6.3"
+                    LabeledContent("版本", value: version)
+                    Link("GitHub 开源项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
                 }
             }
             .navigationTitle("设置")

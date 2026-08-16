@@ -55,7 +55,6 @@ public struct F50PanelView: View {
         self.onOpenSMS = onOpenSMS
     }
 
-
     private var subscriptionText: String {
         let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
         let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
@@ -84,7 +83,6 @@ public struct F50PanelView: View {
 
     private var carrierLogoAssetName: String? {
         let carrier = fetcher.status.carrier.lowercased()
-
         if carrier.contains("移动") || carrier.contains("mobile") {
             return "ChinaMobileLogo"
         }
@@ -107,9 +105,10 @@ public struct F50PanelView: View {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
         } else {
             Image(systemName: "simcard.fill")
+                .font(.system(size: 16))
                 .foregroundColor(.secondary)
         }
     }
@@ -172,7 +171,7 @@ public struct F50PanelView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.primary)
                     }
-                    Text("请在设置中检查管理密码及 IP 地址")
+                    Text("请在设置中检查管理密码及 IP 地址，并确认已连接 F50 Wi-Fi")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -183,51 +182,50 @@ public struct F50PanelView: View {
 
             // 1. Network & 3 Signal Metrics Card
             VStack(spacing: 8) {
-                HStack {
-                    HStack(spacing: 6) {
-                        if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
-                            HStack(spacing: 4) {
-                                carrierLogoView
-                                Text(fetcher.status.carrier)
-                            }
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
+                HStack(spacing: 6) {
+                    if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
+                        HStack(spacing: 5) {
+                            carrierLogoView
+                            Text(fetcher.status.carrier)
                         }
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    }
 
-                        Text(fetcher.status.networkType)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    Text(fetcher.status.networkType)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(F50Theme.blue.opacity(0.12)))
+                        .foregroundColor(F50Theme.blue)
+
+                    if !fetcher.status.currentBands.isEmpty {
+                        Text(fetcher.status.currentBands)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(F50Theme.blue.opacity(0.12)))
-                            .foregroundColor(F50Theme.blue)
+                            .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
+                            .foregroundColor(F50Theme.purple)
+                    }
 
-                        if !fetcher.status.currentBands.isEmpty {
-                            Text(fetcher.status.currentBands)
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
-                                .foregroundColor(F50Theme.purple)
+                    // Signal Bar Indicators
+                    HStack(alignment: .bottom, spacing: 2) {
+                        ForEach(1...5, id: \.self) { bar in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(bar <= fetcher.status.signalBar ? F50Theme.green : Color.primary.opacity(0.15))
+                                .frame(width: 3, height: CGFloat(Double(bar) * 2.0 + 3))
                         }
                     }
+                    .padding(.leading, 2)
 
                     Spacer()
-
-                    // Signal Bar Indicators (Bottom-aligned)
-                    HStack(alignment: .bottom, spacing: 3) {
-                        ForEach(1...5, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(bar <= fetcher.status.signalBar ? F50Theme.green : Color.primary.opacity(0.12))
-                                .frame(width: 4, height: CGFloat(Double(bar) * 2.8 + 4))
-                        }
-                    }
                 }
                 .padding(.top, 4)
                 .padding(.horizontal, 4)
 
                 // Subscription Status / QCI Line
                 HStack(spacing: 6) {
-                    Text("签约状态:")
+                    Text("签约状态：")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
                     let subText = subscriptionText
@@ -257,7 +255,8 @@ public struct F50PanelView: View {
                         VStack(spacing: 2) {
                             ProgressView(value: q.ratio, total: 1.0)
                                 .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.7, anchor: .center)
+                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
+                                .padding(.horizontal, 6)
                             Text(q.label)
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(q.color)
@@ -280,7 +279,8 @@ public struct F50PanelView: View {
                         VStack(spacing: 2) {
                             ProgressView(value: q.ratio, total: 1.0)
                                 .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.7, anchor: .center)
+                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
+                                .padding(.horizontal, 6)
                             Text(q.label)
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(q.color)
@@ -303,7 +303,8 @@ public struct F50PanelView: View {
                         VStack(spacing: 2) {
                             ProgressView(value: q.ratio, total: 1.0)
                                 .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.7, anchor: .center)
+                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
+                                .padding(.horizontal, 6)
                             Text(q.label)
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(q.color)
@@ -370,7 +371,6 @@ public struct F50PanelView: View {
 
                     Spacer()
 
-                    // 百分比与重置天数已移至进度条下方（trafficLimit > 0 时）
                     if fetcher.status.trafficLimit <= 0 {
                         HStack(spacing: 6) {
                             let packageUsed = fetcher.status.packageTotal > 0
@@ -402,7 +402,7 @@ public struct F50PanelView: View {
 
                         ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
                             .tint(fetcher.status.trafficUsageColor)
-                            .scaleEffect(x: 1, y: 0.8, anchor: .center)
+                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
 
                         // 进度条下方一行：左侧套餐已用比例，右侧重置天数提醒
                         HStack(spacing: 6) {
@@ -484,6 +484,7 @@ public struct F50PanelView: View {
                         }
                         ProgressView(value: min(100.0, max(0.0, fetcher.status.cpuUsage)), total: 100.0)
                             .tint(fetcher.status.cpuColor)
+                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity)
@@ -502,6 +503,7 @@ public struct F50PanelView: View {
                         }
                         ProgressView(value: min(100.0, max(0.0, fetcher.status.memUsage)), total: 100.0)
                             .tint(fetcher.status.memColor)
+                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity)
@@ -574,19 +576,28 @@ public struct F50PanelView: View {
 
             // 4. Actions
             HStack(spacing: 8) {
-                // Open Web Dashboard Button (First!)
-                Button(action: {
-                    if let url = URL(string: fetcher.baseURLString) {
-                        NSWorkspace.shared.open(url)
+                // Open Web Dashboard Menu (Choose Port 80 or Port 2333)
+                Menu {
+                    Button(action: {
+                        if let url = URL(string: fetcher.ufiURLString) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Label("UFI后台（2333端口）", systemImage: "wifi.router")
                     }
-                }) {
-                    HStack(spacing: 4) {
+                    Button(action: {
+                        if let url = URL(string: fetcher.routerURLString) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Label("中兴后台（80端口）", systemImage: "network")
+                    }
+                } label: {
+                    HStack(spacing: 5) {
                         Image(systemName: "safari")
-                        Text("打开 Web 后台")
+                        Text("打开后台")
                     }
-                    .font(.system(size: 11, weight: .medium))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(F50Theme.blue)
@@ -605,10 +616,9 @@ public struct F50PanelView: View {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Image(systemName: "tv")
-                                    .font(.system(size: 11, weight: .medium))
                             }
                         }
-                        .padding(6)
+                        .frame(width: 16)
                     }
                     .buttonStyle(.bordered)
                     .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
@@ -619,7 +629,7 @@ public struct F50PanelView: View {
                 Button(action: onOpenSMS) {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: "envelope")
-                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 16)
                         if fetcher.status.smsUnreadCount > 0 {
                             Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
                                 .font(.system(size: 7, weight: .bold, design: .rounded))
@@ -627,10 +637,9 @@ public struct F50PanelView: View {
                                 .padding(.horizontal, 3)
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(F50Theme.red))
-                                .offset(x: 9, y: -7)
+                                .offset(x: 8, y: -6)
                         }
                     }
-                    .padding(6)
                 }
                 .buttonStyle(.bordered)
                 .help("读取短信")
@@ -640,8 +649,7 @@ public struct F50PanelView: View {
                     onOpenSettings()
                 }) {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(6)
+                        .frame(width: 16)
                 }
                 .buttonStyle(.bordered)
                 .help("设置")
@@ -651,13 +659,13 @@ public struct F50PanelView: View {
                     NSApplication.shared.terminate(nil)
                 }) {
                     Image(systemName: "power")
-                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(F50Theme.red)
-                        .padding(6)
+                        .frame(width: 16)
                 }
                 .buttonStyle(.bordered)
                 .help("退出程序")
             }
+            .controlSize(.large)
         }
         .padding(16)
         .frame(width: 380)
@@ -672,5 +680,3 @@ public struct F50PanelView: View {
         }
     }
 }
-
-

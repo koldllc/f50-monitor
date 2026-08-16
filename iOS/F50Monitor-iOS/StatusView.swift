@@ -1,9 +1,31 @@
 import SwiftUI
+import SafariServices
 import F50Core
+
+private struct IdentifiableURL: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let config = SFSafariViewController.Configuration()
+        config.entersReaderIfAvailable = false
+        config.barCollapsingEnabled = true
+        let vc = SFSafariViewController(url: url, configuration: config)
+        vc.dismissButtonStyle = .done
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
+}
 
 /// iOS 主状态面板：信号、速度、流量、硬件指标
 struct StatusView: View {
     @ObservedObject var fetcher: F50Fetcher
+    @State private var webURLToOpen: IdentifiableURL?
 
     private var status: F50Status { fetcher.status }
 
@@ -30,23 +52,33 @@ struct StatusView: View {
             .navigationTitle("F50 Monitor")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 14) {
-                        Link(destination: URL(string: fetcher.baseURLString) ?? URL(string: "http://192.168.0.1:2333")!) {
-                            Image(systemName: "safari")
-                                .font(.body)
-                                .foregroundColor(F50Theme.blue)
+                    Menu {
+                        Button {
+                            if let url = URL(string: fetcher.ufiURLString) {
+                                webURLToOpen = IdentifiableURL(url: url)
+                            }
+                        } label: {
+                            Label("UFI后台（2333端口）", systemImage: "wifi.router")
                         }
-                        .help("打开 Web 后台")
 
                         Button {
-                            fetcher.fetchData()
+                            if let url = URL(string: fetcher.routerURLString) {
+                                webURLToOpen = IdentifiableURL(url: url)
+                            }
                         } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundColor(F50Theme.blue)
+                            Label("中兴后台（80端口）", systemImage: "network")
                         }
+                    } label: {
+                        Image(systemName: "safari")
+                            .font(.body)
+                            .foregroundColor(F50Theme.blue)
                     }
+                    .help("打开后台")
                 }
+            }
+            .sheet(item: $webURLToOpen) { item in
+                SafariView(url: item.url)
+                    .ignoresSafeArea()
             }
         }
     }
@@ -60,7 +92,7 @@ struct StatusView: View {
                     .fill(status.isOnline ? F50Theme.green : F50Theme.red)
                     .frame(width: 8, height: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(status.isOnline ? "设备已连接" : "设备未在线")
+                    Text(status.isOnline ? "在线" : "未在线")
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(status.isOnline ? F50Theme.green : F50Theme.red)
                     Text("更新于 \(status.lastUpdated.formatted(date: .omitted, time: .shortened))")
@@ -75,7 +107,7 @@ struct StatusView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption2.bold())
-                    Text("刷新")
+                    Text("立即刷新")
                         .font(.caption.weight(.medium))
                 }
                 .padding(.horizontal, 10)
@@ -100,7 +132,7 @@ struct StatusView: View {
                 Text(status.errorMessage ?? "无法连接到 F50 后台")
                     .font(.footnote.weight(.medium))
                     .foregroundColor(.primary)
-                Text("请在设置中检查后台地址与口令，并确认手机已连接 F50 WiFi")
+                Text("请在设置中检查管理密码及 IP 地址，并确认已连接 F50 Wi-Fi")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -114,74 +146,85 @@ struct StatusView: View {
 
     private var signalCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            cardHeader("蜂窝信号", icon: "cellularbars", color: F50Theme.blue)
-
-            HStack(spacing: 8) {
-                if let assetName = carrierLogoAssetName {
-                    Image(assetName)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: "simcard.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(F50Theme.gray)
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(status.networkType)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                        if !status.currentBands.isEmpty {
-                            Text(status.currentBands)
-                                .font(.caption2.bold().monospaced())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
-                                .foregroundColor(F50Theme.purple)
-                        }
+            HStack(spacing: 6) {
+                if !status.carrier.isEmpty && status.carrier != "未知" {
+                    HStack(spacing: 5) {
+                        carrierLogoView
+                        Text(status.carrier)
                     }
-                    Text(status.carrier)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
                 }
+
+                Text(status.networkType)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(F50Theme.blue.opacity(0.12)))
+                    .foregroundColor(F50Theme.blue)
+
+                if !status.currentBands.isEmpty {
+                    Text(status.currentBands)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
+                        .foregroundColor(F50Theme.purple)
+                }
+
+                signalBars
 
                 Spacer()
-                signalBars
             }
 
             // 信号指标：RSRP / SINR / RSRQ
             HStack(spacing: 8) {
                 signalMetric("RSRP", value: status.rsrp, quality: status.rsrpQuality)
-                signalMetric("SINR", value: status.snr, quality: status.snrQuality)
+                signalMetric("SINR / SNR", value: status.snr, quality: status.snrQuality)
                 signalMetric("RSRQ", value: status.rsrq, quality: status.rsrqQuality)
             }
 
             // 签约状态（QCI & 上下行速率）
-            HStack {
-                Text("签约状态")
+            HStack(spacing: 6) {
+                Text("签约状态：")
                     .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
+                let subText = subscriptionText
+                Text(subText)
+                    .font(.caption.weight(.bold).monospaced())
+                    .foregroundColor(subText == "无数据" ? .secondary : .primary)
                 Spacer()
-                Text(subscriptionText)
-                    .font(.caption.weight(.medium).monospacedDigit())
-                    .foregroundColor(subscriptionText == "无数据" ? .secondary : .primary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(.tertiarySystemGroupedBackground)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(F50Theme.blue.opacity(0.06)))
         }
         .cardContainer()
     }
 
+    @ViewBuilder
+    private var carrierLogoView: some View {
+        if let assetName = carrierLogoAssetName {
+            Image(assetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+        } else {
+            Image(systemName: "simcard.fill")
+                .font(.system(size: 16))
+                .foregroundColor(.secondary)
+        }
+    }
+
     private var signalBars: some View {
-        HStack(alignment: .bottom, spacing: 3) {
+        HStack(alignment: .bottom, spacing: 2) {
             ForEach(1...5, id: \.self) { bar in
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(bar <= status.signalBar ? F50Theme.green : Color.primary.opacity(0.12))
-                    .frame(width: 4.5, height: CGFloat(Double(bar) * 3.5 + 4))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(bar <= status.signalBar ? F50Theme.green : Color.primary.opacity(0.15))
+                    .frame(width: 3, height: CGFloat(Double(bar) * 2.0 + 3))
             }
         }
+        .padding(.leading, 2)
     }
 
     private var carrierLogoAssetName: String? {
@@ -212,8 +255,8 @@ struct StatusView: View {
 
         var parts: [String] = []
         parts.append(qciVal.isEmpty ? "QCI：-" : "QCI：\(qciVal)")
-        if !dlVal.isEmpty { parts.append("⬇ \(dlVal)") }
-        if !ulVal.isEmpty { parts.append("⬆ \(ulVal)") }
+        if !dlVal.isEmpty { parts.append("⬇️ \(dlVal)") }
+        if !ulVal.isEmpty { parts.append("⬆️ \(ulVal)") }
         return parts.joined(separator: "  ")
     }
 
@@ -228,8 +271,9 @@ struct StatusView: View {
             ProgressView(value: quality.ratio)
                 .tint(quality.color)
                 .frame(height: 3)
+                .padding(.horizontal, 10)
             Text(quality.label)
-                .font(.caption2.weight(.medium))
+                .font(.caption2.weight(.bold))
                 .foregroundColor(quality.color)
         }
         .frame(maxWidth: .infinity)
@@ -242,8 +286,8 @@ struct StatusView: View {
 
     private var speedCard: some View {
         HStack(spacing: 10) {
-            speedColumn("下载速率", speed: status.dlSpeed, color: F50Theme.green, icon: "arrow.down.circle.fill")
-            speedColumn("上传速率", speed: status.ulSpeed, color: F50Theme.blue, icon: "arrow.up.circle.fill")
+            speedColumn("实时下载", speed: status.dlSpeed, color: F50Theme.green, icon: "arrow.down.circle.fill")
+            speedColumn("实时上传", speed: status.ulSpeed, color: F50Theme.blue, icon: "arrow.up.circle.fill")
         }
         .cardContainer()
     }
@@ -274,8 +318,8 @@ struct StatusView: View {
             HStack {
                 cardHeader("套餐流量", icon: "chart.bar.fill", color: F50Theme.cyan)
                 Spacer()
-                if let days = status.daysUntilReset {
-                    Text(days == 0 ? "今天重置" : "\(days) 天后重置")
+                if status.trafficLimit <= 0, let days = status.daysUntilReset {
+                    Text(days == 0 ? "今天重置" : "\(days)天后重置")
                         .font(.caption2.weight(.medium))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -287,11 +331,11 @@ struct StatusView: View {
             let packageUsed = status.packageTotal > 0 ? status.packageTotal : status.monthlyTotal
             VStack(spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("已用 \(F50Status.formatBytes(packageUsed))")
+                    Text("已用流量：\(F50Status.formatBytes(packageUsed))")
                         .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
                     Spacer()
                     if status.trafficLimit > 0 {
-                        Text("总量 \(F50Status.formatBytes(status.trafficLimit))")
+                        Text("总流量：\(F50Status.formatBytes(status.trafficLimit))")
                             .font(.caption.weight(.medium).monospacedDigit())
                             .foregroundColor(.secondary)
                     }
@@ -301,10 +345,18 @@ struct StatusView: View {
                     ProgressView(value: status.trafficUsageRatio)
                         .tint(status.trafficUsageColor)
                     HStack {
-                        Text(String(format: "%.1f%% 已使用", status.trafficUsageRatio * 100))
-                            .font(.caption2.weight(.medium))
+                        Text(String(format: "%.0f%%", status.trafficUsageRatio * 100))
+                            .font(.caption2.weight(.bold).monospacedDigit())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(status.trafficUsageColor.opacity(0.15)))
                             .foregroundColor(status.trafficUsageColor)
                         Spacer()
+                        if let days = status.daysUntilReset {
+                            Text(days == 0 ? "今天重置" : "\(days)天后重置")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
@@ -344,12 +396,12 @@ struct StatusView: View {
 
             VStack(spacing: 10) {
                 HStack(spacing: 10) {
-                    metricBar("CPU", value: status.cpuUsage, color: status.cpuColor)
-                    metricBar("内存", value: status.memUsage, color: status.memColor)
+                    metricBar("CPU 占用率", value: status.cpuUsage, color: status.cpuColor)
+                    metricBar("内存 占用率", value: status.memUsage, color: status.memColor)
                 }
                 HStack(spacing: 10) {
-                    hardwareValue("芯片温度", value: status.temperature > 0 ? String(format: "%.1f℃", status.temperature) : "--", color: status.tempColor, icon: "thermometer.medium")
-                    hardwareValue("Wi-Fi 连接", value: "\(status.connectedDevices) 台", color: F50Theme.blue, icon: "wifi")
+                    hardwareValue("芯片温度", value: status.temperature > 0 ? String(format: "%.1f ℃", status.temperature) : "-- ℃", color: status.tempColor, icon: "thermometer.medium")
+                    hardwareValue("Wi-Fi 连接设备", value: "\(status.connectedDevices) 台", color: F50Theme.purple, icon: "wifi")
                 }
             }
         }
@@ -413,4 +465,3 @@ private extension View {
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
     }
 }
-

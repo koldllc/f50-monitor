@@ -19,6 +19,29 @@ public class F50Fetcher: ObservableObject {
             }
         }
     }
+
+    /// 路由器后台地址（Port 80，例如 http://192.168.0.1）
+    public var routerURLString: String {
+        let clean = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let withScheme = clean.contains("://") ? clean : "http://" + clean
+        if let url = URL(string: withScheme), let host = url.host {
+            let scheme = url.scheme ?? "http"
+            return "\(scheme)://\(host)"
+        }
+        return "http://192.168.0.1"
+    }
+
+    /// 随身 WiFi 后台地址（Port 2333，例如 http://192.168.0.1:2333）
+    public var ufiURLString: String {
+        let clean = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let withScheme = clean.contains("://") ? clean : "http://" + clean
+        if let url = URL(string: withScheme), let host = url.host {
+            let scheme = url.scheme ?? "http"
+            return "\(scheme)://\(host):2333"
+        }
+        return "http://192.168.0.1:2333"
+    }
+
     @Published public var password: String {
         didSet {
             if password != oldValue {
