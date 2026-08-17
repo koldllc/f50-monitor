@@ -54,6 +54,7 @@ targets:
         MARKETING_VERSION: 1.6.3
         DEVELOPMENT_TEAM: VFB889K3T3
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
         # 真机运行需在 Xcode 的 Signing & Capabilities 中选择你的 Apple ID 团队
         # （免费账号即可：设置 → 登录 Apple ID → 选 Team → 运行）
@@ -84,6 +85,7 @@ targets:
         SKIP_INSTALL: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
+        OTHER_SWIFT_FLAGS: $(inherited) -parse-as-library
 
 schemes:
   F50Monitor-iOS:

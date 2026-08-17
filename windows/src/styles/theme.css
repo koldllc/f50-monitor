@@ -1,0 +1,254 @@
+:root {
+  --color-green: #2EAE73;
+  --color-blue: #3880EB;
+  --color-orange: #F09433;
+  --color-red: #E05252;
+  --color-purple: #8A75D6;
+  --color-cyan: #33A8B2;
+  --color-gray: #8C949E;
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+
+  /* Dark Theme Default */
+  --bg-panel: #141A22;
+  --bg-card: #1D252F;
+  --bg-card-subtle: #242D39;
+  --bg-control: rgba(255, 255, 255, 0.08);
+  --bg-control-hover: rgba(255, 255, 255, 0.14);
+  --border-card: rgba(255, 255, 255, 0.07);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  
+  --text-primary: #F0F3F8;
+  --text-secondary: #94A0B2;
+  --text-muted: #626E80;
+  
+  --shadow-panel: 0 16px 36px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --radius-panel: 14px;
+  --radius-card: 10px;
+  --radius-pill: 9999px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg-panel: #F1F3F7;
+    --bg-card: #FFFFFF;
+    --bg-card-subtle: #F8F9FB;
+    --bg-control: rgba(0, 0, 0, 0.04);
+    --bg-control-hover: rgba(0, 0, 0, 0.08);
+    --border-card: rgba(0, 0, 0, 0.06);
+    --border-subtle: rgba(0, 0, 0, 0.04);
+
+    --text-primary: #1A202C;
+    --text-secondary: #5A6A80;
+    --text-muted: #8E9BAE;
+
+    --shadow-panel: 0 16px 36px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--text-primary);
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App container - Floating Popover Window */
+.f50-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-control);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-control-hover);
+}
+
+/* Reusable Card */
+.f50-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  padding: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Pill Badges */
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.badge-green { background: rgba(46, 173, 115, 0.15); color: var(--color-green); }
+.badge-blue { background: rgba(56, 128, 235, 0.15); color: var(--color-blue); }
+.badge-orange { background: rgba(240, 148, 51, 0.15); color: var(--color-orange); }
+.badge-red { background: rgba(224, 82, 82, 0.15); color: var(--color-red); }
+.badge-purple { background: rgba(138, 117, 214, 0.15); color: var(--color-purple); }
+.badge-cyan { background: rgba(51, 168, 178, 0.15); color: var(--color-cyan); }
+.badge-gray { background: rgba(140, 148, 158, 0.15); color: var(--color-gray); }
+
+/* Progress bar */
+.progress-bar-track {
+  width: 100%;
+  height: 5px;
+  background: var(--bg-control);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  position: relative;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+}
+
+/* Action Buttons */
+.btn-icon {
+  background: var(--bg-control);
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-icon:hover {
+  background: var(--bg-control-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.btn-icon:active {
+  transform: scale(0.98);
+}
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary Button */
+.btn-primary {
+  background: var(--color-blue);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Form Inputs */
+input[type="text"], input[type="password"], select, textarea {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  outline: none;
+  font-family: var(--font-sans);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px rgba(56, 128, 235, 0.25);
+}
+
+/* Switch toggle */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-control);
+  transition: .25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 22px;
+  border: 1px solid var(--border-card);
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+input:checked + .slider {
+  background-color: var(--color-green);
+  border-color: transparent;
+}
+input:checked + .slider:before {
+  transform: translateX(16px);
+}

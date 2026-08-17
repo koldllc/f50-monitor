@@ -33,6 +33,8 @@ public struct F50Status: Equatable, Codable {
 
     public var dlSpeed: Double = 0.0        // Bytes per sec
     public var ulSpeed: Double = 0.0        // Bytes per sec
+    public var dlHistory: [Double] = []
+    public var ulHistory: [Double] = []
 
     public var connectedDevices: Int = 0
     public var smsUnreadCount: Int = 0
@@ -285,15 +287,56 @@ public struct F50Status: Equatable, Codable {
             return F50Theme.red
         }
     }
+
+    public mutating func recordSpeed(dl: Double, ul: Double) {
+        dlHistory.append(dl)
+        if dlHistory.count > 16 {
+            dlHistory.removeFirst(dlHistory.count - 16)
+        }
+        ulHistory.append(ul)
+        if ulHistory.count > 16 {
+            ulHistory.removeFirst(ulHistory.count - 16)
+        }
+    }
 }
 
 /// 高级低饱和度调色盘与全局主题规范
 public enum F50Theme {
-    public static let green = Color(red: 0.22, green: 0.65, blue: 0.46)    // 翡翠绿 (52% 饱和度)
-    public static let blue = Color(red: 0.28, green: 0.52, blue: 0.84)     // 霁蓝 (55% 饱和度)
-    public static let orange = Color(red: 0.86, green: 0.55, blue: 0.25)   // 琥珀金 (60% 饱和度)
-    public static let red = Color(red: 0.82, green: 0.35, blue: 0.35)      // 绯红 (55% 饱和度)
-    public static let purple = Color(red: 0.52, green: 0.46, blue: 0.78)   // 鸢尾紫 (40% 饱和度)
-    public static let cyan = Color(red: 0.24, green: 0.62, blue: 0.72)     // 烟青蓝 (50% 饱和度)
+    public static let green = Color(red: 0.18, green: 0.68, blue: 0.45)    // 翡翠绿
+    public static let blue = Color(red: 0.22, green: 0.50, blue: 0.92)     // 霁蓝
+    public static let orange = Color(red: 0.94, green: 0.58, blue: 0.20)   // 琥珀金
+    public static let red = Color(red: 0.88, green: 0.32, blue: 0.32)      // 绯红
+    public static let purple = Color(red: 0.54, green: 0.46, blue: 0.84)   // 鸢尾紫
+    public static let cyan = Color(red: 0.20, green: 0.66, blue: 0.70)     // 烟青蓝
     public static let gray = Color(red: 0.55, green: 0.58, blue: 0.62)     // 岩灰
+
+    public static func cardBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.115, green: 0.145, blue: 0.185)
+            : Color.white
+    }
+
+    public static func panelBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(red: 0.08, green: 0.10, blue: 0.135)
+            : Color(red: 0.945, green: 0.955, blue: 0.97)
+    }
+
+    public static func cardBorder(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.06)
+            : Color.black.opacity(0.04)
+    }
+
+    public static func controlBackground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.08)
+            : Color.black.opacity(0.04)
+    }
+
+    public static func controlHover(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.14)
+            : Color.black.opacity(0.08)
+    }
 }

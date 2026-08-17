@@ -7,6 +7,13 @@
 
 # Node
 node_modules/
+dist/
+windows/node_modules/
+windows/dist/
+
+# Rust / Tauri
+target/
+windows/src-tauri/target/
 
 # Apps & Archives
 *.app/
@@ -14,3 +21,4 @@ node_modules/
 
 # Xcode user data
 iOS/F50Monitor-iOS.xcodeproj/xcuserdata/
+*.xcuserstate

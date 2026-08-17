@@ -1,109 +1,175 @@
 import SwiftUI
 import F50Core
 
-/// iOS 设置：连接参数、刷新频率、流量校准
+/// iOS 设置：连接参数、刷新频率、关于信息
 struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher
-    @State private var tempURL = ""
+    @State private var tempIP = ""
     @State private var tempPassword = ""
     @State private var tempUFIToken = ""
+    @State private var isPasswordVisible = false
+    @State private var isUFITokenVisible = false
     @State private var tempInterval: Double = 2.0
-    @State private var showSavedNotice = false
+    @State private var isInitialized = false
 
-    private var trimmedURL: String {
-        tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var trimmedIP: String {
+        extractHostOrIP(from: tempIP)
     }
 
-    private var isURLValid: Bool {
-        guard let url = URL(string: trimmedURL),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return false }
-        return url.host?.isEmpty == false
+    private var isIPValid: Bool {
+        let ip = trimmedIP
+        guard !ip.isEmpty else { return false }
+        // IPv4 校验：四段 0-255 数字
+        let parts = ip.split(separator: ".")
+        if parts.count == 4, parts.allSatisfy({ Int($0) != nil && (0...255).contains(Int($0)!) }) {
+            return true
+        }
+        // 通用主机名校验（不含斜杠、冒号、空格）
+        return !ip.contains("/") && !ip.contains(":") && !ip.contains(" ")
+    }
+
+    private func extractHostOrIP(from raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withScheme = clean.contains("://") ? clean : "http://" + clean
+        if let url = URL(string: withScheme), let host = url.host, !host.isEmpty {
+            return host
+        }
+        return clean.replacingOccurrences(of: "http://", with: "")
+            .replacingOccurrences(of: "https://", with: "")
+            .components(separatedBy: ":").first ?? clean
+    }
+
+    private func autoSave() {
+        guard isInitialized, isIPValid else { return }
+        let finalURL = "http://\(trimmedIP)"
+        fetcher.applyConfiguration(
+            baseURL: finalURL,
+            password: tempPassword,
+            ufiToken: tempUFIToken,
+            refreshInterval: tempInterval,
+            displayMode: fetcher.displayMode
+        )
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("连接设置") {
-                    TextField("后台 API 地址", text: $tempURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    if !isURLValid {
-                        Text("请输入包含 http:// 或 https:// 的有效地址")
+                    // 设备 IP 地址
+                    HStack {
+                        Text("设备 IP 地址")
+                            .foregroundColor(.primary)
+                            .fixedSize()
+                        Spacer(minLength: 12)
+                        TextField("192.168.0.1", text: $tempIP)
+                            .multilineTextAlignment(.trailing)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numbersAndPunctuation)
+                    }
+
+                    if !tempIP.isEmpty && !isIPValid {
+                        Text("请输入正确的 IP 地址（例如 192.168.0.1）")
                             .font(.caption)
                             .foregroundColor(.red)
                     }
 
-                    SecureField("路由器管理密码 (Port 80)", text: $tempPassword)
-                    SecureField("UFI-TOOLS 登录口令 (Port 2333)", text: $tempUFIToken)
-                }
-
-                Section("刷新与节能") {
-                    Picker("自动刷新频率", selection: $tempInterval) {
-                        Text("3 秒（推荐节能）").tag(3.0)
-                        Text("5 秒（极简降温）").tag(5.0)
-                        Text("10 秒（超低负载）").tag(10.0)
-                        Text("2 秒").tag(2.0)
-                        Text("1 秒").tag(1.0)
+                    // 中兴后台口令 (Port 80)
+                    HStack {
+                        Text("中兴后台口令")
+                            .foregroundColor(.primary)
+                            .fixedSize()
+                        Spacer(minLength: 12)
+                        if isPasswordVisible {
+                            TextField("中兴后台口令", text: $tempPassword)
+                                .multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        } else {
+                            SecureField("中兴后台口令", text: $tempPassword)
+                                .multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .foregroundColor(.secondary)
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    Text("适当拉长刷新间隔可显著降低 F50 设备发热与 CPU 占用")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+
+                    // UFI后台口令 (Port 2333)
+                    HStack {
+                        Text("UFI后台口令")
+                            .foregroundColor(.primary)
+                            .fixedSize()
+                        Spacer(minLength: 12)
+                        if isUFITokenVisible {
+                            TextField("UFI后台口令", text: $tempUFIToken)
+                                .multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        } else {
+                            SecureField("UFI后台口令", text: $tempUFIToken)
+                                .multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        Button {
+                            isUFITokenVisible.toggle()
+                        } label: {
+                            Image(systemName: isUFITokenVisible ? "eye.slash" : "eye")
+                                .foregroundColor(.secondary)
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
 
                 Section {
-                    Button {
-                        fetcher.applyConfiguration(
-                            baseURL: trimmedURL,
-                            password: tempPassword,
-                            ufiToken: tempUFIToken,
-                            refreshInterval: tempInterval,
-                            displayMode: fetcher.displayMode
-                        )
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        withAnimation { showSavedNotice = true }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text(showSavedNotice ? "已保存 ✓" : "保存设置")
-                                .bold()
-                            Spacer()
-                        }
+                    Picker("自动刷新频率", selection: $tempInterval) {
+                        Text("1 秒").tag(1.0)
+                        Text("3 秒（推荐节能）").tag(3.0)
+                        Text("5 秒（极简降温）").tag(5.0)
+                        Text("10 秒（超低负载）").tag(10.0)
                     }
-                    .disabled(!isURLValid)
-                }
-
-                Section("关于") {
+                } header: {
+                    Text("刷新与节能")
+                } footer: {
                     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.6.3"
-                    LabeledContent("版本", value: version)
-                    Link("GitHub 开源项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                    VStack(spacing: 6) {
+                        Text("F50 Monitor v\(version)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        Link("GitHub 项目链接", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                            .font(.system(size: 12))
+
+                        Text("© 2026 Kold. All rights reserved.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.8))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 28)
                 }
             }
             .navigationTitle("设置")
             .onAppear {
-                tempURL = fetcher.baseURLString
+                tempIP = extractHostOrIP(from: fetcher.baseURLString)
                 tempPassword = fetcher.password
                 tempUFIToken = fetcher.ufiToken
                 tempInterval = fetcher.refreshInterval
-            }
-            .overlay(alignment: .bottom) {
-                if showSavedNotice {
-                    Text("配置修改已保存")
-                        .font(.caption.bold())
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(Color.green.opacity(0.9)))
-                        .padding(.bottom, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation { showSavedNotice = false }
-                            }
-                        }
+                DispatchQueue.main.async {
+                    isInitialized = true
                 }
             }
+            .onChange(of: tempIP) { _ in autoSave() }
+            .onChange(of: tempPassword) { _ in autoSave() }
+            .onChange(of: tempUFIToken) { _ in autoSave() }
+            .onChange(of: tempInterval) { _ in autoSave() }
         }
     }
 }

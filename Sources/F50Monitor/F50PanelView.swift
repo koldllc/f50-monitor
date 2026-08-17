@@ -34,12 +34,254 @@ private enum CarrierLogoAssets {
     }
 }
 
-public struct F50PanelView: View {
+// MARK: - Custom Progress Bar
+private struct CustomProgressBar: View {
+    var value: Double // 0.0 ... 1.0
+    var color: Color
+    var height: CGFloat = 5
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: height)
+
+                let clampedValue = min(1.0, max(0.0, value))
+                Capsule()
+                    .fill(color)
+                    .frame(width: max(height, geo.size.width * CGFloat(clampedValue)), height: height)
+            }
+        }
+        .frame(height: height)
+    }
+}
+
+// MARK: - Speed Wave Sparkline Shape & View
+private struct SpeedWaveShape: Shape {
+    var points: [Double] // Normalized values (0.0 ... 1.0)
+    var isFilled: Bool = false
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let effectivePoints: [Double]
+        if points.count >= 3 {
+            effectivePoints = points
+        } else {
+            // Default smooth undulating resting wave
+            effectivePoints = [0.25, 0.45, 0.20, 0.55, 0.30, 0.65, 0.35, 0.50, 0.30]
+        }
+
+        let count = effectivePoints.count
+        let stepX = rect.width / CGFloat(count - 1)
+        let coords: [CGPoint] = effectivePoints.enumerated().map { i, val in
+            let clamped = max(0.08, min(0.92, val))
+            let y = rect.height * CGFloat(1.0 - clamped)
+            return CGPoint(x: CGFloat(i) * stepX, y: y)
+        }
+
+        path.move(to: coords[0])
+        for i in 0..<(count - 1) {
+            let p0 = i > 0 ? coords[i - 1] : coords[i]
+            let p1 = coords[i]
+            let p2 = coords[i + 1]
+            let p3 = i + 2 < count ? coords[i + 2] : p2
+
+            let cp1 = CGPoint(
+                x: p1.x + (p2.x - p0.x) / 5.5,
+                y: p1.y + (p2.y - p0.y) / 5.5
+            )
+            let cp2 = CGPoint(
+                x: p2.x - (p3.x - p1.x) / 5.5,
+                y: p2.y - (p3.y - p1.y) / 5.5
+            )
+            path.addCurve(to: p2, control1: cp1, control2: cp2)
+        }
+
+        if isFilled {
+            path.addLine(to: CGPoint(x: rect.width, y: rect.height))
+            path.addLine(to: CGPoint(x: 0, y: rect.height))
+            path.closeSubpath()
+        }
+
+        return path
+    }
+}
+
+private struct SpeedWaveView: View {
+    var samples: [Double]
+    var color: Color
+    var currentSpeed: Double
+
+    private var normalizedPoints: [Double] {
+        if samples.count < 3 {
+            if currentSpeed > 0 {
+                return [0.25, 0.45, 0.28, 0.60, 0.35, 0.68, 0.32, 0.52, 0.30]
+            } else {
+                return [0.15, 0.22, 0.16, 0.25, 0.18, 0.24, 0.15, 0.20, 0.15]
+            }
+        }
+        let maxVal = max(1024.0, samples.max() ?? 1024.0)
+        return samples.map { val in
+            let ratio = val / maxVal
+            return 0.15 + 0.70 * ratio
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            SpeedWaveShape(points: normalizedPoints, isFilled: true)
+                .fill(
+                    LinearGradient(
+                        colors: [color.opacity(0.28), color.opacity(0.01)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            SpeedWaveShape(points: normalizedPoints, isFilled: false)
+                .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+        }
+        .clipped()
+    }
+}
+
+// MARK: - Action Icon Button
+private struct PanelActionButton<Content: View>: View {
+    var action: () -> Void
+    var width: CGFloat? = 38
+    var height: CGFloat = 36
+    var tooltip: String? = nil
+    var content: () -> Content
+
+    @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: action) {
+            content()
+                .frame(width: width, height: height)
+                .background(
+                    RoundedRectangle(cornerRadius: 11)
+                        .fill(isHovered ? F50Theme.controlHover(for: colorScheme) : F50Theme.controlBackground(for: colorScheme))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 11))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(tooltip ?? "")
+    }
+}
+
+// MARK: - Backend Menu Button
+private struct BackendMenuButton: View {
+    let ufiURLString: String
+    let routerURLString: String
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: showMenu) {
+            HStack(spacing: 6) {
+                Image(systemName: "safari")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(F50Theme.blue)
+                Text("打开后台")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 11)
+                    .fill(isHovered ? F50Theme.controlHover(for: colorScheme) : F50Theme.controlBackground(for: colorScheme))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 11))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("选择打开设备后台网页")
+        .contextMenu {
+            Button {
+                if let url = URL(string: ufiURLString) {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("UFI后台（2333端口）", systemImage: "wifi.router")
+            }
+
+            Button {
+                if let url = URL(string: routerURLString) {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("中兴后台（80端口）", systemImage: "network")
+            }
+        }
+    }
+
+    private func showMenu() {
+        let menu = NSMenu()
+
+        let ufiItem = NSMenuItem(
+            title: "UFI后台（2333端口）",
+            action: #selector(BackendMenuActionTarget.openURLFromMenuItem(_:)),
+            keyEquivalent: ""
+        )
+        ufiItem.image = NSImage(systemSymbolName: "wifi.router", accessibilityDescription: nil)
+        ufiItem.representedObject = ufiURLString
+        ufiItem.target = BackendMenuActionTarget.shared
+
+        let routerItem = NSMenuItem(
+            title: "中兴后台（80端口）",
+            action: #selector(BackendMenuActionTarget.openURLFromMenuItem(_:)),
+            keyEquivalent: ""
+        )
+        routerItem.image = NSImage(systemSymbolName: "network", accessibilityDescription: nil)
+        routerItem.representedObject = routerURLString
+        routerItem.target = BackendMenuActionTarget.shared
+
+        menu.addItem(ufiItem)
+        menu.addItem(routerItem)
+
+        if let event = NSApp.currentEvent,
+           let window = NSApp.keyWindow,
+           let contentView = window.contentView {
+            NSMenu.popUpContextMenu(menu, with: event, for: contentView)
+        } else if let window = NSApp.keyWindow,
+                  let contentView = window.contentView {
+            menu.popUp(positioning: nil, at: NSPoint(x: 14, y: 14), in: contentView)
+        } else if let url = URL(string: ufiURLString) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+@MainActor
+private final class BackendMenuActionTarget: NSObject {
+    static let shared = BackendMenuActionTarget()
+
+    @objc func openURLFromMenuItem(_ sender: NSMenuItem) {
+        guard let urlString = sender.representedObject as? String,
+              let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+// MARK: - Main Panel View
+struct F50PanelView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onOpenSettings: () -> Void
     var onOpenSMS: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         fetcher: F50Fetcher,
@@ -53,32 +295,6 @@ public struct F50PanelView: View {
         self.screenMirroringManager = screenMirroringManager
         self.onOpenSettings = onOpenSettings
         self.onOpenSMS = onOpenSMS
-    }
-
-    private var subscriptionText: String {
-        let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
-        let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
-        let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
-
-        if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
-            return "无数据"
-        }
-
-        var parts: [String] = []
-        if !qciVal.isEmpty {
-            parts.append("QCI：\(qciVal)")
-        } else {
-            parts.append("QCI：-")
-        }
-
-        if !dlVal.isEmpty {
-            parts.append("⬇️ \(dlVal)")
-        }
-        if !ulVal.isEmpty {
-            parts.append("⬆️ \(ulVal)")
-        }
-
-        return parts.joined(separator: "  ")
     }
 
     private var carrierLogoAssetName: String? {
@@ -113,563 +329,34 @@ public struct F50PanelView: View {
         }
     }
 
-    public var body: some View {
-        VStack(spacing: 10) {
-            // Header: Model & Connection Status
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(F50Theme.blue)
-                    Text("F50 Monitor")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                }
-
-                Spacer()
-
-                // Status Badge
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
-                        .frame(width: 7, height: 7)
-                    Text(fetcher.status.isOnline ? "在线" : "未在线")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Capsule().fill((fetcher.status.isOnline ? F50Theme.green : F50Theme.red).opacity(0.12)))
-
-                if updateManager.availableVersion != nil {
-                    Button(action: updateManager.installAvailableUpdate) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(F50Theme.green)
-                    }
-                    .buttonStyle(.borderless)
-                    .help(updateManager.statusText)
-                }
-
-                Button(action: {
-                    fetcher.fetchData()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .buttonStyle(.borderless)
-                .help("立即刷新")
-            }
-            .padding(.horizontal, 4)
+    var body: some View {
+        VStack(spacing: 12) {
+            headerView
 
             if !fetcher.status.isOnline {
-                // Error Alert Box
-                VStack(spacing: 6) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(F50Theme.orange)
-                        Text(fetcher.status.errorMessage ?? "无法连接到 F50 后台")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
-                    }
-                    Text("请在设置中检查管理密码及 IP 地址，并确认已连接 F50 Wi-Fi")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.orange.opacity(0.12)))
+                errorAlertBox
             }
 
-            // 1. Network & 3 Signal Metrics Card
-            VStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
-                        HStack(spacing: 5) {
-                            carrierLogoView
-                            Text(fetcher.status.carrier)
-                        }
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    }
+            networkAndSignalCard
 
-                    Text(fetcher.status.networkType)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(F50Theme.blue.opacity(0.12)))
-                        .foregroundColor(F50Theme.blue)
+            speedMetricsRow
 
-                    if !fetcher.status.currentBands.isEmpty {
-                        Text(fetcher.status.currentBands)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(F50Theme.purple.opacity(0.12)))
-                            .foregroundColor(F50Theme.purple)
-                    }
+            trafficStatisticsCard
 
-                    // Signal Bar Indicators
-                    HStack(alignment: .bottom, spacing: 2) {
-                        ForEach(1...5, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(bar <= fetcher.status.signalBar ? F50Theme.green : Color.primary.opacity(0.15))
-                                .frame(width: 3, height: CGFloat(Double(bar) * 2.0 + 3))
-                        }
-                    }
-                    .padding(.leading, 2)
+            hardwareMetricsGrid
 
-                    Spacer()
-                }
-                .padding(.top, 4)
-                .padding(.horizontal, 4)
-
-                // Subscription Status / QCI Line
-                HStack(spacing: 6) {
-                    Text("签约状态：")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                    let subText = subscriptionText
-                    Text(subText)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(subText == "无数据" ? .secondary : .primary)
-                    Spacer()
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(F50Theme.blue.opacity(0.06)))
-
-                Divider()
-
-                // 3 Signal Values & Status Bars (Ordered: RSRP, SINR/SNR, RSRQ)
-                HStack(spacing: 8) {
-                    // Column 1: RSRP
-                    VStack(spacing: 4) {
-                        Text("RSRP")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text(fetcher.status.rsrp)
-                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
-
-                        // Status Bar & Tag
-                        let q = fetcher.status.rsrpQuality
-                        VStack(spacing: 2) {
-                            ProgressView(value: q.ratio, total: 1.0)
-                                .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
-                                .padding(.horizontal, 6)
-                            Text(q.label)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(q.color)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    Divider().frame(height: 36)
-
-                    // Column 2: SINR / SNR
-                    VStack(spacing: 4) {
-                        Text("SINR / SNR")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text(fetcher.status.snr)
-                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
-
-                        // Status Bar & Tag
-                        let q = fetcher.status.snrQuality
-                        VStack(spacing: 2) {
-                            ProgressView(value: q.ratio, total: 1.0)
-                                .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
-                                .padding(.horizontal, 6)
-                            Text(q.label)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(q.color)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    Divider().frame(height: 36)
-
-                    // Column 3: RSRQ
-                    VStack(spacing: 4) {
-                        Text("RSRQ")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text(fetcher.status.rsrq)
-                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
-
-                        // Status Bar & Tag
-                        let q = fetcher.status.rsrqQuality
-                        VStack(spacing: 2) {
-                            ProgressView(value: q.ratio, total: 1.0)
-                                .tint(q.color)
-                                .scaleEffect(x: 1, y: 0.75, anchor: .center)
-                                .padding(.horizontal, 6)
-                            Text(q.label)
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(q.color)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-
-            // 2. Speeds Card
-            HStack(spacing: 12) {
-                // Download Speed
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(F50Theme.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("实时下载")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text(F50Status.formatSpeed(fetcher.status.dlSpeed))
-                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundColor(F50Theme.green)
-                    }
-                    Spacer()
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.green.opacity(0.08)))
-
-                // Upload Speed
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(F50Theme.blue)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("实时上传")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text(F50Status.formatSpeed(fetcher.status.ulSpeed))
-                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundColor(F50Theme.blue)
-                    }
-                    Spacer()
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.blue.opacity(0.08)))
+            if screenMirroringManager.isEnabled,
+               let msg = screenMirroringManager.statusMessage,
+               !msg.isEmpty {
+                mirroringStatusBanner(msg)
             }
 
-            // 3. Traffic Statistics Card
-            VStack(spacing: 8) {
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.bar.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(F50Theme.cyan)
-                        Text("套餐流量")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    if fetcher.status.trafficLimit <= 0 {
-                        HStack(spacing: 6) {
-                            let packageUsed = fetcher.status.packageTotal > 0
-                                ? fetcher.status.packageTotal
-                                : fetcher.status.monthlyTotal
-                            Text("已用流量：\(F50Status.formatBytes(packageUsed))")
-                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundColor(.primary)
-                            if let days = fetcher.status.daysUntilReset {
-                                Text(days == 0 ? "(今天重置)" : "(\(days)天后重置)")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                if fetcher.status.trafficLimit > 0 {
-                    VStack(spacing: 4) {
-                        HStack {
-                            let packageUsed = fetcher.status.packageTotal > 0
-                                ? fetcher.status.packageTotal
-                                : fetcher.status.monthlyTotal
-                            Text("已用流量：\(F50Status.formatBytes(packageUsed))")
-                            Spacer()
-                            Text("总流量：\(F50Status.formatBytes(fetcher.status.trafficLimit))")
-                        }
-                        .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-
-                        ProgressView(value: fetcher.status.trafficUsageRatio, total: 1.0)
-                            .tint(fetcher.status.trafficUsageColor)
-                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
-
-                        // 进度条下方一行：左侧套餐已用比例，右侧重置天数提醒
-                        HStack(spacing: 6) {
-                            Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
-                                .foregroundColor(fetcher.status.trafficUsageColor)
-                            Spacer()
-                            if let days = fetcher.status.daysUntilReset {
-                                Text(days == 0 ? "今天重置" : "\(days)天后重置")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-
-                Divider()
-
-                // 2 Metrics Columns: 当日流量, 本月已用
-                HStack(spacing: 8) {
-                    // Column 1: 当日流量
-                    VStack(spacing: 3) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "sun.max.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(F50Theme.orange)
-                            Text("当日流量")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                        }
-                        let daily = fetcher.status.ufiDailyUsage > 0
-                            ? fetcher.status.ufiDailyUsage
-                            : fetcher.status.dailyTotal
-                        Text(F50Status.formatBytes(daily))
-                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    Divider().frame(height: 28)
-
-                    // Column 2: 本月已用
-                    VStack(spacing: 3) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 11))
-                                .foregroundColor(F50Theme.purple)
-                            Text("本月已用")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                        }
-                        let monthly = fetcher.status.ufiMonthlyUsage > 0
-                            ? fetcher.status.ufiMonthlyUsage
-                            : fetcher.status.monthlyTotal
-                        Text(F50Status.formatBytes(monthly))
-                            .font(.system(size: 13, weight: .bold, design: .rounded).monospacedDigit())
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.04)))
-
-            // 3. Hardware Metrics Grid
-            VStack(spacing: 8) {
-                HStack(spacing: 12) {
-                    // CPU Usage Metric
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("CPU 占用率")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(fetcher.status.cpuUsage > 0 ? String(format: "%.0f%%", fetcher.status.cpuUsage) : "--")
-                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundColor(fetcher.status.cpuColor)
-                        }
-                        ProgressView(value: min(100.0, max(0.0, fetcher.status.cpuUsage)), total: 100.0)
-                            .tint(fetcher.status.cpuColor)
-                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
-
-                    // Memory Usage Metric
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("内存 占用率")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(fetcher.status.memUsage > 0 ? String(format: "%.0f%%", fetcher.status.memUsage) : "--")
-                                .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundColor(fetcher.status.memColor)
-                        }
-                        ProgressView(value: min(100.0, max(0.0, fetcher.status.memUsage)), total: 100.0)
-                            .tint(fetcher.status.memColor)
-                            .scaleEffect(x: 1, y: 0.75, anchor: .center)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.03)))
-                }
-
-                HStack(spacing: 12) {
-                    // Temperature
-                    HStack(spacing: 8) {
-                        Image(systemName: "thermometer.medium")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(fetcher.status.tempColor)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("芯片温度")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
-                            Text(fetcher.status.temperature > 0 ? String(format: "%.1f ℃", fetcher.status.temperature) : "-- ℃")
-                                .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundColor(fetcher.status.tempColor)
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(fetcher.status.tempColor.opacity(0.08)))
-
-                    // Connected Devices (Wi-Fi)
-                    HStack(spacing: 8) {
-                        Image(systemName: "wifi")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(F50Theme.purple)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Wi-Fi 连接设备")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
-                            Text("\(fetcher.status.connectedDevices) 台")
-                                .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.purple.opacity(0.08)))
-                }
-            }
-
-            if screenMirroringManager.isEnabled, let msg = screenMirroringManager.statusMessage, !msg.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: screenMirroringManager.isConnecting ? "arrow.triangle.2.circlepath" : "info.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(F50Theme.purple)
-                    Text(msg)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    Spacer()
-                    Button(action: { screenMirroringManager.clearStatusMessage() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(F50Theme.purple.opacity(0.1)))
-            }
-
-            Divider()
-
-            // 4. Actions
-            HStack(spacing: 8) {
-                // Open Web Dashboard Menu (Choose Port 80 or Port 2333)
-                Menu {
-                    Button(action: {
-                        if let url = URL(string: fetcher.ufiURLString) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        Label("UFI后台（2333端口）", systemImage: "wifi.router")
-                    }
-                    Button(action: {
-                        if let url = URL(string: fetcher.routerURLString) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        Label("中兴后台（80端口）", systemImage: "network")
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "safari")
-                        Text("打开后台")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(F50Theme.blue)
-
-                // Screen Mirroring Button (Icon-only, no text, no color tint)
-                if screenMirroringManager.isEnabled {
-                    Button(action: {
-                        if screenMirroringManager.isDependenciesInstalled {
-                            screenMirroringManager.startMirroring(baseURLString: fetcher.baseURLString)
-                        } else {
-                            screenMirroringManager.requestInstallDependencies()
-                        }
-                    }) {
-                        Group {
-                            if screenMirroringManager.isConnecting {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "tv")
-                            }
-                        }
-                        .frame(width: 16)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
-                    .help(screenMirroringManager.isDependenciesInstalled ? "无线 ADB 投屏" : "未检测到投屏组件，点击配置")
-                }
-
-                // SMS Button
-                Button(action: onOpenSMS) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "envelope")
-                            .frame(width: 16)
-                        if fetcher.status.smsUnreadCount > 0 {
-                            Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
-                                .font(.system(size: 7, weight: .bold, design: .rounded))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(Capsule().fill(F50Theme.red))
-                                .offset(x: 8, y: -6)
-                        }
-                    }
-                }
-                .buttonStyle(.bordered)
-                .help("读取短信")
-
-                // Settings Button
-                Button(action: {
-                    onOpenSettings()
-                }) {
-                    Image(systemName: "gearshape")
-                        .frame(width: 16)
-                }
-                .buttonStyle(.bordered)
-                .help("设置")
-
-                // Quit Button
-                Button(action: {
-                    NSApplication.shared.terminate(nil)
-                }) {
-                    Image(systemName: "power")
-                        .foregroundColor(F50Theme.red)
-                        .frame(width: 16)
-                }
-                .buttonStyle(.bordered)
-                .help("退出程序")
-            }
-            .controlSize(.large)
+            actionBar
         }
-        .padding(16)
-        .frame(width: 380)
+        .padding(14)
+        .frame(width: 376)
         .fixedSize(horizontal: false, vertical: true)
+        .background(F50Theme.panelBackground(for: colorScheme))
         .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
             Button("允许并下载") {
                 screenMirroringManager.downloadAndInstallStandaloneDependencies()
@@ -678,5 +365,653 @@ public struct F50PanelView: View {
         } message: {
             Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
         }
+    }
+
+    // MARK: - Header View
+    private var headerView: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(F50Theme.blue)
+                Text("F50 Monitor")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+            }
+
+            Spacer()
+
+            // Status Badge
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
+                    .frame(width: 6, height: 6)
+                Text(fetcher.status.isOnline ? "在线" : "未在线")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(fetcher.status.isOnline ? F50Theme.green : F50Theme.red)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill((fetcher.status.isOnline ? F50Theme.green : F50Theme.red).opacity(0.14))
+            )
+
+            if updateManager.availableVersion != nil {
+                Button(action: updateManager.installAvailableUpdate) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(F50Theme.green)
+                }
+                .buttonStyle(.plain)
+                .help(updateManager.statusText)
+            }
+
+            Button(action: {
+                fetcher.fetchData()
+            }) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("立即刷新")
+        }
+        .padding(.horizontal, 2)
+    }
+
+    // MARK: - Error Alert Box
+    private var errorAlertBox: some View {
+        VStack(spacing: 5) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(F50Theme.orange)
+                Text(fetcher.status.errorMessage ?? "无法连接到 F50 后台")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            Text("请在设置中检查管理密码及 IP 地址，并确认已连接 F50 Wi-Fi")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(F50Theme.orange.opacity(0.12))
+        )
+    }
+
+    // MARK: - 1. Network & 3 Signal Metrics Card
+    private var networkAndSignalCard: some View {
+        VStack(spacing: 10) {
+            // Row 1: Carrier logo + Name + Mode capsule + Band capsule + Signal bars
+            HStack(spacing: 6) {
+                if !fetcher.status.carrier.isEmpty && fetcher.status.carrier != "未知" {
+                    HStack(spacing: 5) {
+                        carrierLogoView
+                        Text(fetcher.status.carrier)
+                    }
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                }
+
+                Text(fetcher.status.networkType)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2.5)
+                    .background(Capsule().fill(F50Theme.blue.opacity(0.14)))
+                    .foregroundColor(F50Theme.blue)
+
+                if !fetcher.status.currentBands.isEmpty {
+                    Text(fetcher.status.currentBands)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Capsule().fill(F50Theme.purple.opacity(0.14)))
+                        .foregroundColor(F50Theme.purple)
+                }
+
+                // Cellular Signal Bars
+                HStack(alignment: .bottom, spacing: 2.2) {
+                    ForEach(1...5, id: \.self) { bar in
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(bar <= fetcher.status.signalBar ? F50Theme.green : Color.primary.opacity(0.15))
+                            .frame(width: 3.2, height: CGFloat(Double(bar) * 2.4 + 3.5))
+                    }
+                }
+                .padding(.leading, 3)
+
+                Spacer()
+            }
+
+            // Row 2: Inset Subscription / QCI Status Banner
+            subscriptionBanner
+
+            Divider()
+                .opacity(0.5)
+
+            // Row 3: 3 Signal Metrics Columns (RSRP, SINR/SNR, RSRQ)
+            HStack(spacing: 8) {
+                // Column 1: RSRP
+                let rsrpQ = fetcher.status.rsrpQuality
+                VStack(spacing: 4) {
+                    Text("RSRP")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(fetcher.status.rsrp)
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+
+                    CustomProgressBar(value: rsrpQ.ratio, color: rsrpQ.color, height: 4.5)
+                        .padding(.horizontal, 4)
+
+                    Text(rsrpQ.label)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(rsrpQ.color)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+                    .frame(height: 38)
+                    .opacity(0.5)
+
+                // Column 2: SINR / SNR
+                let snrQ = fetcher.status.snrQuality
+                VStack(spacing: 4) {
+                    Text("SINR / SNR")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(fetcher.status.snr)
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+
+                    CustomProgressBar(value: snrQ.ratio, color: snrQ.color, height: 4.5)
+                        .padding(.horizontal, 4)
+
+                    Text(snrQ.label)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(snrQ.color)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+                    .frame(height: 38)
+                    .opacity(0.5)
+
+                // Column 3: RSRQ
+                let rsrqQ = fetcher.status.rsrqQuality
+                VStack(spacing: 4) {
+                    Text("RSRQ")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(fetcher.status.rsrq)
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+
+                    CustomProgressBar(value: rsrqQ.ratio, color: rsrqQ.color, height: 4.5)
+                        .padding(.horizontal, 4)
+
+                    Text(rsrqQ.label)
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(rsrqQ.color)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(12)
+        .background(cardBackgroundView)
+    }
+
+    // MARK: - Subscription Banner
+    private var subscriptionBanner: some View {
+        HStack(spacing: 8) {
+            Text("签约状态：")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+
+            let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
+            let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
+            let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
+
+            if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
+                Text("无数据")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("QCI: \(qciVal.isEmpty ? "-" : qciVal)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+
+                if !dlVal.isEmpty {
+                    HStack(spacing: 4) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(F50Theme.blue)
+                                .frame(width: 14, height: 14)
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 8, weight: .heavy))
+                                .foregroundColor(.white)
+                        }
+                        Text(dlVal)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.leading, 4)
+                }
+
+                if !ulVal.isEmpty {
+                    HStack(spacing: 4) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(F50Theme.blue)
+                                .frame(width: 14, height: 14)
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 8, weight: .heavy))
+                                .foregroundColor(.white)
+                        }
+                        Text(ulVal)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.leading, 2)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.035))
+        )
+    }
+
+    // MARK: - 2. Speeds Card with Waveform Sparkline
+    private var speedMetricsRow: some View {
+        HStack(spacing: 10) {
+            // Realtime Download Card
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(F50Theme.green)
+                            .frame(width: 26, height: 26)
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("实时下载")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text(F50Status.formatSpeed(fetcher.status.dlSpeed))
+                            .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(F50Theme.green)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+
+                SpeedWaveView(
+                    samples: fetcher.status.dlHistory,
+                    color: F50Theme.green,
+                    currentSpeed: fetcher.status.dlSpeed
+                )
+                .frame(height: 30)
+            }
+            .frame(maxWidth: .infinity)
+            .background(cardBackgroundView)
+
+            // Realtime Upload Card
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(F50Theme.blue)
+                            .frame(width: 26, height: 26)
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("实时上传")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text(F50Status.formatSpeed(fetcher.status.ulSpeed))
+                            .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(F50Theme.blue)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+
+                SpeedWaveView(
+                    samples: fetcher.status.ulHistory,
+                    color: F50Theme.blue,
+                    currentSpeed: fetcher.status.ulSpeed
+                )
+                .frame(height: 30)
+            }
+            .frame(maxWidth: .infinity)
+            .background(cardBackgroundView)
+        }
+    }
+
+    // MARK: - 3. Traffic Statistics Card
+    private var trafficStatisticsCard: some View {
+        VStack(spacing: 9) {
+            // Header: Icon + 套餐流量
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(F50Theme.cyan)
+                    Text("套餐流量")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.primary)
+                }
+                Spacer()
+            }
+
+            // Usage & Limit Line
+            let packageUsed = fetcher.status.packageTotal > 0
+                ? fetcher.status.packageTotal
+                : fetcher.status.monthlyTotal
+
+            HStack {
+                Text("已用流量： \(F50Status.formatBytes(packageUsed))")
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                if fetcher.status.trafficLimit > 0 {
+                    Text("总流量： \(F50Status.formatBytes(fetcher.status.trafficLimit))")
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+                } else {
+                    Text("总流量： 不限")
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Progress Bar
+            CustomProgressBar(
+                value: fetcher.status.trafficLimit > 0 ? fetcher.status.trafficUsageRatio : 0.0,
+                color: fetcher.status.trafficUsageColor,
+                height: 6
+            )
+
+            // Percentage pill & Reset days
+            HStack(spacing: 6) {
+                if fetcher.status.trafficLimit > 0 {
+                    Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(fetcher.status.trafficUsageColor.opacity(0.15)))
+                        .foregroundColor(fetcher.status.trafficUsageColor)
+                }
+
+                Spacer()
+
+                if let days = fetcher.status.daysUntilReset {
+                    Text(days == 0 ? "今天重置" : "\(days)天后重置")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Divider()
+                .opacity(0.5)
+
+            // 2 Metrics Columns: 当日流量 & 本月已用
+            HStack(spacing: 8) {
+                // Column 1: 当日流量
+                VStack(spacing: 3) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sun.max.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(F50Theme.orange)
+                        Text("当日流量")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    let daily = fetcher.status.ufiDailyUsage > 0
+                        ? fetcher.status.ufiDailyUsage
+                        : fetcher.status.dailyTotal
+                    Text(F50Status.formatBytes(daily))
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+                }
+                .frame(maxWidth: .infinity)
+
+                Divider()
+                    .frame(height: 28)
+                    .opacity(0.5)
+
+                // Column 2: 本月已用
+                VStack(spacing: 3) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 11))
+                            .foregroundColor(F50Theme.purple)
+                        Text("本月已用")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    let monthly = fetcher.status.ufiMonthlyUsage > 0
+                        ? fetcher.status.ufiMonthlyUsage
+                        : fetcher.status.monthlyTotal
+                    Text(F50Status.formatBytes(monthly))
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.primary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(12)
+        .background(cardBackgroundView)
+    }
+
+    // MARK: - 4. Hardware Metrics Grid
+    private var hardwareMetricsGrid: some View {
+        VStack(spacing: 10) {
+            // Row 1: CPU & Memory
+            HStack(spacing: 10) {
+                // CPU Usage
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("CPU 占用率")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(fetcher.status.cpuUsage > 0 ? String(format: "%.0f%%", fetcher.status.cpuUsage) : "--")
+                            .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(fetcher.status.cpuColor)
+                    }
+                    CustomProgressBar(
+                        value: min(1.0, max(0.0, fetcher.status.cpuUsage / 100.0)),
+                        color: fetcher.status.cpuColor,
+                        height: 4.5
+                    )
+                }
+                .padding(9)
+                .frame(maxWidth: .infinity)
+                .background(cardBackgroundView)
+
+                // Memory Usage
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("内存 占用率")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(fetcher.status.memUsage > 0 ? String(format: "%.0f%%", fetcher.status.memUsage) : "--")
+                            .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(fetcher.status.memColor)
+                    }
+                    CustomProgressBar(
+                        value: min(1.0, max(0.0, fetcher.status.memUsage / 100.0)),
+                        color: fetcher.status.memColor,
+                        height: 4.5
+                    )
+                }
+                .padding(9)
+                .frame(maxWidth: .infinity)
+                .background(cardBackgroundView)
+            }
+
+            // Row 2: Chip Temperature & Wi-Fi Devices
+            HStack(spacing: 10) {
+                // Temperature
+                HStack(spacing: 10) {
+                    Image(systemName: "thermometer.medium")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(fetcher.status.tempColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("芯片温度")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text(fetcher.status.temperature > 0 ? String(format: "%.1f ℃", fetcher.status.temperature) : "-- ℃")
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(fetcher.status.tempColor)
+                    }
+                    Spacer()
+                }
+                .padding(9)
+                .frame(maxWidth: .infinity)
+                .background(cardBackgroundView)
+
+                // Connected Devices
+                HStack(spacing: 10) {
+                    Image(systemName: "wifi")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(F50Theme.purple)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Wi-Fi 连接设备")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text("\(fetcher.status.connectedDevices) 台")
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(.primary)
+                    }
+                    Spacer()
+                }
+                .padding(9)
+                .frame(maxWidth: .infinity)
+                .background(cardBackgroundView)
+            }
+        }
+    }
+
+    // MARK: - Mirroring Status Banner
+    private func mirroringStatusBanner(_ msg: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: screenMirroringManager.isConnecting ? "arrow.triangle.2.circlepath" : "info.circle.fill")
+                .font(.system(size: 11))
+                .foregroundColor(F50Theme.purple)
+            Text(msg)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            Spacer()
+            Button(action: { screenMirroringManager.clearStatusMessage() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(F50Theme.purple.opacity(0.1))
+        )
+    }
+
+    // MARK: - 5. Bottom Action Bar
+    private var actionBar: some View {
+        HStack(spacing: 8) {
+            // Open Web Dashboard Menu Button
+            BackendMenuButton(
+                ufiURLString: fetcher.ufiURLString,
+                routerURLString: fetcher.routerURLString
+            )
+
+            // Screen Mirroring Button
+            if screenMirroringManager.isEnabled {
+                PanelActionButton(action: {
+                    if screenMirroringManager.isDependenciesInstalled {
+                        screenMirroringManager.startMirroring(baseURLString: fetcher.baseURLString)
+                    } else {
+                        screenMirroringManager.requestInstallDependencies()
+                    }
+                }, tooltip: screenMirroringManager.isDependenciesInstalled ? "无线 ADB 投屏" : "未检测到投屏组件，点击配置") {
+                    Group {
+                        if screenMirroringManager.isConnecting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "tv")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.primary)
+                        }
+                    }
+                }
+                .disabled(screenMirroringManager.isConnecting || !fetcher.status.isOnline)
+            }
+
+            // SMS Button
+            PanelActionButton(action: onOpenSMS, tooltip: "读取短信") {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "envelope")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                    if fetcher.status.smsUnreadCount > 0 {
+                        Text(fetcher.status.smsUnreadCount > 99 ? "99+" : "\(fetcher.status.smsUnreadCount)")
+                            .font(.system(size: 7, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 3.5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(F50Theme.red))
+                            .offset(x: 7, y: -6)
+                    }
+                }
+            }
+
+            // Settings Button
+            PanelActionButton(action: onOpenSettings, tooltip: "设置") {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+            }
+
+            // Quit Button
+            PanelActionButton(action: {
+                NSApplication.shared.terminate(nil)
+            }, tooltip: "退出程序") {
+                Image(systemName: "power")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(F50Theme.red)
+            }
+        }
+    }
+
+    // MARK: - Reusable Card Background View
+    private var cardBackgroundView: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(F50Theme.cardBackground(for: colorScheme))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
+            )
     }
 }

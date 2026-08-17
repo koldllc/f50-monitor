@@ -82,16 +82,29 @@ struct F50iOSApp: App {
 
 struct ContentView: View {
     @ObservedObject var fetcher: F50Fetcher
+    @State private var selectedTab: Int = 0
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             StatusView(fetcher: fetcher)
-                .tabItem { Label("状态", systemImage: "antenna.radiowaves.left.and.right") }
+                .tabItem {
+                    Label("状态", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .tag(0)
+
             SMSView(fetcher: fetcher)
-                .tabItem { Label("短信", systemImage: "envelope.fill") }
+                .tabItem {
+                    Label("短信", systemImage: "envelope.fill")
+                }
                 .badge(fetcher.status.smsUnreadCount > 0 ? fetcher.status.smsUnreadCount : 0)
+                .tag(1)
+
             SettingsView(fetcher: fetcher)
-                .tabItem { Label("设置", systemImage: "gearshape.fill") }
+                .tabItem {
+                    Label("设置", systemImage: "gearshape.fill")
+                }
+                .tag(2)
         }
+        .tint(Color.blue)
     }
 }

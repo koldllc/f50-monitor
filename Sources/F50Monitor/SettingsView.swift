@@ -7,9 +7,11 @@ public struct SettingsView: View {
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onClose: () -> Void
     
-    @State private var tempURL: String = ""
+    @State private var tempIP: String = ""
     @State private var tempPassword: String = ""
     @State private var tempUFIToken: String = ""
+    @State private var isPasswordVisible: Bool = false
+    @State private var isUFITokenVisible: Bool = false
     @State private var tempInterval: Double = 2.0
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
@@ -21,16 +23,29 @@ public struct SettingsView: View {
         self.onClose = onClose
     }
 
-
-    private var trimmedURL: String {
-        tempURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var trimmedIP: String {
+        extractHostOrIP(from: tempIP)
     }
 
-    private var isURLValid: Bool {
-        guard let url = URL(string: trimmedURL),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return false }
-        return url.host?.isEmpty == false
+    private var isIPValid: Bool {
+        let ip = trimmedIP
+        guard !ip.isEmpty else { return false }
+        let parts = ip.split(separator: ".")
+        if parts.count == 4, parts.allSatisfy({ Int($0) != nil && (0...255).contains(Int($0)!) }) {
+            return true
+        }
+        return !ip.contains("/") && !ip.contains(":") && !ip.contains(" ")
+    }
+
+    private func extractHostOrIP(from raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withScheme = clean.contains("://") ? clean : "http://" + clean
+        if let url = URL(string: withScheme), let host = url.host, !host.isEmpty {
+            return host
+        }
+        return clean.replacingOccurrences(of: "http://", with: "")
+            .replacingOccurrences(of: "https://", with: "")
+            .components(separatedBy: ":").first ?? clean
     }
     
     public var body: some View {
@@ -93,38 +108,90 @@ public struct SettingsView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("连接设置")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("后台 API 地址")
+                // 1. 设备 IP 地址
+                HStack {
+                    Text("设备 IP 地址")
                         .font(.system(size: 12, weight: .semibold))
-                    TextField("http://192.168.0.1:2333", text: $tempURL)
+                        .fixedSize()
+                    Spacer(minLength: 12)
+                    TextField("192.168.0.1", text: $tempIP)
                         .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
                         .font(.system(size: 12))
-                    if !isURLValid {
-                        Text("请输入包含 http:// 或 https:// 的有效地址")
-                            .font(.system(size: 10))
-                            .foregroundColor(F50Theme.red)
+                        .frame(width: 170)
+                }
+
+                if !tempIP.isEmpty && !isIPValid {
+                    Text("请输入正确的 IP 地址（例如 192.168.0.1）")
+                        .font(.system(size: 10))
+                        .foregroundColor(F50Theme.red)
+                }
+
+                // 2. 中兴后台口令
+                HStack {
+                    Text("中兴后台口令")
+                        .font(.system(size: 12, weight: .semibold))
+                        .fixedSize()
+                    Spacer(minLength: 12)
+                    HStack(spacing: 4) {
+                        if isPasswordVisible {
+                            TextField("例如 admin", text: $tempPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.trailing)
+                                .font(.system(size: 12))
+                        } else {
+                            SecureField("例如 admin", text: $tempPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.trailing)
+                                .font(.system(size: 12))
+                        }
+
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
+                    .frame(width: 170)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("路由器管理密码 (Port 80)")
+                // 3. UFI后台口令
+                HStack {
+                    Text("UFI后台口令")
                         .font(.system(size: 12, weight: .semibold))
-                    SecureField("例如 admin", text: $tempPassword)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                }
+                        .fixedSize()
+                    Spacer(minLength: 12)
+                    HStack(spacing: 4) {
+                        if isUFITokenVisible {
+                            TextField("例如 admin", text: $tempUFIToken)
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.trailing)
+                                .font(.system(size: 12))
+                        } else {
+                            SecureField("例如 admin", text: $tempUFIToken)
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.trailing)
+                                .font(.system(size: 12))
+                        }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("UFI-TOOLS 登录口令 (Port 2333)")
-                        .font(.system(size: 12, weight: .semibold))
-                    SecureField("例如 admin", text: $tempUFIToken)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
+                        Button {
+                            isUFITokenVisible.toggle()
+                        } label: {
+                            Image(systemName: isUFITokenVisible ? "eye.slash" : "eye")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .frame(width: 170)
                 }
             }
             .padding(12)
@@ -140,19 +207,14 @@ public struct SettingsView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Picker("", selection: $tempInterval) {
+                        Text("1 秒").tag(1.0)
                         Text("3 秒（推荐节能）").tag(3.0)
                         Text("5 秒（极简降温）").tag(5.0)
                         Text("10 秒（超低负载）").tag(10.0)
-                        Text("2 秒").tag(2.0)
-                        Text("1 秒").tag(1.0)
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
                 }
-
-                Text("适当拉长刷新间隔（如 3~5 秒）可大幅降低 F50 设备芯片 CPU 占用率与发热。")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
 
                 HStack {
                     Text("菜单栏显示模式")
@@ -293,17 +355,17 @@ public struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             HStack {
-                Text("更新来源：GitHub Releases")
+                Text("© 2026 Kold. All rights reserved.")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                 Spacer()
-                Link("GitHub 开源项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                Link("GitHub 项目链接", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
                     .font(.system(size: 10))
             }
 
             HStack {
                 Button("使用默认值") {
-                    tempURL = F50Configuration.defaultBaseURL
+                    tempIP = "192.168.0.1"
                     tempPassword = F50Configuration.defaultCredential
                     tempUFIToken = F50Configuration.defaultCredential
                     tempInterval = F50Configuration.defaultRefreshInterval
@@ -314,8 +376,9 @@ public struct SettingsView: View {
                 Spacer()
 
                 Button("保存") {
+                    let finalURL = "http://\(trimmedIP)"
                     fetcher.applyConfiguration(
-                        baseURL: trimmedURL,
+                        baseURL: finalURL,
                         password: tempPassword,
                         ufiToken: tempUFIToken,
                         refreshInterval: tempInterval,
@@ -325,14 +388,14 @@ public struct SettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(F50Theme.blue)
-                .disabled(!isURLValid)
+                .disabled(!isIPValid)
             }
         }
         .padding(16)
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
-            tempURL = fetcher.baseURLString
+            tempIP = extractHostOrIP(from: fetcher.baseURLString)
             tempPassword = fetcher.password
             tempUFIToken = fetcher.ufiToken
             tempInterval = fetcher.refreshInterval

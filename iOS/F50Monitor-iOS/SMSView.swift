@@ -31,17 +31,13 @@ struct SMSView: View {
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if fetcher.smsMessages.isEmpty {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         Image(systemName: "envelope.open")
-                            .font(.system(size: 36))
-                            .foregroundColor(F50Theme.gray)
+                            .font(.system(size: 38))
+                            .foregroundColor(F50Theme.gray.opacity(0.7))
                         Text("暂无短信记录")
-                            .font(.footnote)
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
-                        Button("下拉或点击刷新") { fetcher.fetchSMSMessages() }
-                            .font(.caption.weight(.medium))
-                            .buttonStyle(.bordered)
-                            .padding(.top, 4)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -63,24 +59,34 @@ struct SMSView: View {
             .navigationTitle("短信")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 14) {
-                        Button {
-                            isComposing = true
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.body)
-                                .foregroundColor(F50Theme.blue)
-                        }
-                        Button {
-                            fetcher.fetchSMSMessages()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundColor(F50Theme.blue)
-                        }
-                        .disabled(fetcher.isFetchingSMS)
+                    Button {
+                        fetcher.fetchSMSMessages()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
                     }
+                    .disabled(fetcher.isFetchingSMS)
+                    .help("刷新短信")
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Button {
+                    isComposing = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 52, height: 52)
+                        .background(
+                            Circle()
+                                .fill(Color.blue)
+                                .shadow(color: Color.blue.opacity(0.32), radius: 8, x: 0, y: 4)
+                        )
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
             }
             .sheet(isPresented: $isComposing) {
                 ComposeSheet(fetcher: fetcher)

@@ -271,7 +271,7 @@ public class F50Fetcher: ObservableObject {
         let tokens = candidateTokens()
 
         guard !tokens.isEmpty else {
-            smsErrorMessage = "请先配置 UFI-TOOLS 登录口令"
+            smsErrorMessage = "请先配置 UFI后台口令"
             return
         }
 
@@ -334,7 +334,7 @@ public class F50Fetcher: ObservableObject {
                     )
                 } else {
                     self.finishSMSFetch(
-                        message: error?.localizedDescription ?? "无法读取短信，请检查 UFI-TOOLS 登录口令与短信权限",
+                        message: error?.localizedDescription ?? "无法读取短信，请检查 UFI后台口令与短信权限",
                         generation: generation
                     )
                 }
@@ -370,7 +370,7 @@ public class F50Fetcher: ObservableObject {
         let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
         let tokens = candidateTokens()
         guard let token = tokens.first else {
-            smsSendErrorMessage = "请先配置 UFI-TOOLS 登录口令"
+            smsSendErrorMessage = "请先配置 UFI后台口令"
             return
         }
 
@@ -385,7 +385,7 @@ public class F50Fetcher: ObservableObject {
         ) { [weak self] cookie in
             guard let self else { return }
             guard let cookie, !cookie.isEmpty else {
-                self.finishSMSFailed("登录失败，请检查 UFI-TOOLS 登录口令")
+                self.finishSMSFailed("登录失败，请检查 UFI后台口令")
                 return
             }
             self.computeSMSAD(
@@ -580,7 +580,8 @@ public class F50Fetcher: ObservableObject {
     }
 
     private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
-        guard let url = URL(string: cleanBase), let host = url.host else {
+        let withScheme = cleanBase.contains("://") ? cleanBase : "http://" + cleanBase
+        guard let url = URL(string: withScheme), let host = url.host, !host.isEmpty else {
             return ("http://192.168.0.1", "http://192.168.0.1:2333")
         }
 
@@ -1143,6 +1144,7 @@ public class F50Fetcher: ObservableObject {
                 if let ul = dict["realtime_tx_thrpt"] {
                     self.status.ulSpeed = F50ResponseParser.parseDouble(ul)
                 }
+                self.status.recordSpeed(dl: self.status.dlSpeed, ul: self.status.ulSpeed)
                 let limit = F50ResponseParser.parseTrafficLimit(
                     size: dict["data_volume_limit_size"],
                     unit: dict["data_volume_limit_unit"]
@@ -1520,6 +1522,9 @@ public class F50Fetcher: ObservableObject {
             newStatus.signalBar = min(5, max(0, bar))
         }
 
+        newStatus.dlHistory = status.dlHistory
+        newStatus.ulHistory = status.ulHistory
+
         // Speeds
         if let val = dict["realtime_rx_thrpt"] {
             newStatus.dlSpeed = parseDouble(val)
@@ -1527,6 +1532,7 @@ public class F50Fetcher: ObservableObject {
         if let val = dict["realtime_tx_thrpt"] {
             newStatus.ulSpeed = parseDouble(val)
         }
+        newStatus.recordSpeed(dl: newStatus.dlSpeed, ul: newStatus.ulSpeed)
 
         // Connected devices
         if let val = dict["wifi_access_sta_num"] ?? dict["station_num"] {

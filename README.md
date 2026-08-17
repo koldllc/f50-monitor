@@ -49,6 +49,33 @@ F50 Monitor 已移植到 **iPhone**（iOS 16+），支持信号/速度/流量/�
 
 > 工程由 XcodeGen 维护（`iOS/project.yml`），修改后运行 `cd iOS && xcodegen generate` 重新生成。
 
+## 🪟 Windows 版 (Tauri + Rust + Vue 3)
+
+F50 Monitor 已提供完整的 **Windows 托盘版**（基于 Tauri 2.0 构建，位于 [`windows/`](windows/) 目录），内存占用低至 ~35MB，完美还原 macOS 版视觉规范与全部核心功能：
+
+- ⚡ **Windows 任务栏托盘常驻**：自定义显示模式、悬浮卡片面板一键呼出与快捷右键菜单。
+- 📶 **蜂窝信号与频段感知**：支持 5G SA/NSA、4G LTE、`B3 + n78` 聚合显示，以及 RSRP/SINR/RSRQ 质量评级。
+- 📊 **硬件与用量监控**：CPU、内存、温度仪表、Wi-Fi 设备数与套餐流量清零日重置倒计时。
+- 💬 **短信收发与验证码提取**：支持短信读取、写短信、未读提醒与验证码一键复制。
+- 📺 **无线投屏 (scrcpy)**：内置 Windows 独立依赖一键自动下载与配置，一键无线投屏。
+- 🚪 **开机自启动**：支持 Windows 注册表开机静默启动驻留托盘。
+
+### 构建运行
+
+```bash
+cd windows
+npm install
+
+# 界面与 Mock 调试
+npm run dev
+
+# 启动 Windows 桌面端
+npm run tauri dev
+
+# 打包发布 Windows 安装包与单文件 Exe
+npm run tauri build
+```
+
 ## 📥 安装与使用
 
 ### 直接下载
