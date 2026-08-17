@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
@@ -7,7 +6,7 @@ use chrono::{Datelike, Local, NaiveDate};
 use serde_json::Value;
 
 use crate::models::{F50Configuration, F50SMSMessage, F50Status};
-use crate::crypto::{kano_sign, gsm_encode, sha256_hex, md5_hex, KANO_SIGN_KEY};
+use crate::crypto::{kano_sign, gsm_encode, sha256_hex, KANO_SIGN_KEY};
 
 pub struct F50Fetcher {
     pub client: reqwest::Client,

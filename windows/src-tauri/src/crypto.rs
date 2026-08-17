@@ -38,13 +38,9 @@ pub fn md5_hex(data: &str) -> String {
 /// UFI-TOOLS 短信发送的消息体编码：UTF-16BE 的 hex 字符串
 pub fn gsm_encode(text: &str) -> String {
     let mut utf16_bytes = Vec::new();
-    for ch in text.chars() {
-        let mut buf = [0u16; 2];
-        let encoded = ch.encode_utf16(&mut buf);
-        for &unit in encoded {
-            utf16_bytes.push((unit >> 8) as u8);
-            utf16_bytes.push((unit & 0xFF) as u8);
-        }
+    for unit in text.encode_utf16() {
+        utf16_bytes.push((unit >> 8) as u8);
+        utf16_bytes.push((unit & 0xFF) as u8);
     }
     hex::encode(utf16_bytes)
 }
