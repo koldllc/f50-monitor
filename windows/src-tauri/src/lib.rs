@@ -85,6 +85,9 @@ pub fn run() {
     let fetcher_for_tray = fetcher.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_window(app);
+        }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -93,6 +96,13 @@ pub fn run() {
         .setup(move |app| {
             tray::create_tray(app.handle())?;
             
+            // Check if launched via autostart
+            let args: Vec<String> = std::env::args().collect();
+            let is_autostart = args.iter().any(|arg| arg == "--autostart");
+            if !is_autostart {
+                tray::show_window(app.handle());
+            }
+
             // Background Polling Worker
             let fetcher_bg = fetcher_for_tray.clone();
             tauri::async_runtime::spawn(async move {

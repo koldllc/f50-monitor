@@ -13,12 +13,17 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let menu = Menu::with_items(app, &[&show_i, &ufi_i, &router_i, &refresh_i, &quit_i])?;
 
+    let icon_bytes = include_bytes!("../icons/32x32.png");
+    let embedded_icon = tauri::image::Image::from_bytes(icon_bytes).ok();
+
     let mut tray_builder = TrayIconBuilder::new()
         .tooltip("F50 Monitor")
         .menu(&menu)
         .show_menu_on_left_click(false);
 
-    if let Some(icon) = app.default_window_icon() {
+    if let Some(img) = embedded_icon {
+        tray_builder = tray_builder.icon(img);
+    } else if let Some(icon) = app.default_window_icon() {
         tray_builder = tray_builder.icon(icon.clone());
     }
 
@@ -62,22 +67,33 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub fn show_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // Position window at bottom right on Windows with DPI scaling support
+        if let Ok(Some(monitor)) = window.primary_monitor() {
+            let scale = monitor.scale_factor();
+            let size = monitor.size();
+            let mon_pos = monitor.position();
+            let win_width = (380.0 * scale) as i32;
+            let win_height = (580.0 * scale) as i32;
+            let margin_x = (16.0 * scale) as i32;
+            let margin_y = (64.0 * scale) as i32; // Space for Windows taskbar
+            let x = mon_pos.x + size.width as i32 - win_width - margin_x;
+            let y = mon_pos.y + size.height as i32 - win_height - margin_y;
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+        }
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 pub fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
-            // Position window at bottom right on Windows
-            if let Ok(Some(monitor)) = window.primary_monitor() {
-                let size = monitor.size();
-                let win_width = 380;
-                let win_height = 580;
-                let x = size.width as i32 - win_width - 16;
-                let y = size.height as i32 - win_height - 56; // Leave space for Windows taskbar
-                let _ = window.set_position(PhysicalPosition::new(x, y));
-            }
-            let _ = window.show();
-            let _ = window.set_focus();
+            show_window(app);
         }
     }
 }
