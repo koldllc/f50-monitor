@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "F50 Monitor",
         "width": 380,
         "height": 580,
@@ -40,12 +41,5 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {
-    "autostart": {},
-    "notification": {},
-    "opener": {},
-    "shell": {
-      "open": true
-    }
-  }
+  "plugins": {}
 }
