@@ -283,6 +283,70 @@ enum F50ResponseParser {
         }
     }
 
+    static func sha256Hex(_ text: String) -> String {
+        let digest = SHA256.hash(data: Data(text.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 计算 ZTE / UFI-TOOLS 登录的密码哈希
+    /// 公式：SHA256(SHA256(plaintext) + LD).uppercased()
+    /// 若 tokenOrPassword 已是 64 位 SHA256 hex，则直接用作第一层哈希，避免二次哈希
+    static func calculateLoginPasswordHash(tokenOrPassword: String, ld: String) -> String {
+        let trimmed = tokenOrPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSha256Hex = trimmed.count == 64 &&
+            trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: "0123456789abcdefABCDEF").inverted) == nil
+        let pwdHash1 = isSha256Hex ? trimmed.lowercased() : sha256Hex(trimmed).lowercased()
+        return sha256Hex(pwdHash1 + ld).uppercased()
+    }
+
+    /// 格式化短信时间字符串：yy;MM;dd;HH;mm;ss;+TZ
+    static func formatSMSTime(date: Date = Date(), timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yy;MM;dd;HH;mm;ss"
+        let base = formatter.string(from: date)
+        let tzOffsetSeconds = timeZone.secondsFromGMT(for: date)
+        let tzOffsetHours = tzOffsetSeconds / 3600
+        let tzSign = tzOffsetHours >= 0 ? "+" : "-"
+        return "\(base);\(tzSign)\(abs(tzOffsetHours))"
+    }
+
+    /// 构造标准 ZTE / UFI-TOOLS 发送短信请求体 (application/x-www-form-urlencoded)
+    static func buildSMSRequestBody(
+        number: String,
+        content: String,
+        ad: String? = nil,
+        date: Date = Date(),
+        timeZone: TimeZone = .current
+    ) -> String {
+        let rawNum = number.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNum = rawNum.filter { $0 != " " && $0 != "-" && $0 != "(" && $0 != ")" }
+
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-_.~")
+
+        let encodedNumber = cleanNum.addingPercentEncoding(withAllowedCharacters: allowed) ?? cleanNum
+        let rawSmsTime = formatSMSTime(date: date, timeZone: timeZone)
+        let encodedSmsTime = rawSmsTime.addingPercentEncoding(withAllowedCharacters: allowed) ?? rawSmsTime
+        let gsmBody = gsmEncode(content)
+
+        var formParts = [
+            "isTest=false",
+            "goformId=SEND_SMS",
+            "notCallback=true",
+            "Number=\(encodedNumber)",
+            "sms_time=\(encodedSmsTime)",
+            "MessageBody=\(gsmBody)",
+            "ID=-1",
+            "encode_type=UNICODE"
+        ]
+        if let ad = ad, !ad.isEmpty {
+            formParts.append("AD=\(ad)")
+        }
+        return formParts.joined(separator: "&")
+    }
+
     /// UFI-TOOLS 短信发送的消息体编码：UTF-16BE 的 hex 字符串
     /// （与 UFI 后台 gsmEncode 一致，非 GSM 7-bit）
     static func gsmEncode(_ text: String) -> String {

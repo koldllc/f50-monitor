@@ -61,6 +61,38 @@ pub fn percent_encode_form(s: &str) -> String {
     out
 }
 
+/// Base64 编码
+pub fn base64_encode(input: &[u8]) -> String {
+    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    let mut i = 0;
+    while i < input.len() {
+        let b0 = input[i] as u32;
+        let b1 = if i + 1 < input.len() { input[i + 1] as u32 } else { 0 };
+        let b2 = if i + 2 < input.len() { input[i + 2] as u32 } else { 0 };
+
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        out.push(B64_CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(B64_CHARS[((triple >> 12) & 0x3F) as usize] as char);
+
+        if i + 1 < input.len() {
+            out.push(B64_CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+
+        if i + 2 < input.len() {
+            out.push(B64_CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+
+        i += 3;
+    }
+    out
+}
+
 /// Base64 解码，支持标准与 URL-safe 格式并自动忽略换行空格
 pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();

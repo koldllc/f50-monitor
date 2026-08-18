@@ -40,6 +40,16 @@ struct SMSListView: View {
 
                 Spacer()
 
+                if fetcher.smsMessages.contains(where: { $0.isUnread }) {
+                    Button(action: { fetcher.markAllSMSAsRead() }) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(F50Theme.blue)
+                    .help("全部标为已读")
+                }
+
                 Button(action: { isComposing = true }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 15, weight: .medium))
@@ -102,7 +112,8 @@ struct SMSListView: View {
         }
         .padding(16)
         .frame(width: 380)
-        .onAppear { fetcher.fetchSMSMessages() }
+        .onAppear { fetcher.startSMSAutoRefresh() }
+        .onDisappear { fetcher.stopSMSAutoRefresh() }
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
@@ -137,6 +148,7 @@ struct SMSListView: View {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(code, forType: .string)
+                    fetcher.markSMSAsRead(ids: [message.id])
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc.fill")
@@ -159,6 +171,48 @@ struct SMSListView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(message.isUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04))
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if message.isUnread {
+                fetcher.markSMSAsRead(ids: [message.id])
+            }
+        }
+        .contextMenu {
+            if message.isUnread {
+                Button {
+                    fetcher.markSMSAsRead(ids: [message.id])
+                } label: {
+                    Label("标为已读", systemImage: "envelope.open")
+                }
+            }
+            if let code = extractVerificationCode(from: message.content) {
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(code, forType: .string)
+                    fetcher.markSMSAsRead(ids: [message.id])
+                } label: {
+                    Label("复制验证码 (\(code))", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(message.content, forType: .string)
+                fetcher.markSMSAsRead(ids: [message.id])
+            } label: {
+                Label("复制完整短信", systemImage: "doc.on.clipboard")
+            }
+            if !message.number.isEmpty {
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(message.number, forType: .string)
+                } label: {
+                    Label("复制发送号码", systemImage: "phone")
+                }
+            }
+        }
     }
 
     private func extractVerificationCode(from text: String) -> String? {

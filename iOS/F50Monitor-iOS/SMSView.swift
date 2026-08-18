@@ -47,6 +47,17 @@ struct SMSView: View {
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
+                                .swipeActions(edge: .leading) {
+                                    if message.isUnread {
+                                        Button {
+                                            fetcher.markSMSAsRead(ids: [message.id])
+                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        } label: {
+                                            Label("已读", systemImage: "envelope.open.fill")
+                                        }
+                                        .tint(.blue)
+                                    }
+                                }
                         }
                     }
                     .listStyle(.plain)
@@ -58,6 +69,17 @@ struct SMSView: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("短信")
             .toolbar {
+                if fetcher.smsMessages.contains(where: { $0.isUnread }) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            fetcher.markAllSMSAsRead()
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } label: {
+                            Label("全部已读", systemImage: "checkmark.circle")
+                                .font(.subheadline)
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         fetcher.fetchSMSMessages()
@@ -110,9 +132,10 @@ struct SMSView: View {
             }
         }
         .onAppear {
-            if fetcher.smsMessages.isEmpty {
-                fetcher.fetchSMSMessages()
-            }
+            fetcher.startSMSAutoRefresh()
+        }
+        .onDisappear {
+            fetcher.stopSMSAutoRefresh()
         }
     }
 
@@ -158,6 +181,7 @@ struct SMSView: View {
                 Button {
                     UIPasteboard.general.string = code
                     withAnimation { copiedNotice = "验证码 \(code) 已复制" }
+                    fetcher.markSMSAsRead(ids: [message.id])
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 } label: {
                     HStack(spacing: 5) {
@@ -177,11 +201,27 @@ struct SMSView: View {
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if message.isUnread {
+                fetcher.markSMSAsRead(ids: [message.id])
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
         .contextMenu {
+            if message.isUnread {
+                Button {
+                    fetcher.markSMSAsRead(ids: [message.id])
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                } label: {
+                    Label("标为已读", systemImage: "envelope.open")
+                }
+            }
             if let code = extractVerificationCode(from: message.content) {
                 Button {
                     UIPasteboard.general.string = code
                     withAnimation { copiedNotice = "验证码 \(code) 已复制" }
+                    fetcher.markSMSAsRead(ids: [message.id])
                 } label: {
                     Label("复制验证码 (\(code))", systemImage: "doc.on.doc")
                 }
@@ -189,6 +229,7 @@ struct SMSView: View {
             Button {
                 UIPasteboard.general.string = message.content
                 withAnimation { copiedNotice = "短信内容已复制" }
+                fetcher.markSMSAsRead(ids: [message.id])
             } label: {
                 Label("复制完整短信", systemImage: "doc.on.clipboard")
             }

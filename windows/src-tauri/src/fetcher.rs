@@ -8,7 +8,7 @@ use serde_json::Value;
 use regex::Regex;
 
 use crate::models::{F50Configuration, F50SMSMessage, F50Status};
-use crate::crypto::{kano_sign, gsm_encode, percent_encode_form, base64_decode, sha256_hex, KANO_SIGN_KEY};
+use crate::crypto::{kano_sign, gsm_encode, percent_encode_form, base64_decode, base64_encode, sha256_hex, KANO_SIGN_KEY};
 
 pub struct F50Fetcher {
     pub client: reqwest::Client,
@@ -697,12 +697,12 @@ impl F50Fetcher {
         let (_, ufi_base) = self.get_endpoints(&base_url);
         let tokens = self.candidate_tokens(&ufi_token, &password);
 
-        let escaped_num = number.replace('\"', "\\\"");
-        let escaped_body = content.replace('\"', "\\\"").replace('$', "\\$");
+        let clean_num: String = number.chars().filter(|c| c.is_ascii_digit() || *c == '+').collect();
+        let b64_body = base64_encode(content.as_bytes());
 
         let root_cmd = format!(
-            "sub_id=$(content query --uri content://telephony/siminfo --projection _id --where \"sim_id>=0\" 2>/dev/null | grep -o \"_id=[0-9]*\" | head -n 1 | cut -d= -f2)\nif [ -z \"$sub_id\" ]; then sub_id=3; fi\nservice call isms 6 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"null\" i32 1\n",
-            escaped_num, escaped_body
+            "sub_id=$(content query --uri content://telephony/siminfo --projection _id --where \"sim_id>=0\" 2>/dev/null | grep -o \"_id=[0-9]*\" | head -n 1 | cut -d= -f2)\nif [ -z \"$sub_id\" ]; then sub_id=3; fi\nBODY=$(echo \"{}\" | base64 -d)\nservice call isms 6 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"$BODY\" s16 \"null\" s16 \"null\" i32 1\n",
+            b64_body, clean_num
         );
 
         for token in &tokens {

@@ -487,4 +487,70 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(status.trafficUsageRatio, 1.0)
         XCTAssertEqual(F50Status().trafficUsageRatio, 0.0)
     }
+
+    func testCalculateLoginPasswordHashBothRawAndPreHashed() {
+        let ld = "1234567890abcdef"
+        let raw = "admin"
+        let shaAdmin = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+
+        let hashFromRaw = F50ResponseParser.calculateLoginPasswordHash(tokenOrPassword: raw, ld: ld)
+        let hashFromPreHashed = F50ResponseParser.calculateLoginPasswordHash(tokenOrPassword: shaAdmin, ld: ld)
+
+        XCTAssertEqual(hashFromRaw, hashFromPreHashed)
+        XCTAssertEqual(hashFromRaw.count, 64)
+        XCTAssertEqual(hashFromRaw, hashFromRaw.uppercased())
+    }
+
+    func testFormatSMSTime() {
+        let calendar = Calendar(identifier: .gregorian)
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 8
+        components.day = 18
+        components.hour = 12
+        components.minute = 30
+        components.second = 45
+        guard let timeZone = TimeZone(secondsFromGMT: 8 * 3600),
+              let date = calendar.date(from: components) else {
+            XCTFail("Date construction failed")
+            return
+        }
+
+        let formatted = F50ResponseParser.formatSMSTime(date: date, timeZone: timeZone)
+        XCTAssertEqual(formatted, "26;08;18;12;30;45;+8")
+    }
+
+    func testBuildSMSRequestBodyEncodesProperly() {
+        let calendar = Calendar(identifier: .gregorian)
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 8
+        components.day = 18
+        components.hour = 12
+        components.minute = 30
+        components.second = 45
+        guard let timeZone = TimeZone(secondsFromGMT: 8 * 3600),
+              let date = calendar.date(from: components) else {
+            XCTFail("Date construction failed")
+            return
+        }
+
+        let body = F50ResponseParser.buildSMSRequestBody(
+            number: "+86 138-0013-8000",
+            content: "测试 Hello",
+            ad: "SAMPLEAD123",
+            date: date,
+            timeZone: timeZone
+        )
+
+        XCTAssertTrue(body.contains("goformId=SEND_SMS"))
+        XCTAssertTrue(body.contains("isTest=false"))
+        XCTAssertTrue(body.contains("notCallback=true"))
+        XCTAssertTrue(body.contains("Number=%2B8613800138000"))
+        XCTAssertTrue(body.contains("sms_time=26%3B08%3B18%3B12%3B30%3B45%3B%2B8"))
+        XCTAssertTrue(body.contains("MessageBody=6d4b8bd5002000480065006c006c006f"))
+        XCTAssertTrue(body.contains("ID=-1"))
+        XCTAssertTrue(body.contains("encode_type=UNICODE"))
+        XCTAssertTrue(body.contains("AD=SAMPLEAD123"))
+    }
 }

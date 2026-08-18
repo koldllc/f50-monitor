@@ -325,15 +325,48 @@ export async function fetchSMS() {
   state.sms.errorMessage = null;
   try {
     const msgs = await invokeTauri('get_sms_messages');
+    const readIds = new Set(JSON.parse(localStorage.getItem('F50_LocallyReadSMSIds') || '[]'));
     state.sms.messages = (msgs || []).map(m => ({
       ...m,
-      content: decodeSmsContent(m.content)
+      content: decodeSmsContent(m.content),
+      isUnread: readIds.has(m.id) ? false : m.isUnread,
+      isOutgoing: m.tag === '2' || m.tag === '3',
+      didFailToSend: m.tag === '5' || String(m.tag).toLowerCase() === 'failed'
     }));
   } catch (err) {
     state.sms.errorMessage = String(err);
   } finally {
     state.sms.isFetching = false;
   }
+}
+
+export function startSMSPolling(interval = 4000) {
+  stopSMSPolling();
+  fetchSMS();
+  state.smsTimer = setInterval(fetchSMS, interval);
+}
+
+export function stopSMSPolling() {
+  if (state.smsTimer) {
+    clearInterval(state.smsTimer);
+    state.smsTimer = null;
+  }
+}
+
+export function markSMSAsRead(ids) {
+  if (!ids || !ids.length) return;
+  const readIds = new Set(JSON.parse(localStorage.getItem('F50_LocallyReadSMSIds') || '[]'));
+  ids.forEach(id => readIds.add(id));
+  localStorage.setItem('F50_LocallyReadSMSIds', JSON.stringify([...readIds]));
+  state.sms.messages = state.sms.messages.map(m => ({
+    ...m,
+    isUnread: readIds.has(m.id) ? false : m.isUnread
+  }));
+}
+
+export function markAllSMSAsRead() {
+  const unreadIds = state.sms.messages.filter(m => m.isUnread).map(m => m.id);
+  markSMSAsRead(unreadIds);
 }
 
 export async function sendSMS(number, content) {

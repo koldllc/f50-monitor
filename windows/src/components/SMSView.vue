@@ -12,6 +12,17 @@
       <span class="sub-title">短信收件箱</span>
 
       <div class="sub-actions">
+        <button 
+          v-if="state.sms.messages.some(m => m.isUnread)" 
+          class="btn-icon" 
+          @click="markAllSMSAsRead" 
+          title="全部标为已读"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </button>
+
         <button class="btn-icon" @click="emit('openCompose')" title="写短信">
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
             <path d="M12 20h9"></path>
@@ -53,6 +64,7 @@
           :key="msg.id" 
           class="sms-card"
           :class="{ unread: msg.isUnread }"
+          @click="onCardClick(msg)"
         >
           <div class="sms-meta">
             <div class="sms-sender">
@@ -69,7 +81,7 @@
 
           <!-- Quick Copy Verify Code Button -->
           <div v-if="extractVerifyCode(msg.content)" class="verify-action-row">
-            <button class="copy-code-btn" @click="copyCode(extractVerifyCode(msg.content))">
+            <button class="copy-code-btn" @click.stop="copyCode(extractVerifyCode(msg.content), msg.id)">
               <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -85,21 +97,32 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { state, fetchSMS, extractVerifyCode } from '../stores/f50Store.js';
+import { ref, onMounted, onUnmounted } from 'vue';
+import { state, fetchSMS, startSMSPolling, stopSMSPolling, markSMSAsRead, markAllSMSAsRead, extractVerifyCode } from '../stores/f50Store.js';
 
 const emit = defineEmits(['close', 'openCompose']);
 const copiedCode = ref(null);
 
 onMounted(() => {
-  if (state.sms.messages.length === 0) {
-    fetchSMS();
-  }
+  startSMSPolling();
 });
 
-function copyCode(code) {
+onUnmounted(() => {
+  stopSMSPolling();
+});
+
+function onCardClick(msg) {
+  if (msg.isUnread) {
+    markSMSAsRead([msg.id]);
+  }
+}
+
+function copyCode(code, msgId) {
   if (!code) return;
   navigator.clipboard.writeText(code);
+  if (msgId) {
+    markSMSAsRead([msgId]);
+  }
   copiedCode.value = code;
   setTimeout(() => {
     if (copiedCode.value === code) copiedCode.value = null;

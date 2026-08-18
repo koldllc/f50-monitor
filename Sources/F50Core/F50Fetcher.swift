@@ -78,6 +78,8 @@ public class F50Fetcher: ObservableObject {
     @Published public private(set) var smsMessages: [F50SMSMessage] = []
     @Published public private(set) var isFetchingSMS = false
     @Published public private(set) var smsErrorMessage: String?
+    public private(set) var locallyReadSMSIds: Set<String> = []
+    private var smsAutoRefreshTimer: Timer?
 
     private var timer: Timer?
      public private(set) var isFetching = false
@@ -164,9 +166,15 @@ public class F50Fetcher: ObservableObject {
             self.displayMode = .speeds
         }
 
+        self.locallyReadSMSIds = Set(UserDefaults.standard.stringArray(forKey: "F50_LocallyReadSMSIds") ?? [])
+        if !self.locallyReadSMSIds.isEmpty {
+            self.status.smsUnreadCount = 0
+        }
+
         updateEffectiveTrafficResetDay()
         startTimer()
         fetchData()
+        fetchSMSMessages()
     }
 
     public func startTimer() {
@@ -277,14 +285,14 @@ public class F50Fetcher: ObservableObject {
 
         isFetchingSMS = true
         smsErrorMessage = nil
-        fetchSMSMessages(
+        fetchSMSMessagesViaUFI(
             ufiBaseURL: ufiBaseURL,
             candidateTokens: tokens,
             generation: generation
         )
     }
 
-    private func fetchSMSMessages(
+    private func fetchSMSMessagesViaUFI(
         ufiBaseURL: String,
         candidateTokens: [String],
         generation: UInt
@@ -322,12 +330,20 @@ public class F50Fetcher: ObservableObject {
                    let data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let messages = F50ResponseParser.parseSMSMessages(json) {
-                    self.smsMessages = messages
+                    let readIds = self.locallyReadSMSIds
+                    self.smsMessages = messages.map { msg in
+                        var m = msg
+                        if readIds.contains(msg.id) {
+                            m.isLocallyRead = true
+                        }
+                        return m
+                    }
+                    self.status.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
                     self.smsErrorMessage = nil
                     self.isFetchingSMS = false
                     self.smsTask = nil
                 } else if candidateTokens.count > 1 {
-                    self.fetchSMSMessages(
+                    self.fetchSMSMessagesViaUFI(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
                         generation: generation
@@ -350,6 +366,71 @@ public class F50Fetcher: ObservableObject {
         smsTask = nil
     }
 
+    // MARK: - 短信自动刷新与标记已读
+
+    public func startSMSAutoRefresh(interval: TimeInterval = 4.0) {
+        stopSMSAutoRefresh()
+        fetchSMSMessages()
+        smsAutoRefreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.fetchSMSMessages()
+            }
+        }
+    }
+
+    public func stopSMSAutoRefresh() {
+        smsAutoRefreshTimer?.invalidate()
+        smsAutoRefreshTimer = nil
+    }
+
+    public func markSMSAsRead(ids: [String]) {
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            locallyReadSMSIds.insert(id)
+        }
+        UserDefaults.standard.set(Array(locallyReadSMSIds), forKey: "F50_LocallyReadSMSIds")
+
+        let readIds = locallyReadSMSIds
+        smsMessages = smsMessages.map { msg in
+            var m = msg
+            if readIds.contains(msg.id) {
+                m.isLocallyRead = true
+            }
+            return m
+        }
+        status.smsUnreadCount = smsMessages.filter { $0.isUnread }.count
+
+        // 同步设备端标记已读
+        let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
+        let tokens = candidateTokens()
+        guard let token = tokens.first else { return }
+
+        let idsJoined = ids.joined(separator: ";") + ";"
+        computeSMSADViaUFI(ufiBaseURL: ufiBaseURL, token: token, generation: requestGeneration) { [weak self] ad in
+            guard let self else { return }
+            let body = "isTest=false&goformId=SET_MSG_READ&msg_id=\(idsJoined)&tag=0&AD=\(ad)"
+            guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
+                  let bodyData = body.data(using: .utf8) else { return }
+
+            var request = self.signedUFIRequest(
+                url: url,
+                token: token,
+                method: "POST",
+                body: bodyData,
+                contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+            )
+            request.timeoutInterval = 5.0
+            URLSession.shared.dataTask(with: request).resume()
+        }
+    }
+
+    public func markAllSMSAsRead() {
+        let unreadIds = smsMessages.filter { $0.isUnread }.map { $0.id }
+        markSMSAsRead(ids: unreadIds)
+        status.smsUnreadCount = 0
+    }
+
     // MARK: - 发送短信
 
     @Published public private(set) var isSendingSMS = false
@@ -369,7 +450,7 @@ public class F50Fetcher: ObservableObject {
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
         let tokens = candidateTokens()
-        guard let token = tokens.first else {
+        guard !tokens.isEmpty else {
             smsSendErrorMessage = "请先配置 UFI后台口令"
             return
         }
@@ -378,51 +459,210 @@ public class F50Fetcher: ObservableObject {
         smsSendErrorMessage = nil
         smsSendSuccess = false
 
-        smsLogin(
+        attemptSendSMS(
+            ufiBaseURL: ufiBaseURL,
+            candidateTokens: tokens,
+            number: cleanNumber,
+            content: cleanContent,
+            generation: generation
+        )
+    }
+
+    private func attemptSendSMS(
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        number: String,
+        content: String,
+        generation: UInt
+    ) {
+        guard generation == requestGeneration, let token = candidateTokens.first else {
+            finishSMSFailed("发送失败，请检查 UFI后台口令与管理密码")
+            return
+        }
+
+        // 策略 1：通过 MiniKano /api/root_shell 底层 Telephony service call isms 6 直接发信（已实测验证）
+        sendSMSViaRootShell(
             ufiBaseURL: ufiBaseURL,
             token: token,
+            number: number,
+            content: content,
             generation: generation
-        ) { [weak self] cookie in
-            guard let self else { return }
-            guard let cookie, !cookie.isEmpty else {
-                self.finishSMSFailed("登录失败，请检查 UFI后台口令")
-                return
-            }
-            self.computeSMSAD(
-                ufiBaseURL: ufiBaseURL,
-                token: token,
-                cookie: cookie,
-                generation: generation
-            ) { [weak self] ad in
-                guard let self else { return }
-                guard let ad, !ad.isEmpty else {
-                    self.finishSMSFailed("签名校验失败，请重试")
-                    return
-                }
-                self.performSMSSend(
+        ) { [weak self] shellSuccess in
+            guard let self, generation == self.requestGeneration else { return }
+            if shellSuccess {
+                self.smsSendSuccess = true
+                self.smsSendErrorMessage = nil
+                self.isSendingSMS = false
+                self.fetchSMSMessages()
+            } else {
+                // 策略 2：通过 /api/goform/goform_set_cmd_process 标准接口发送
+                self.sendSMSViaGoform(
                     ufiBaseURL: ufiBaseURL,
                     token: token,
-                    cookie: cookie,
-                    ad: ad,
-                    number: cleanNumber,
-                    content: cleanContent,
+                    number: number,
+                    content: content,
                     generation: generation
-                )
+                ) { [weak self] goformSuccess, errMsg in
+                    guard let self, generation == self.requestGeneration else { return }
+                    if goformSuccess {
+                        self.smsSendSuccess = true
+                        self.smsSendErrorMessage = nil
+                        self.isSendingSMS = false
+                        self.fetchSMSMessages()
+                    } else if candidateTokens.count > 1 {
+                        self.attemptSendSMS(
+                            ufiBaseURL: ufiBaseURL,
+                            candidateTokens: Array(candidateTokens.dropFirst()),
+                            number: number,
+                            content: content,
+                            generation: generation
+                        )
+                    } else {
+                        self.finishSMSFailed(errMsg ?? "发送失败，请检查 SIM 卡状态或后台权限")
+                    }
+                }
             }
         }
     }
 
-    /// UFI-TOOLS 登录：LD 挑战 → LOGIN，返回 kano-cookie
-    private func smsLogin(
+    /// 策略 1：/api/root_shell (及 /api/user_shell) Android 底层短信调用
+    private func sendSMSViaRootShell(
+        ufiBaseURL: String,
+        token: String,
+        number: String,
+        content: String,
+        generation: UInt,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let url = URL(string: "\(ufiBaseURL)/api/root_shell") ?? URL(string: "\(ufiBaseURL)/api/user_shell") else {
+            completion(false)
+            return
+        }
+
+        let cleanNum = number.components(separatedBy: CharacterSet(charactersIn: "0123456789+").inverted).joined()
+        let b64Body = Data(content.utf8).base64EncodedString()
+
+        // 动态查询当前可用 SIM 的 subId，base64 解码正文，并通过 ISms 方法 6 (sendTextForSubscriber) 下发
+        let cmd = """
+        sub_id=$(content query --uri content://telephony/siminfo --projection _id --where "sim_id>=0" 2>/dev/null | grep -o "_id=[0-9]*" | head -n 1 | cut -d= -f2)
+        if [ -z "$sub_id" ]; then sub_id=3; fi
+        BODY=$(echo "\(b64Body)" | base64 -d)
+        service call isms 6 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
+        service call isms 7 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
+        service call isms 5 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1
+
+        """
+
+        let bodyObj: [String: Any] = ["command": cmd]
+        guard let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: []) else {
+            completion(false)
+            return
+        }
+
+        var request = signedUFIRequest(url: url, token: token, method: "POST", body: body)
+        request.timeoutInterval = 8.0
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            Task { @MainActor in
+                guard let self, generation == self.requestGeneration else { return }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    completion(false)
+                    return
+                }
+
+                let rawResult: String
+                if let dictRes = json["result"] as? [String: Any], let c = dictRes["content"] as? String {
+                    rawResult = c
+                } else if let strRes = json["result"] as? String {
+                    rawResult = strRes
+                } else {
+                    rawResult = ""
+                }
+
+                if rawResult.contains("Result: Parcel") && !rawResult.contains("Exception") {
+                    completion(true)
+                } else {
+                    completion(false)
+                }
+            }
+        }.resume()
+    }
+
+    /// 策略 2：goform_set_cmd_process 发送短信（先获取 wa/cr/RD 计算 AD 鉴权参数）
+    private func sendSMSViaGoform(
+        ufiBaseURL: String,
+        token: String,
+        number: String,
+        content: String,
+        generation: UInt,
+        completion: @escaping (Bool, String?) -> Void
+    ) {
+        computeSMSADViaUFI(ufiBaseURL: ufiBaseURL, token: token, generation: generation) { [weak self] ad in
+            guard let self, generation == self.requestGeneration else { return }
+            let bodyString = F50ResponseParser.buildSMSRequestBody(
+                number: number,
+                content: content,
+                ad: ad
+            )
+            guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
+                  let body = bodyString.data(using: .utf8) else {
+                completion(false, "短信接口地址无效")
+                return
+            }
+
+            var request = self.signedUFIRequest(
+                url: url,
+                token: token,
+                method: "POST",
+                body: body,
+                contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+            )
+            request.timeoutInterval = 10.0
+
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+                Task { @MainActor in
+                    guard let self, generation == self.requestGeneration else { return }
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                          let data else {
+                        completion(false, nil)
+                        return
+                    }
+
+                    if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        let resultInt = dict["result"] as? Int
+                        let resultStr = (dict["result"] as? String)?.lowercased()
+                        if resultInt == 0 || resultInt == 3 || resultStr == "0" || resultStr == "3" || resultStr == "success" {
+                            completion(true, nil)
+                        } else if resultStr == "sms_send_failed" || resultInt == 1 || resultStr == "1" {
+                            completion(false, "发送失败（请检查 SIM 卡状态或短信配额）")
+                        } else if let res = dict["result"] {
+                            completion(false, "发送失败：\(res)")
+                        } else {
+                            let raw = String(data: data, encoding: .utf8) ?? ""
+                            completion(false, raw.isEmpty ? nil : "发送失败：\(raw)")
+                        }
+                    } else if let raw = String(data: data, encoding: .utf8),
+                              (raw.contains("\"result\":0") || raw.contains("\"result\":\"0\"") || raw.contains("success")) {
+                        completion(true, nil)
+                    } else {
+                        completion(false, nil)
+                    }
+                }
+            }.resume()
+        }
+    }
+
+    private func computeSMSADViaUFI(
         ufiBaseURL: String,
         token: String,
         generation: UInt,
-        completion: @escaping (String?) -> Void
+        completion: @escaping (String) -> Void
     ) {
         let ts = String(Int64(Date().timeIntervalSince1970 * 1000))
-        // 注意：minikano goform 要求 cmd 参数放在第一位
-        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=LD&isTest=false&_=\(ts)") else {
-            completion(nil)
+        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_=\(ts)") else {
+            completion("")
             return
         }
 
@@ -431,144 +671,30 @@ public class F50Fetcher: ObservableObject {
                 guard let self, generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let data,
-                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let ld = dict["LD"] as? String, !ld.isEmpty else {
-                    completion(nil)
+                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    completion("")
                     return
                 }
 
-                let pwdHash = self.sha256(self.sha256(token) + ld).uppercased()
-                let bodyString = "goformId=LOGIN&isTest=false&password=\(pwdHash)&user=admin"
-                guard let loginURL = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
-                      let body = bodyString.data(using: .utf8) else {
-                    completion(nil)
-                    return
-                }
-
-                let request = self.signedUFIRequest(
-                    url: loginURL,
-                    token: token,
-                    method: "POST",
-                    body: body,
-                    contentType: "application/x-www-form-urlencoded; charset=UTF-8"
-                )
-
-                URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
-                    Task { @MainActor in
-                        guard let self, generation == self.requestGeneration else { return }
-                        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                            completion(nil)
-                            return
-                        }
-                        let cookie = (http.value(forHTTPHeaderField: "kano-cookie") ?? "")
-                            .components(separatedBy: ";").first
-                        completion(cookie)
-                    }
-                }.resume()
-            }
-        }.resume()
-    }
-
-    /// 计算 AD 签名：AD = SHA256(SHA256(wa_inner_version + cr_version) + RD)
-    private func computeSMSAD(
-        ufiBaseURL: String,
-        token: String,
-        cookie: String,
-        generation: UInt,
-        completion: @escaping (String?) -> Void
-    ) {
-        let ts = String(Int64(Date().timeIntervalSince1970 * 1000))
-        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_=\(ts)") else {
-            completion(nil)
-            return
-        }
-        var request = signedUFIRequest(url: url, token: token)
-        request.setValue(cookie, forHTTPHeaderField: "Cookie")
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
-            Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                      let data,
-                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let wa = dict["wa_inner_version"] as? String,
-                      let cr = dict["cr_version"] as? String,
-                      !wa.isEmpty, !cr.isEmpty else {
-                    completion(nil)
-                    return
-                }
+                let wa = (dict["wa_inner_version"] as? String) ?? (dict["wa_version"] as? String) ?? ""
+                let cr = (dict["cr_version"] as? String) ?? ""
 
                 let ts2 = String(Int64(Date().timeIntervalSince1970 * 1000))
                 guard let rdURL = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=RD&isTest=false&_=\(ts2)") else {
-                    completion(nil)
+                    let ad = self.sha256(self.sha256(wa + cr)).uppercased()
+                    completion(ad)
                     return
                 }
-                var rdRequest = self.signedUFIRequest(url: rdURL, token: token)
-                rdRequest.setValue(cookie, forHTTPHeaderField: "Cookie")
 
-                URLSession.shared.dataTask(with: rdRequest) { data, response, _ in
+                URLSession.shared.dataTask(with: self.signedUFIRequest(url: rdURL, token: token)) { [weak self] data, response, _ in
                     Task { @MainActor in
-                        guard generation == self.requestGeneration else { return }
-                        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                              let data,
-                              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let rd = dict["RD"] as? String, !rd.isEmpty else {
-                            completion(nil)
-                            return
-                        }
+                        guard let self, generation == self.requestGeneration else { return }
+                        let rdDict = (data != nil) ? (try? JSONSerialization.jsonObject(with: data!) as? [String: Any]) : nil
+                        let rd = (rdDict?["RD"] as? String) ?? ""
                         let ad = self.sha256(self.sha256(wa + cr) + rd).uppercased()
                         completion(ad)
                     }
                 }.resume()
-            }
-        }.resume()
-    }
-
-    /// 发送短信：POST goformId=SEND_SMS
-    private func performSMSSend(
-        ufiBaseURL: String,
-        token: String,
-        cookie: String,
-        ad: String,
-        number: String,
-        content: String,
-        generation: UInt
-    ) {
-        let encodedNumber = number.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? number
-        let bodyString = "goformId=SEND_SMS&Number=\(encodedNumber)&MessageBody=\(F50ResponseParser.gsmEncode(content))&isTest=false&AD=\(ad)"
-        guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_set_cmd_process"),
-              let body = bodyString.data(using: .utf8) else {
-            finishSMSFailed("短信接口地址无效")
-            return
-        }
-        var request = signedUFIRequest(
-            url: url,
-            token: token,
-            method: "POST",
-            body: body,
-            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
-        )
-        request.setValue(cookie, forHTTPHeaderField: "Cookie")
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
-            Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
-                defer { self.isSendingSMS = false }
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                      let data else {
-                    self.finishSMSFailed("发送请求失败，请重试")
-                    return
-                }
-                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   (dict["result"] as? Int) == 0 {
-                    self.smsSendSuccess = true
-                    self.smsSendErrorMessage = nil
-                } else {
-                    let raw = String(data: data, encoding: .utf8) ?? ""
-                    self.finishSMSFailed(raw.isEmpty ? "发送失败，请重试" : "发送失败：\(raw)")
-                }
             }
         }.resume()
     }
@@ -1539,7 +1665,16 @@ public class F50Fetcher: ObservableObject {
             newStatus.connectedDevices = parseInt(val)
         }
         if let val = dict["sms_unread_num"] ?? dict["sms_sim_unread_num"] {
-            newStatus.smsUnreadCount = parseInt(val)
+            let rawCount = parseInt(val)
+            if !self.smsMessages.isEmpty {
+                newStatus.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
+            } else if !self.locallyReadSMSIds.isEmpty {
+                newStatus.smsUnreadCount = max(0, rawCount - self.locallyReadSMSIds.count)
+            } else {
+                newStatus.smsUnreadCount = rawCount
+            }
+        } else if !self.smsMessages.isEmpty {
+            newStatus.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
         }
 
         // Network type parsing (20 -> 5G SA, 19 -> 5G NSA, 10/11 -> 4G LTE)
