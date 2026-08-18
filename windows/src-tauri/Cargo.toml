@@ -1,6 +1,6 @@
 [package]
 name = "f50-monitor"
-version = "1.6.3"
+version = "2.0.0"
 description = "ZTE F50 5G MiFi Status Monitor for Windows"
 authors = ["koldllc"]
 edition = "2021"
