@@ -79,7 +79,7 @@ fn toggle_window(app: AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let initial_config = config::load_config();
     let fetcher = Arc::new(F50Fetcher::new(initial_config));
     let fetcher_for_tray = fetcher.clone();
@@ -94,7 +94,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(fetcher)
         .setup(move |app| {
-            tray::create_tray(app.handle())?;
+            let _ = tray::create_tray(app.handle());
             
             // Check if launched via autostart
             let args: Vec<String> = std::env::args().collect();
@@ -130,6 +130,7 @@ pub fn run() {
             open_url,
             toggle_window
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!())?;
+
+    Ok(())
 }

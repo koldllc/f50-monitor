@@ -13,15 +13,19 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let menu = Menu::with_items(app, &[&show_i, &ufi_i, &router_i, &refresh_i, &quit_i])?;
 
-    let icon = app.default_window_icon()
-        .ok_or("Default window icon is missing")?
-        .clone();
+    let icon_img = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).ok()
+        .or_else(|| app.default_window_icon().cloned());
 
-    let _tray = TrayIconBuilder::with_id("f50_tray")
+    let mut tray_builder = TrayIconBuilder::with_id("f50_tray")
         .tooltip("F50 Monitor")
-        .icon(icon)
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(false);
+
+    if let Some(icon) = icon_img {
+        tray_builder = tray_builder.icon(icon);
+    }
+
+    let _tray = tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
                 toggle_window(app);
