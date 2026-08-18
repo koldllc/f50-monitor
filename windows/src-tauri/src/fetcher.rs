@@ -531,6 +531,16 @@ impl F50Fetcher {
             status.snr = format!("{:.0} dB", snr);
         }
 
+        // QCI fallback from status map if present
+        if let Some(q) = map.get("qci").or_else(|| map.get("5g_qci")).or_else(|| map.get("QCI")) {
+            if let Some(s) = q.as_str() {
+                let clean = s.trim().trim_start_matches("QCI").trim_start_matches("qci").trim().trim_start_matches(':').trim();
+                if !clean.is_empty() && clean != "0" {
+                    status.qci = clean.to_string();
+                }
+            }
+        }
+
         // PPP Status
         if let Some(ppp) = map.get("ppp_status").and_then(|v| v.as_str()) {
             let clean = ppp.trim().to_lowercase();
@@ -847,7 +857,8 @@ fn parse_qos_response(raw: &str) -> Option<(String, String, String)> {
     let clean = raw.replace('*', "");
     let parts: Vec<&str> = clean.split(',').map(|s| s.trim()).collect();
     if parts.len() >= 8 && parts[0].contains("+CGEQOSRDP:") {
-        let qci = parts[1].to_string();
+        let qci_raw = parts[1].trim();
+        let qci = qci_raw.trim_start_matches("QCI").trim_start_matches("qci").trim().trim_start_matches(':').trim().to_string();
         let dl_raw = parts[6];
         let ul_raw = parts[7].split_whitespace().next().unwrap_or("");
         let dl_kbps = dl_raw.parse::<f64>().ok()?;

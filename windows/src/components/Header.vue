@@ -20,7 +20,6 @@
         <div class="subtitle-row">
           <span class="status-dot" :class="{ online: state.status.isOnline }"></span>
           <span class="carrier-name">{{ state.status.isOnline ? (state.status.carrier || '已连接') : (state.status.errorMessage || '未连接后台') }}</span>
-          <span v-if="state.status.isOnline && state.status.qci" class="qci-tag">QCI {{ state.status.qci }}</span>
         </div>
       </div>
     </div>
@@ -177,15 +176,6 @@ function handleRefresh() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.qci-tag {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  background: rgba(56, 128, 235, 0.12);
-  color: var(--color-blue);
-  padding: 1px 4px;
-  border-radius: 4px;
 }
 
 .header-right {
