@@ -8,7 +8,7 @@ use serde_json::Value;
 use regex::Regex;
 
 use crate::models::{F50Configuration, F50SMSMessage, F50Status};
-use crate::crypto::{kano_sign, gsm_encode, percent_encode_form, sha256_hex, KANO_SIGN_KEY};
+use crate::crypto::{kano_sign, gsm_encode, percent_encode_form, base64_decode, sha256_hex, KANO_SIGN_KEY};
 
 pub struct F50Fetcher {
     pub client: reqwest::Client,
@@ -661,12 +661,7 @@ impl F50Fetcher {
                                 if id.is_empty() { continue; }
                                 let number = row.get("number").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                 let raw_content = row.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                                
-                                let content = if let Ok(decoded) = hex::decode(raw_content) {
-                                    String::from_utf8(decoded).unwrap_or_else(|_| raw_content.to_string())
-                                } else {
-                                    raw_content.to_string()
-                                };
+                                let content = decode_sms_content(raw_content);
 
                                 let date_raw = row.get("date").and_then(|v| v.as_str()).unwrap_or("");
                                 let date_text = format_sms_date(date_raw);
@@ -700,100 +695,48 @@ impl F50Fetcher {
         };
 
         let (_, ufi_base) = self.get_endpoints(&base_url);
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
         let tokens = self.candidate_tokens(&ufi_token, &password);
 
+        let escaped_num = number.replace('\"', "\\\"");
+        let escaped_body = content.replace('\"', "\\\"").replace('$', "\\$");
+
+        let root_cmd = format!(
+            "sub_id=$(content query --uri content://telephony/siminfo --projection _id --where \"sim_id>=0\" 2>/dev/null | grep -o \"_id=[0-9]*\" | head -n 1 | cut -d= -f2)\nif [ -z \"$sub_id\" ]; then sub_id=3; fi\nservice call isms 6 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"null\" i32 1\n",
+            escaped_num, escaped_body
+        );
+
         for token in &tokens {
-            // 1. LD Challenge
-            let ld_url = format!("{}/api/goform/goform_get_cmd_process?cmd=LD&isTest=false&_={}", ufi_base, ts);
-            let ld_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            let ld_resp: Value = match self.client.get(&ld_url).headers(ld_headers).send().await {
-                Ok(r) => match r.json().await {
-                    Ok(j) => j,
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            };
+            // 策略 1：/api/root_shell
+            let root_url = format!("{}/api/root_shell", ufi_base);
+            let mut root_headers = self.build_signed_ufi_headers("/api/root_shell", "POST", token);
+            root_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            let body_json = serde_json::json!({ "command": root_cmd });
 
-            let ld = match ld_resp.get("LD").and_then(|v| v.as_str()) {
-                Some(s) if !s.is_empty() => s,
-                _ => continue,
-            };
-
-            // 2. Login
-            let pwd_hash1 = if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                token.to_lowercase()
-            } else {
-                sha256_hex(token).to_lowercase()
-            };
-            let pwd_hash = sha256_hex(&format!("{}{}", pwd_hash1, ld)).to_uppercase();
-            let login_body = format!("goformId=LOGIN&isTest=false&password={}&user=admin", pwd_hash);
-            let login_url = format!("{}/api/goform/goform_set_cmd_process", ufi_base);
-
-            let mut login_headers = self.build_signed_ufi_headers("/api/goform/goform_set_cmd_process", "POST", token);
-            login_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/x-www-form-urlencoded; charset=UTF-8"));
-
-            let login_res = match self.client.post(&login_url).headers(login_headers).body(login_body).send().await {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            let mut cookie = login_res.headers().get("kano-cookie")
-                .or_else(|| login_res.headers().get("set-cookie"))
-                .and_then(|c| c.to_str().ok())
-                .map(|s| s.split(';').next().unwrap_or(s).trim().to_string())
-                .unwrap_or_default();
-
-            if cookie.is_empty() {
-                if let Ok(json_res) = login_res.json::<Value>().await {
-                    let result_int = json_res.get("result").and_then(|r| r.as_i64());
-                    let result_str = json_res.get("result").and_then(|r| r.as_str());
-                    if !(result_int == Some(0) || result_int == Some(3) || result_str == Some("0") || result_str == Some("3") || result_str == Some("success")) {
-                        continue;
+            if let Ok(resp) = self.client.post(&root_url).headers(root_headers).json(&body_json).send().await {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<Value>().await {
+                        let res_str = json.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                        if res_str.contains("Result: Parcel") && !res_str.contains("Exception") {
+                            return Ok(());
+                        }
                     }
                 }
             }
 
-            // 3. AD Signature
+            // 策略 2：Goform
+            let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
             let ver_url = format!("{}/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_={}", ufi_base, ts);
-            let mut ver_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            if !cookie.is_empty() {
-                if let Ok(c) = HeaderValue::from_str(&cookie) {
-                    ver_headers.insert(COOKIE, c);
-                }
-            }
-
-            let ver_resp: Value = match self.client.get(&ver_url).headers(ver_headers).send().await {
-                Ok(r) => match r.json().await {
-                    Ok(j) => j,
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            };
-
-            let wa = ver_resp.get("wa_inner_version")
-                .or_else(|| ver_resp.get("wa_version"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let ver_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
+            let ver_resp: Value = self.client.get(&ver_url).headers(ver_headers).send().await.ok().and_then(|r| r.json().ok().flatten()).unwrap_or_default();
+            let wa = ver_resp.get("wa_inner_version").or_else(|| ver_resp.get("wa_version")).and_then(|v| v.as_str()).unwrap_or("");
             let cr = ver_resp.get("cr_version").and_then(|v| v.as_str()).unwrap_or("");
 
             let rd_url = format!("{}/api/goform/goform_get_cmd_process?cmd=RD&isTest=false&_={}", ufi_base, ts);
-            let mut rd_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            if !cookie.is_empty() {
-                if let Ok(c) = HeaderValue::from_str(&cookie) {
-                    rd_headers.insert(COOKIE, c);
-                }
-            }
-
-            let rd_resp: Value = match self.client.get(&rd_url).headers(rd_headers).send().await {
-                Ok(r) => r.json::<Value>().await.unwrap_or_default(),
-                Err(_) => Value::Null,
-            };
-
+            let rd_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
+            let rd_resp: Value = self.client.get(&rd_url).headers(rd_headers).send().await.ok().and_then(|r| r.json().ok().flatten()).unwrap_or_default();
             let rd = rd_resp.get("RD").and_then(|v| v.as_str()).unwrap_or("");
             let ad = sha256_hex(&format!("{}{}", sha256_hex(&format!("{}{}", wa, cr)), rd)).to_uppercase();
 
-            // 4. Send SMS POST
             let now = Local::now();
             let tz_offset_hours = now.offset().local_minus_utc() / 3600;
             let tz_sign = if tz_offset_hours >= 0 { "+" } else { "-" };
@@ -802,8 +745,8 @@ impl F50Fetcher {
             let clean_num: String = number.chars().filter(|c| !c.is_whitespace() && *c != '-' && *c != '(' && *c != ')').collect();
             let encoded_num = percent_encode_form(&clean_num);
             let encoded_time = percent_encode_form(&raw_sms_time);
-
             let gsm_body = gsm_encode(content);
+
             let mut form_parts = vec![
                 "isTest=false".to_string(),
                 "goformId=SEND_SMS".to_string(),
@@ -822,11 +765,6 @@ impl F50Fetcher {
 
             let mut send_headers = self.build_signed_ufi_headers("/api/goform/goform_set_cmd_process", "POST", token);
             send_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/x-www-form-urlencoded; charset=UTF-8"));
-            if !cookie.is_empty() {
-                if let Ok(c) = HeaderValue::from_str(&cookie) {
-                    send_headers.insert(COOKIE, c);
-                }
-            }
 
             if let Ok(send_res) = self.client.post(&send_url).headers(send_headers).body(send_body).send().await {
                 if let Ok(send_json) = send_res.json::<Value>().await {
@@ -1024,8 +962,74 @@ fn parse_traffic_limit(size_val: Option<&Value>, unit_val: Option<&Value>) -> u6
 fn format_sms_date(raw: &str) -> String {
     let parts: Vec<&str> = raw.split(',').collect();
     if parts.len() >= 6 {
-        format!("{}-{}-{} {}:{}:{}", parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
+        let year = parts[0];
+        let month = parts[1];
+        let day = parts[2];
+        let hour = parts[3];
+        let minute = parts[4];
+        let second_raw = parts[5];
+        let second = second_raw.split(|c| c == '+' || c == '-').next().unwrap_or(second_raw);
+
+        let full_year = if year.len() == 2 { format!("20{}", year) } else { year.to_string() };
+        let pad_month = if month.len() == 1 { format!("0{}", month) } else { month.to_string() };
+        let pad_day = if day.len() == 1 { format!("0{}", day) } else { day.to_string() };
+        let pad_hour = if hour.len() == 1 { format!("0{}", hour) } else { hour.to_string() };
+        let pad_minute = if minute.len() == 1 { format!("0{}", minute) } else { minute.to_string() };
+        let pad_second = if second.len() == 1 { format!("0{}", second) } else { second.to_string() };
+
+        format!("{}-{}-{} {}:{}:{}", full_year, pad_month, pad_day, pad_hour, pad_minute, pad_second)
     } else {
         raw.to_string()
     }
+}
+
+fn decode_sms_content(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // 1. Base64 解码（中兴 F50 / UFI 默认短信编码格式）
+    if let Some(bytes) = base64_decode(trimmed) {
+        if !bytes.is_empty() {
+            if let Ok(utf8_str) = String::from_utf8(bytes.clone()) {
+                if !utf8_str.is_empty() && utf8_str.chars().any(|c| !c.is_control()) {
+                    return utf8_str;
+                }
+            }
+            // UTF-16BE 解码备用
+            if bytes.len() >= 2 && bytes.len() % 2 == 0 {
+                let u16_units: Vec<u16> = bytes.chunks_exact(2)
+                    .map(|chunk| ((chunk[0] as u16) << 8) | (chunk[1] as u16))
+                    .collect();
+                if let Ok(utf16_str) = String::from_utf16(&u16_units) {
+                    if !utf16_str.is_empty() {
+                        return utf16_str;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Hex 解码备用（部分较旧固件可能以 hex 输出）
+    if let Ok(bytes) = hex::decode(trimmed) {
+        if let Ok(utf8_str) = String::from_utf8(bytes.clone()) {
+            if !utf8_str.is_empty() {
+                return utf8_str;
+            }
+        }
+        if bytes.len() >= 2 && bytes.len() % 2 == 0 {
+            let u16_units: Vec<u16> = bytes.chunks_exact(2)
+                .map(|chunk| ((chunk[0] as u16) << 8) | (chunk[1] as u16))
+                .collect();
+            if let Ok(utf16_str) = String::from_utf16(&u16_units) {
+                if !utf16_str.is_empty() {
+                    return utf16_str;
+                }
+            }
+        }
+    }
+
+    // 3. 原始字符串回退
+    trimmed.to_string()
 }

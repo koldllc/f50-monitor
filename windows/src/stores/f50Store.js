@@ -299,12 +299,36 @@ export async function saveConfig(newConfig) {
   startTimer();
 }
 
+export function decodeSmsContent(content) {
+  if (!content) return '';
+  const trimmed = content.trim();
+  if (/[\u4e00-\u9fa5]/.test(trimmed)) {
+    return trimmed;
+  }
+  try {
+    if (/^[A-Za-z0-9+/=_-]+$/.test(trimmed) && trimmed.length >= 4) {
+      const binary = atob(trimmed.replace(/-/g, '+').replace(/_/g, '/'));
+      const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+      const decoded = new TextDecoder('utf-8').decode(bytes);
+      if (decoded && !/[\x00-\x08\x0E-\x1F]/.test(decoded)) {
+        return decoded;
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return trimmed;
+}
+
 export async function fetchSMS() {
   state.sms.isFetching = true;
   state.sms.errorMessage = null;
   try {
     const msgs = await invokeTauri('get_sms_messages');
-    state.sms.messages = msgs || [];
+    state.sms.messages = (msgs || []).map(m => ({
+      ...m,
+      content: decodeSmsContent(m.content)
+    }));
   } catch (err) {
     state.sms.errorMessage = String(err);
   } finally {

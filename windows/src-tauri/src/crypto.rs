@@ -61,6 +61,48 @@ pub fn percent_encode_form(s: &str) -> String {
     out
 }
 
+/// Base64 解码，支持标准与 URL-safe 格式并自动忽略换行空格
+pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    if clean.is_empty() {
+        return Some(Vec::new());
+    }
+
+    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut lookup = [255u8; 256];
+    for (i, &b) in B64_CHARS.iter().enumerate() {
+        lookup[b as usize] = i as u8;
+    }
+    lookup[b'-' as usize] = 62;
+    lookup[b'_' as usize] = 63;
+
+    let bytes = clean.as_bytes();
+    let len = bytes.len();
+    let mut out = Vec::with_capacity((len * 3) / 4);
+
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+
+    for &b in bytes {
+        if b == b'=' {
+            break;
+        }
+        let val = lookup[b as usize];
+        if val == 255 {
+            continue;
+        }
+        buf = (buf << 6) | (val as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
