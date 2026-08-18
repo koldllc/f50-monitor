@@ -45,6 +45,22 @@ pub fn gsm_encode(text: &str) -> String {
     hex::encode(utf16_bytes)
 }
 
+/// URL 百分比编码（保留字母数字与 -_.~）
+pub fn percent_encode_form(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

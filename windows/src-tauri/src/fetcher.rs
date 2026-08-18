@@ -785,9 +785,10 @@ impl F50Fetcher {
                 }
             }
 
-            let rd_resp: Value = self.client.get(&rd_url).headers(rd_headers).send().await.ok()
-                .and_then(|r| r.json::<Value>().await.ok())
-                .unwrap_or_default();
+            let rd_resp: Value = match self.client.get(&rd_url).headers(rd_headers).send().await {
+                Ok(r) => r.json::<Value>().await.unwrap_or_default(),
+                Err(_) => Value::Null,
+            };
 
             let rd = rd_resp.get("RD").and_then(|v| v.as_str()).unwrap_or("");
             let ad = sha256_hex(&format!("{}{}", sha256_hex(&format!("{}{}", wa, cr)), rd)).to_uppercase();
