@@ -20,7 +20,7 @@
       <div class="settings-section">
         <div class="setting-row">
           <div class="setting-text">
-            <span class="setting-title">开机自启动</span>
+            <span class="setting-title">登录时自动启动</span>
             <span class="setting-desc">Windows 登录时在后台启动并驻留托盘</span>
           </div>
           <label class="switch">
@@ -32,21 +32,22 @@
 
       <!-- Device Connection -->
       <div class="settings-section">
-        <span class="section-title">设备连接参数</span>
+        <span class="section-title">连接设置</span>
 
         <div class="form-group">
-          <label class="form-label">后台主机地址 / IP</label>
+          <label class="form-label">设备 IP 地址</label>
           <input 
             v-model="form.baseURL" 
             type="text" 
-            placeholder="http://192.168.0.1:2333" 
+            placeholder="192.168.0.1" 
           />
-          <span class="input-hint">中兴 F50 默认地址为 192.168.0.1</span>
+          <span class="input-hint" v-if="!isIPValid">请输入正确的 IP 地址（例如 192.168.0.1）</span>
+          <span class="input-hint" v-else>中兴 F50 默认地址为 192.168.0.1</span>
         </div>
 
         <div class="form-group">
           <div class="label-row">
-            <label class="form-label">中兴路由后台密码 (Port 80)</label>
+            <label class="form-label">中兴后台口令</label>
             <button class="text-btn" @click="showRouterPwd = !showRouterPwd">
               {{ showRouterPwd ? '隐藏' : '显示' }}
             </button>
@@ -54,13 +55,13 @@
           <input 
             v-model="form.password" 
             :type="showRouterPwd ? 'text' : 'password'" 
-            placeholder="默认 admin" 
+            placeholder="例如 admin" 
           />
         </div>
 
         <div class="form-group">
           <div class="label-row">
-            <label class="form-label">UFI 高级后台口令 (Port 2333)</label>
+            <label class="form-label">UFI后台口令</label>
             <button class="text-btn" @click="showUfiToken = !showUfiToken">
               {{ showUfiToken ? '隐藏' : '显示' }}
             </button>
@@ -68,35 +69,23 @@
           <input 
             v-model="form.ufiToken" 
             :type="showUfiToken ? 'text' : 'password'" 
-            placeholder="默认 admin" 
+            placeholder="例如 admin" 
           />
         </div>
       </div>
 
-      <!-- App Preferences -->
+      <!-- Refresh Preferences -->
       <div class="settings-section">
-        <span class="section-title">监控与显示偏好</span>
+        <span class="section-title">刷新与显示（节能优化）</span>
 
         <div class="form-group">
-          <label class="form-label">数据刷新频率</label>
+          <label class="form-label">自动刷新频率</label>
           <select v-model.number="form.refreshInterval">
-            <option :value="1.0">1.0 秒 (高频实时)</option>
-            <option :value="2.0">2.0 秒 (推荐默认)</option>
-            <option :value="3.0">3.0 秒 (均衡)</option>
-            <option :value="5.0">5.0 秒 (省电)</option>
-            <option :value="10.0">10.0 秒 (低频)</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">任务栏托盘提示模式</label>
-          <select v-model="form.displayMode">
-            <option value="仅图标">仅图标</option>
-            <option value="图标 + 速率">图标 + 实时速率 (默认)</option>
-            <option value="图标 + 套餐用量">图标 + 套餐用量</option>
-            <option value="图标 + CPU/内存">图标 + CPU/内存占用</option>
-            <option value="图标 + 温度">图标 + 芯片温度</option>
-            <option value="图标 + Wi-Fi 设备数">图标 + Wi-Fi 设备数</option>
+            <option :value="1.0">1 秒</option>
+            <option :value="2.0">2 秒（默认推荐）</option>
+            <option :value="3.0">3 秒（推荐节能）</option>
+            <option :value="5.0">5 秒（极简降温）</option>
+            <option :value="10.0">10 秒（超低负载）</option>
           </select>
         </div>
 
@@ -110,9 +99,17 @@
         </div>
       </div>
 
-      <!-- Save Button -->
+      <!-- Footer Info & Actions -->
+      <div class="footer-links">
+        <span>© 2026 Kold. All rights reserved.</span>
+        <a href="https://github.com/koldllc/f50-monitor" target="_blank" class="github-link">GitHub 项目链接</a>
+      </div>
+
       <div class="save-actions">
-        <button class="btn-primary save-btn" @click="handleSave">
+        <button class="btn-icon default-btn" @click="handleRestoreDefault">
+          使用默认值
+        </button>
+        <button class="btn-primary save-btn" @click="handleSave" :disabled="!isIPValid">
           保存并应用
         </button>
       </div>
@@ -121,7 +118,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, computed } from 'vue';
 import { state, saveConfig } from '../stores/f50Store.js';
 
 const emit = defineEmits(['close']);
@@ -133,11 +130,35 @@ const form = reactive({
   baseURL: state.config.baseURL,
   password: state.config.password,
   ufiToken: state.config.ufiToken,
-  refreshInterval: state.config.refreshInterval,
-  displayMode: state.config.displayMode,
-  screenMirroringPort: state.config.screenMirroringPort,
-  launchAtLogin: state.config.launchAtLogin
+  refreshInterval: state.config.refreshInterval || 2.0,
+  displayMode: state.config.displayMode || '仅图标',
+  screenMirroringPort: state.config.screenMirroringPort || 5555,
+  launchAtLogin: state.config.launchAtLogin || false
 });
+
+const isIPValid = computed(() => {
+  const raw = (form.baseURL || '').trim();
+  if (!raw) return false;
+  const clean = raw.replace(/^https?:\/\//, '').split(':')[0].split('/')[0].trim();
+  if (!clean) return false;
+  const parts = clean.split('.');
+  if (parts.length === 4 && parts.every(p => {
+    const n = Number(p);
+    return !isNaN(n) && n >= 0 && n <= 255 && p.trim() !== '';
+  })) {
+    return true;
+  }
+  return !clean.includes('/') && !clean.includes(':') && !clean.includes(' ');
+});
+
+function handleRestoreDefault() {
+  form.baseURL = 'http://192.168.0.1:2333';
+  form.password = 'admin';
+  form.ufiToken = 'admin';
+  form.refreshInterval = 2.0;
+  form.displayMode = '仅图标';
+  form.screenMirroringPort = 5555;
+}
 
 function handleCancel() {
   emit('close');
@@ -181,7 +202,7 @@ async function handleSave() {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .settings-section {
@@ -198,8 +219,7 @@ async function handleSave() {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.2px;
 }
 
 .setting-row {
@@ -256,14 +276,36 @@ async function handleSave() {
   color: var(--text-muted);
 }
 
-.save-actions {
-  margin-top: 6px;
+.footer-links {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.github-link {
+  color: var(--color-blue);
+  text-decoration: none;
+}
+.github-link:hover {
+  text-decoration: underline;
+}
+
+.save-actions {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.default-btn {
+  flex: 1;
+  padding: 8px 12px;
 }
 
 .save-btn {
-  width: 100%;
-  padding: 8px 14px;
+  flex: 1;
+  padding: 8px 12px;
 }
 </style>

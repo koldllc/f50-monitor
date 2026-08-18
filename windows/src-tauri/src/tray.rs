@@ -6,8 +6,8 @@ use tauri::{
 
 pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_i = MenuItem::with_id(app, "show", "显示/隐藏面板", true, None::<&str>)?;
-    let ufi_i = MenuItem::with_id(app, "open_ufi", "打开 UFI 后台 (2333)", true, None::<&str>)?;
-    let router_i = MenuItem::with_id(app, "open_router", "打开中兴后台 (80)", true, None::<&str>)?;
+    let ufi_i = MenuItem::with_id(app, "open_ufi", "UFI后台（2333端口）", true, None::<&str>)?;
+    let router_i = MenuItem::with_id(app, "open_router", "中兴后台（80端口）", true, None::<&str>)?;
     let refresh_i = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "退出 F50 Monitor", true, None::<&str>)?;
 
@@ -31,10 +31,30 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 toggle_window(app);
             }
             "open_ufi" => {
-                let _ = tauri_plugin_opener::open_url("http://192.168.0.1:2333", None::<&str>);
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let base_url = if let Some(fetcher) = app_clone.try_state::<std::sync::Arc<crate::fetcher::F50Fetcher>>() {
+                        fetcher.config.read().await.base_url.clone()
+                    } else {
+                        "http://192.168.0.1:2333".to_string()
+                    };
+                    let clean = base_url.trim().trim_end_matches('/');
+                    let host = clean.replace("http://", "").replace("https://", "").split(':').next().unwrap_or("192.168.0.1").to_string();
+                    let _ = tauri_plugin_opener::open_url(format!("http://{}:2333", host), None::<&str>);
+                });
             }
             "open_router" => {
-                let _ = tauri_plugin_opener::open_url("http://192.168.0.1", None::<&str>);
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let base_url = if let Some(fetcher) = app_clone.try_state::<std::sync::Arc<crate::fetcher::F50Fetcher>>() {
+                        fetcher.config.read().await.base_url.clone()
+                    } else {
+                        "http://192.168.0.1".to_string()
+                    };
+                    let clean = base_url.trim().trim_end_matches('/');
+                    let host = clean.replace("http://", "").replace("https://", "").split(':').next().unwrap_or("192.168.0.1").to_string();
+                    let _ = tauri_plugin_opener::open_url(format!("http://{}", host), None::<&str>);
+                });
             }
             "refresh" => {
                 let app_clone = app.clone();

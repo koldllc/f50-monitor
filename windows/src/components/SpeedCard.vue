@@ -5,7 +5,7 @@
       <div class="speed-item">
         <div class="speed-header">
           <span class="speed-arrow dl-arrow">⬇</span>
-          <span class="speed-label">下载速率</span>
+          <span class="speed-label">实时下载</span>
         </div>
         <div class="speed-value dl-value">
           {{ formatSpeed(state.status.dlSpeed) }}
@@ -24,7 +24,7 @@
       <div class="speed-item">
         <div class="speed-header">
           <span class="speed-arrow ul-arrow">⬆</span>
-          <span class="speed-label">上传速率</span>
+          <span class="speed-label">实时上传</span>
         </div>
         <div class="speed-value ul-value">
           {{ formatSpeed(state.status.ulSpeed) }}

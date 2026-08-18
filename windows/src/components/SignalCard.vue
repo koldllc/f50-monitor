@@ -16,6 +16,18 @@
       </div>
     </div>
 
+    <!-- Subscription / QCI Status Banner if available -->
+    <div v-if="state.status.qci || state.status.qosDl || state.status.qosUl" class="subscription-banner">
+      <span class="banner-label">签约状态：</span>
+      <span v-if="state.status.qci" class="qci-text">QCI: {{ state.status.qci }}</span>
+      <span v-if="state.status.qosDl" class="rate-badge dl-badge">
+        <span class="arrow">⬇</span> {{ state.status.qosDl }}
+      </span>
+      <span v-if="state.status.qosUl" class="rate-badge ul-badge">
+        <span class="arrow">⬆</span> {{ state.status.qosUl }}
+      </span>
+    </div>
+
     <div class="metrics-grid">
       <!-- RSRP -->
       <div class="metric-col">
@@ -34,7 +46,7 @@
       <!-- SINR / SNR -->
       <div class="metric-col">
         <div class="metric-head">
-          <span class="metric-name">SINR</span>
+          <span class="metric-name">SINR / SNR</span>
           <span class="quality-badge" :style="{ color: snrInfo.color, background: snrInfo.color + '1A' }">
             {{ snrInfo.label }}
           </span>
@@ -114,6 +126,39 @@ const rsrqInfo = computed(() => parseSignalQuality(state.status.rsrq, 'rsrq'));
 }
 .bar.active {
   background: var(--color-green);
+}
+
+.subscription-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.banner-label {
+  color: var(--text-muted);
+}
+
+.qci-text {
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.rate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-blue);
+  background: rgba(56, 128, 235, 0.12);
+  padding: 1px 4px;
+  border-radius: 4px;
 }
 
 .metrics-grid {

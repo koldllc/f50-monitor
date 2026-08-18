@@ -18,11 +18,11 @@
         "height": 580,
         "resizable": false,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "skipTaskbar": false,
         "alwaysOnTop": false,
         "visible": true,
-        "shadow": true,
+        "shadow": false,
         "center": true
       }
     ],
