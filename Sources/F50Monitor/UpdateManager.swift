@@ -68,7 +68,7 @@ final class UpdateManager: ObservableObject {
     }
 
     private static let releaseAPI = URL(string: "https://api.github.com/repos/koldllc/f50-monitor/releases/latest")!
-    private static let expectedAssetName = "F50.Monitor.zip"
+    private static let expectedAssetNames = ["f50-monitor-macos.zip", "F50-Monitor-macOS.zip", "F50.Monitor.zip"]
     private static let automaticUpdatesKey = "F50_AutomaticUpdates"
 
     @Published private(set) var state: State = .idle
@@ -140,7 +140,9 @@ final class UpdateManager: ObservableObject {
                     return
                 }
 
-                guard let asset = release.assets.first(where: { $0.name == Self.expectedAssetName }) else {
+                guard let asset = release.assets.first(where: { asset in
+                    Self.expectedAssetNames.contains(where: { $0.caseInsensitiveCompare(asset.name) == .orderedSame })
+                }) else {
                     throw UpdateError.missingAsset
                 }
 
@@ -193,7 +195,7 @@ final class UpdateManager: ObservableObject {
             .appendingPathComponent("F50MonitorUpdate-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
 
-        let archiveURL = stagingDirectory.appendingPathComponent(Self.expectedAssetName)
+        let archiveURL = stagingDirectory.appendingPathComponent(update.asset.name)
         try FileManager.default.copyItem(at: temporaryURL, to: archiveURL)
 
         let process = Process()
