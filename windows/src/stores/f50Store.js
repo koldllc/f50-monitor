@@ -251,7 +251,6 @@ export async function initApp() {
   try {
     const config = await invokeTauri('get_config');
     if (config) Object.assign(state.config, config);
-    await checkScrcpy();
     await fetchStatus();
     startTimer();
   } catch (err) {

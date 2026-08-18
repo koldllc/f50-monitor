@@ -2,7 +2,20 @@ use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use crate::models::ScrcpyStatus;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn create_hidden_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
 
 pub fn get_tools_dir() -> PathBuf {
     let mut dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -21,7 +34,7 @@ pub fn get_scrcpy_status() -> ScrcpyStatus {
 
     let (adb_path, has_adb) = if has_local_adb {
         (Some(local_adb.to_string_lossy().to_string()), true)
-    } else if let Ok(output) = Command::new("where").arg("adb").output() {
+    } else if let Ok(output) = create_hidden_command("where").arg("adb").output() {
         if output.status.success() {
             (Some("adb".to_string()), true)
         } else {
@@ -33,7 +46,7 @@ pub fn get_scrcpy_status() -> ScrcpyStatus {
 
     let (scrcpy_path, has_scrcpy) = if has_local_scrcpy {
         (Some(local_scrcpy.to_string_lossy().to_string()), true)
-    } else if let Ok(output) = Command::new("where").arg("scrcpy").output() {
+    } else if let Ok(output) = create_hidden_command("where").arg("scrcpy").output() {
         if output.status.success() {
             (Some("scrcpy".to_string()), true)
         } else {
@@ -104,7 +117,7 @@ pub fn launch_scrcpy(host: &str, port: u16) -> Result<(), String> {
     let target = format!("{}:{}", host, port);
 
     // 1. adb connect <target>
-    let connect_output = Command::new(&adb)
+    let connect_output = create_hidden_command(&adb)
         .args(["connect", &target])
         .output()
         .map_err(|e| format!("Failed to run adb: {}", e))?;
@@ -115,7 +128,7 @@ pub fn launch_scrcpy(host: &str, port: u16) -> Result<(), String> {
     }
 
     // 2. scrcpy -s <target> --no-audio
-    Command::new(&scrcpy)
+    create_hidden_command(&scrcpy)
         .args(["-s", &target, "--no-audio"])
         .spawn()
         .map_err(|e| format!("Failed to spawn scrcpy: {}", e))?;

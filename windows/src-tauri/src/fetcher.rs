@@ -701,8 +701,8 @@ impl F50Fetcher {
         let b64_body = base64_encode(content.as_bytes());
 
         let root_cmd = format!(
-            "sub_id=$(content query --uri content://telephony/siminfo --projection _id --where \"sim_id>=0\" 2>/dev/null | grep -o \"_id=[0-9]*\" | head -n 1 | cut -d= -f2)\nif [ -z \"$sub_id\" ]; then sub_id=3; fi\nBODY=$(echo \"{}\" | base64 -d)\nservice call isms 6 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"$BODY\" s16 \"null\" s16 \"null\" i32 1\n",
-            b64_body, clean_num
+            "sub_id=$(content query --uri content://telephony/siminfo --projection _id --where \"sim_id>=0\" 2>/dev/null | grep -o \"_id=[0-9]*\" | head -n 1 | cut -d= -f2)\nif [ -z \"$sub_id\" ]; then sub_id=3; fi\nBODY=$(echo \"{}\" | base64 -d)\nservice call isms 6 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"$BODY\" s16 \"null\" s16 \"null\" i32 1 || \\\nservice call isms 7 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"$BODY\" s16 \"null\" s16 \"null\" i32 1 || \\\nservice call isms 5 i32 $sub_id s16 \"com.android.phone\" s16 \"null\" s16 \"{}\" s16 \"null\" s16 \"$BODY\" s16 \"null\" s16 \"null\" i32 1\n",
+            b64_body, clean_num, clean_num, clean_num
         );
 
         for token in &tokens {
