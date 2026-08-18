@@ -16,7 +16,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let icon_bytes = include_bytes!("../icons/32x32.png");
     let embedded_icon = tauri::image::Image::from_bytes(icon_bytes).ok();
 
-    let mut tray_builder = TrayIconBuilder::new()
+    let mut tray_builder = TrayIconBuilder::with_id("f50_tray")
         .tooltip("F50 Monitor")
         .menu(&menu)
         .show_menu_on_left_click(false);

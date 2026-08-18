@@ -21,13 +21,9 @@
         "skipTaskbar": true,
         "alwaysOnTop": true,
         "visible": false,
-        "shadow": false
+        "shadow": true
       }
     ],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "tooltip": "F50 Monitor"
-    },
     "security": {
       "csp": null
     }
