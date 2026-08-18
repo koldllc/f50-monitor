@@ -8,7 +8,7 @@ use serde_json::Value;
 use regex::Regex;
 
 use crate::models::{F50Configuration, F50SMSMessage, F50Status};
-use crate::crypto::{kano_sign, gsm_encode, sha256_hex, KANO_SIGN_KEY};
+use crate::crypto::{kano_sign, gsm_encode, percent_encode_form, sha256_hex, KANO_SIGN_KEY};
 
 pub struct F50Fetcher {
     pub client: reqwest::Client,
@@ -716,12 +716,17 @@ impl F50Fetcher {
             };
 
             let ld = match ld_resp.get("LD").and_then(|v| v.as_str()) {
-                Some(s) => s,
-                None => continue,
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
             };
 
             // 2. Login
-            let pwd_hash = sha256_hex(&format!("{}{}", sha256_hex(token), ld)).to_uppercase();
+            let pwd_hash1 = if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
+                token.to_lowercase()
+            } else {
+                sha256_hex(token).to_lowercase()
+            };
+            let pwd_hash = sha256_hex(&format!("{}{}", pwd_hash1, ld)).to_uppercase();
             let login_body = format!("goformId=LOGIN&isTest=false&password={}&user=admin", pwd_hash);
             let login_url = format!("{}/api/goform/goform_set_cmd_process", ufi_base);
 
@@ -733,18 +738,29 @@ impl F50Fetcher {
                 Err(_) => continue,
             };
 
-            let cookie = match login_res.headers().get("kano-cookie")
+            let mut cookie = login_res.headers().get("kano-cookie")
+                .or_else(|| login_res.headers().get("set-cookie"))
                 .and_then(|c| c.to_str().ok())
-                .map(|s| s.split(';').next().unwrap_or(s).to_string()) {
-                Some(c) => c,
-                None => continue,
-            };
+                .map(|s| s.split(';').next().unwrap_or(s).trim().to_string())
+                .unwrap_or_default();
+
+            if cookie.is_empty() {
+                if let Ok(json_res) = login_res.json::<Value>().await {
+                    let result_int = json_res.get("result").and_then(|r| r.as_i64());
+                    let result_str = json_res.get("result").and_then(|r| r.as_str());
+                    if !(result_int == Some(0) || result_int == Some(3) || result_str == Some("0") || result_str == Some("3") || result_str == Some("success")) {
+                        continue;
+                    }
+                }
+            }
 
             // 3. AD Signature
             let ver_url = format!("{}/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_={}", ufi_base, ts);
             let mut ver_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            if let Ok(c) = HeaderValue::from_str(&cookie) {
-                ver_headers.insert(COOKIE, c);
+            if !cookie.is_empty() {
+                if let Ok(c) = HeaderValue::from_str(&cookie) {
+                    ver_headers.insert(COOKIE, c);
+                }
             }
 
             let ver_resp: Value = match self.client.get(&ver_url).headers(ver_headers).send().await {
@@ -755,47 +771,74 @@ impl F50Fetcher {
                 Err(_) => continue,
             };
 
-            let wa = ver_resp.get("wa_inner_version").and_then(|v| v.as_str()).unwrap_or("");
+            let wa = ver_resp.get("wa_inner_version")
+                .or_else(|| ver_resp.get("wa_version"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let cr = ver_resp.get("cr_version").and_then(|v| v.as_str()).unwrap_or("");
 
             let rd_url = format!("{}/api/goform/goform_get_cmd_process?cmd=RD&isTest=false&_={}", ufi_base, ts);
             let mut rd_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            if let Ok(c) = HeaderValue::from_str(&cookie) {
-                rd_headers.insert(COOKIE, c);
+            if !cookie.is_empty() {
+                if let Ok(c) = HeaderValue::from_str(&cookie) {
+                    rd_headers.insert(COOKIE, c);
+                }
             }
 
-            let rd_resp: Value = match self.client.get(&rd_url).headers(rd_headers).send().await {
-                Ok(r) => match r.json().await {
-                    Ok(j) => j,
-                    Err(_) => continue,
-                },
-                Err(_) => continue,
-            };
+            let rd_resp: Value = self.client.get(&rd_url).headers(rd_headers).send().await.ok()
+                .and_then(|r| r.json::<Value>().await.ok())
+                .unwrap_or_default();
 
             let rd = rd_resp.get("RD").and_then(|v| v.as_str()).unwrap_or("");
             let ad = sha256_hex(&format!("{}{}", sha256_hex(&format!("{}{}", wa, cr)), rd)).to_uppercase();
 
             // 4. Send SMS POST
+            let now = Local::now();
+            let tz_offset_hours = now.offset().local_minus_utc() / 3600;
+            let tz_sign = if tz_offset_hours >= 0 { "+" } else { "-" };
+            let raw_sms_time = format!("{};{}{}", now.format("%y;%m;%d;%H;%M;%S"), tz_sign, tz_offset_hours.abs());
+
+            let clean_num: String = number.chars().filter(|c| !c.is_whitespace() && *c != '-' && *c != '(' && *c != ')').collect();
+            let encoded_num = percent_encode_form(&clean_num);
+            let encoded_time = percent_encode_form(&raw_sms_time);
+
             let gsm_body = gsm_encode(content);
-            let send_body = format!("goformId=SEND_SMS&Number={}&MessageBody={}&isTest=false&AD={}", number, gsm_body, ad);
+            let mut form_parts = vec![
+                "isTest=false".to_string(),
+                "goformId=SEND_SMS".to_string(),
+                "notCallback=true".to_string(),
+                format!("Number={}", encoded_num),
+                format!("sms_time={}", encoded_time),
+                format!("MessageBody={}", gsm_body),
+                "ID=-1".to_string(),
+                "encode_type=UNICODE".to_string(),
+            ];
+            if !ad.is_empty() {
+                form_parts.push(format!("AD={}", ad));
+            }
+            let send_body = form_parts.join("&");
             let send_url = format!("{}/api/goform/goform_set_cmd_process", ufi_base);
 
             let mut send_headers = self.build_signed_ufi_headers("/api/goform/goform_set_cmd_process", "POST", token);
             send_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/x-www-form-urlencoded; charset=UTF-8"));
-            if let Ok(c) = HeaderValue::from_str(&cookie) {
-                send_headers.insert(COOKIE, c);
+            if !cookie.is_empty() {
+                if let Ok(c) = HeaderValue::from_str(&cookie) {
+                    send_headers.insert(COOKIE, c);
+                }
             }
 
             if let Ok(send_res) = self.client.post(&send_url).headers(send_headers).body(send_body).send().await {
                 if let Ok(send_json) = send_res.json::<Value>().await {
-                    if send_json.get("result").and_then(|r| r.as_i64()) == Some(0) {
+                    let result_int = send_json.get("result").and_then(|r| r.as_i64());
+                    let result_str = send_json.get("result").and_then(|r| r.as_str());
+                    if result_int == Some(0) || result_int == Some(3) || result_str == Some("0") || result_str == Some("3") || result_str == Some("success") {
                         return Ok(());
                     }
                 }
             }
         }
 
-        Err("短信发送失败".to_string())
+        Err("短信发送失败，请检查口令与设备网络状态".to_string())
     }
 }
 

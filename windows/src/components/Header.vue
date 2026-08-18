@@ -37,7 +37,13 @@
       </button>
 
       <!-- Refresh Button -->
-      <button class="icon-btn" :class="{ spinning: state.isFetchingStatus }" @click="handleRefresh" title="刷新数据">
+      <button 
+        class="icon-btn" 
+        :class="{ spinning: state.isManualRefreshing }" 
+        @click="handleRefresh" 
+        :disabled="state.isManualRefreshing"
+        title="刷新数据"
+      >
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
           <polyline points="23 4 23 10 17 10"></polyline>
           <polyline points="1 20 1 14 7 14"></polyline>
@@ -84,7 +90,7 @@ const networkBadgeClass = computed(() => {
 });
 
 function handleRefresh() {
-  fetchStatus();
+  fetchStatus(true);
 }
 </script>
 

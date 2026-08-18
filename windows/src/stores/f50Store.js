@@ -168,6 +168,7 @@ export const state = reactive({
     downloadProgress: 0
   },
   isFetchingStatus: false,
+  isManualRefreshing: false,
   activeView: 'main', // 'main' | 'sms' | 'compose' | 'settings' | 'mirror'
   timer: null
 });
@@ -258,9 +259,14 @@ export async function initApp() {
   }
 }
 
-export async function fetchStatus() {
+export async function fetchStatus(isManual = false) {
   if (state.isFetchingStatus) return;
   state.isFetchingStatus = true;
+  if (isManual) {
+    state.isManualRefreshing = true;
+  }
+  const minDuration = isManual ? 600 : 0;
+  const startTime = Date.now();
   try {
     const data = await invokeTauri('get_status');
     if (data) {
@@ -270,6 +276,13 @@ export async function fetchStatus() {
     state.status.isOnline = false;
     state.status.errorMessage = String(err);
   } finally {
+    if (isManual) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < minDuration) {
+        await new Promise(resolve => setTimeout(resolve, minDuration - elapsed));
+      }
+      state.isManualRefreshing = false;
+    }
     state.isFetchingStatus = false;
   }
 }
