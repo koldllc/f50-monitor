@@ -72,7 +72,7 @@ public struct F50Status: Equatable, Codable {
         let resetDayToUse = trafficResetDay
         
         let targetDate: Date
-        if currentDay <= resetDayToUse {
+        if currentDay < resetDayToUse {
             var components = calendar.dateComponents([.year, .month], from: today)
             let range = calendar.range(of: .day, in: .month, for: today) ?? 1..<31
             components.day = min(resetDayToUse, range.count)

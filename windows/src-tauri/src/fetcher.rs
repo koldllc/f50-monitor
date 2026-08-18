@@ -632,14 +632,20 @@ impl F50Fetcher {
             let current_day = today.day() as i32;
             let reset_day = status.traffic_reset_day;
 
-            let target_date = if current_day <= reset_day {
-                NaiveDate::from_ymd_opt(today.year(), today.month(), reset_day as u32)
-                    .unwrap_or(today)
+            let target_date = if current_day < reset_day {
+                let mut day_to_use = reset_day as u32;
+                while day_to_use > 28 && NaiveDate::from_ymd_opt(today.year(), today.month(), day_to_use).is_none() {
+                    day_to_use -= 1;
+                }
+                NaiveDate::from_ymd_opt(today.year(), today.month(), day_to_use).unwrap_or(today)
             } else {
                 let next_month = if today.month() == 12 { 1 } else { today.month() + 1 };
                 let next_year = if today.month() == 12 { today.year() + 1 } else { today.year() };
-                NaiveDate::from_ymd_opt(next_year, next_month, reset_day as u32)
-                    .unwrap_or(today)
+                let mut day_to_use = reset_day as u32;
+                while day_to_use > 28 && NaiveDate::from_ymd_opt(next_year, next_month, day_to_use).is_none() {
+                    day_to_use -= 1;
+                }
+                NaiveDate::from_ymd_opt(next_year, next_month, day_to_use).unwrap_or(today)
             };
 
             let diff = (target_date - today).num_days();

@@ -328,7 +328,7 @@ final class F50ResponseParserTests: XCTestCase {
         let resetDay = 16
 
         let target: Date
-        if currentDay <= resetDay {
+        if currentDay < resetDay {
             var comps = calendar.dateComponents([.year, .month], from: today)
             let range = calendar.range(of: .day, in: .month, for: today) ?? 1..<31
             comps.day = min(resetDay, range.count)
