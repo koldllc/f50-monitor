@@ -3,6 +3,9 @@ name: Build Windows Release
 on:
   push:
     branches: [main, master]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/build-windows.yml'
     tags:
       - 'v*'
   workflow_dispatch:
