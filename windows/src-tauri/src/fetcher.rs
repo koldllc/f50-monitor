@@ -727,13 +727,19 @@ impl F50Fetcher {
             let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
             let ver_url = format!("{}/api/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_={}", ufi_base, ts);
             let ver_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            let ver_resp: Value = self.client.get(&ver_url).headers(ver_headers).send().await.ok().and_then(|r| r.json().ok().flatten()).unwrap_or_default();
+            let ver_resp: Value = match self.client.get(&ver_url).headers(ver_headers).send().await {
+                Ok(r) => r.json::<Value>().await.unwrap_or_default(),
+                Err(_) => Value::Null,
+            };
             let wa = ver_resp.get("wa_inner_version").or_else(|| ver_resp.get("wa_version")).and_then(|v| v.as_str()).unwrap_or("");
             let cr = ver_resp.get("cr_version").and_then(|v| v.as_str()).unwrap_or("");
 
             let rd_url = format!("{}/api/goform/goform_get_cmd_process?cmd=RD&isTest=false&_={}", ufi_base, ts);
             let rd_headers = self.build_signed_ufi_headers("/api/goform/goform_get_cmd_process", "GET", token);
-            let rd_resp: Value = self.client.get(&rd_url).headers(rd_headers).send().await.ok().and_then(|r| r.json().ok().flatten()).unwrap_or_default();
+            let rd_resp: Value = match self.client.get(&rd_url).headers(rd_headers).send().await {
+                Ok(r) => r.json::<Value>().await.unwrap_or_default(),
+                Err(_) => Value::Null,
+            };
             let rd = rd_resp.get("RD").and_then(|v| v.as_str()).unwrap_or("");
             let ad = sha256_hex(&format!("{}{}", sha256_hex(&format!("{}{}", wa, cr)), rd)).to_uppercase();
 
