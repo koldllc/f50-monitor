@@ -22,3 +22,4 @@ windows/src-tauri/target/
 # Xcode user data
 iOS/F50Monitor-iOS.xcodeproj/xcuserdata/
 *.xcuserstate
+windows-release/
