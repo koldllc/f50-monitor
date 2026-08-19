@@ -22,11 +22,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "5.10"
-
       - name: Build macOS App
         run: |
           swift build -c release

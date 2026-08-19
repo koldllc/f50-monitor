@@ -4,105 +4,80 @@
 
 ![F50 Monitor 2.0 功能海报](assets/f50-monitor-v2.0-poster.jpg)
 
-> 💡 **说明**：显示全部完整数据（如 CPU/内存占用率、芯片温度及 QCI 签约速率等）需要设备安装 **UFI 高级后台 (UFI-TOOLS)**；理论上也适用于其他已安装 UFI 高级后台的随身 WiFi 设备。
+> 💡 **提示**：显示全部完整数据（如 CPU/内存占用率、芯片温度及 QCI 签约速率等）需设备安装 **UFI 高级后台 (UFI-TOOLS)**；理论上也适用于其他已安装 UFI-TOOLS 的随身 WiFi 设备。
 
-## ✨ 特性
+---
 
-- ⚡ **菜单栏实时常驻**：支持自定义显示模式（仅图标、实时速率、套餐用量、CPU/内存占用、芯片温度、Wi-Fi 连接设备数）。
-- 📶 **蜂窝信号监控**：实时获取网络制式（5G SA/NSA, 4G LTE）、运营商、信号强度，以及 RSRP、SINR/SNR、RSRQ 信号指标与评级。
-- 📊 **硬件状态感知**：监控 CPU 占用率、内存占用率、芯片温度及已连接设备数（需启用扩展 API 支持）。
-- 🚀 **QCI & 签约速率**：支持通过 UFI-TOOLS 获取 QoS 及 QCI 签约上下行速率。
-- 💬 **短信读写与提醒**：通过 UFI-TOOLS 查看最近短信与未读状态、macOS 通知提醒新短信，并支持直接在 App 内发送短信（含中文/超长短信）。
-- 📺 **无线投屏**：通过无线 ADB + scrcpy 将设备屏幕镜像到 Mac，内置依赖组件一键下载配置（无需 Homebrew）。
-- 🔁 **流量重置天数提醒**：自动识别设备流量清零日（账单日），面板与菜单栏显示“N 天后重置”。
-- 📡 **运营商识别**：支持中国移动、中国联通、中国电信和中国广电的官方标志展示。
-- ⚙️ **便捷交互**：一键刷新、一键直达 Web 后台、自定义刷新频率及后台管理密钥。
-- 🚪 **登录时启动**：可在设置中启用登录时自动启动，并提示完成必要的系统授权。
-- 🔄 **自动更新**：启动时自动检测 GitHub Releases，可自动下载、校验并安装新版本，也可在设置中手动检查。
+## 📦 各平台下载安装
 
-## 🚧 最新开发状态
+前往 [GitHub Releases](https://github.com/koldllc/f50-monitor/releases/latest) 下载最新稳定版本（**v2.1.1**）：
 
-当前稳定版本为 **v2.1.1**，已完成：
+| 平台 / 设备 | 推荐下载文件 | 说明 |
+| :--- | :--- | :--- |
+| 🍏 **macOS (苹果电脑)** | [**`f50-monitor-macos.zip`**](https://github.com/koldllc/f50-monitor/releases/latest) | 菜单栏常驻工具，解压即用（支持 Apple Silicon M 系列芯片与 Intel Mac） |
+| 🪟 **Windows (主流电脑)** | [**`f50-monitor-windows-x64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用 99% 常见 Windows 电脑（Intel / AMD 处理器），绿色单文件免安装 |
+| 🪟 **Windows (ARM 设备)** | [**`f50-monitor-windows-arm64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用高通骁龙 ARM 架构 Windows 设备（如 Surface Pro 11 等） |
+| 📱 **iOS (iPhone)** | 源码编译 / 见下方指引 | 支持 iPhone 主 App 与锁屏/主屏 WidgetKit 桌面小组件 |
 
-- **UFI-TOOLS 3.6+ /api/root_shell 硬件监控适配**：全面适配新版 UFI-TOOLS 路由收敛，优先通过 `/api/root_shell` 读取 CPU、内存与芯片温度，并自动向下兼容 `/api/user_shell`
-- **全平台硬件未就绪状态规范**：当设备未安装 UFI-TOOLS 或数据不可用时，统一展示为优雅的 `--` 占位与静音状态色，杜绝误显示为 0% / 0℃
-- **内网穿透 / 域名直连支持**：全平台（macOS、iOS、Windows）支持直接输入穿透域名，输入域名时自动忽略默认 `:2333` 端口直连，并智能自适应 HTTP/HTTPS
-- **全域网络与自签名证书信任**：深度适配苹果 ATS 网络规范，支持任意公网反代、frp 穿透及自建证书无缝连接
-- **穿透模式实时网速与流量增量感知**：UFI 接口下引入全量实时吞吐量命令与 Linux 底层网卡字节增量计算，实时上下行网速精准刷新
-- **后台双入口支持**：macOS 与 iOS 端支持一键直达或选择打开 `UFI后台（2333端口）` 或 `中兴后台（80端口）`
-- **iOS 内置后台浏览器**：iOS 状态页点击后台图标直接在 App 内（SFSafariViewController）无缝打开设备管理页，支持密码自动填充与一键完成
-- **底部操作栏与进度条统一规范**：macOS 操作栏采用大号控件撑满整行且高度基准线完全对齐，统一面板所有进度条轨道粗细与缩放
-- **小组件与流量信息精细化**：丰富套餐已用、总量、当日/本月累计、重置天数提醒与签约 QCI 显示
-- **全平台文案与术语统一**：统一全平台状态指示、网络指标、流量重置提醒位置与设置项文案命名
+> 🍏 **macOS 首次运行提示**：若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。
 
-- 全新低饱和度高级感配色体系 (`F50Theme`) 与统一排版规范
-- 菜单栏新增“图标 + 套餐用量”显示模式，设置切换支持即时联动预览
-- 短信发送与验证码自动识别一键复制功能
-- 无线投屏：通过 ADB + scrcpy 镜像设备屏幕，支持一键下载配置依赖组件
-- 登录时自动启动、GitHub Releases 自动更新及 U60 UFI API 连接路径适配
+---
 
-## 📱 iOS 版（开发中）
+## ✨ 核心特性
 
-F50 Monitor 已移植到 **iPhone**（iOS 16+），支持信号/速度/流量/硬件状态监控、短信读写、新短信通知（含后台刷新提醒）。投屏、自动更新、登录启动等 macOS 专属功能已按平台能力裁剪。
+- ⚡ **菜单栏 / 任务栏实时常驻**：支持自定义显示模式（仅图标、实时速率、套餐用量、CPU/内存占用、芯片温度、Wi-Fi 设备数）。
+- 📶 **蜂窝信号与频段感知**：实时获取网络制式（5G SA/NSA, 4G LTE）、`B3 + n78` 聚合频段、运营商标志，以及 RSRP、SINR/SNR、RSRQ 信号质量评级。
+- 📊 **硬件状态与容错感知**：全面适配 UFI-TOOLS 3.6+ `/api/root_shell` 接口，监控 CPU/内存负载与芯片温度；未就绪或断开时优雅展示 `--` 占位。
+- 🌐 **内网穿透与自签名证书信任**：支持直接输入域名直连穿透服务，苹果 ATS 全域网络放开，深度支持自签名 SSL 与各类反向代理。
+- 💬 **短信读写与验证码识别**：查看最近短信、未读角标通知提醒，支持应用内直接发送短信及验证码一键复制。
+- 🔁 **流量账单日与重置倒计时**：自动识别设备流量清零日（账单日），面板与小组件显示“N 天后重置”。
+- 📺 **无线投屏 (scrcpy)**：通过无线 ADB + scrcpy 将设备屏幕镜像到电脑，内置依赖组件一键自动配置。
+- 🚪 **登录自启动与自动更新**：支持开机静默启动驻留；macOS 端内置 GitHub Releases 自动增量检测与更新。
 
-### 构建运行
+---
 
-1. 打开 `iOS/F50Monitor-iOS.xcodeproj`（需 Xcode 16+）。
-2. 在 **Signing & Capabilities** 选择你的 Apple ID 团队（免费账号即可真机运行）。
-3. 选择真机运行；首次安装后需在手机 **设置 → 通用 → VPN 与设备管理** 中信任开发者。
-4. 手机需连接 F50 的 WiFi 才能访问设备后台。
+## 🛠️ 各端本地构建与开发
 
-> 工程由 XcodeGen 维护（`iOS/project.yml`），修改后运行 `cd iOS && xcodegen generate` 重新生成。
-
-## 🪟 Windows 版 (Tauri + Rust + Vue 3)
-
-F50 Monitor 已提供完整的 **Windows 托盘版**（基于 Tauri 2.0 构建，位于 [`windows/`](windows/) 目录），内存占用低至 ~35MB，完美还原 macOS 版视觉规范与全部核心功能：
-
-- ⚡ **Windows 任务栏托盘常驻**：自定义显示模式、悬浮卡片面板一键呼出与快捷右键菜单。
-- 📶 **蜂窝信号与频段感知**：支持 5G SA/NSA、4G LTE、`B3 + n78` 聚合显示，以及 RSRP/SINR/RSRQ 质量评级。
-- 📊 **硬件与用量监控**：CPU、内存、温度仪表、Wi-Fi 设备数与套餐流量清零日重置倒计时。
-- 💬 **短信收发与验证码提取**：支持短信读取、写短信、未读提醒与验证码一键复制。
-- 📺 **无线投屏 (scrcpy)**：内置 Windows 独立依赖一键自动下载与配置，一键无线投屏。
-- 🚪 **开机自启动**：支持 Windows 注册表开机静默启动驻留托盘。
-
-### 构建运行
-
-```bash
-cd windows
-npm install
-
-# 界面与 Mock 调试
-npm run dev
-
-# 启动 Windows 桌面端
-npm run tauri dev
-
-# 打包发布 Windows 安装包与单文件 Exe
-npm run tauri build
-```
-
-## 📥 安装与使用
-
-### 直接下载
-
-前往 [Releases](https://github.com/koldllc/f50-monitor/releases) 下载最新版本的 `F50.Monitor.zip`，解压后双击运行即可。
-
-> **提示**：首次运行时若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。
-
-### 本地构建
+### 🍏 macOS 版 (SwiftUI)
 
 系统要求：macOS 13.0+ (Ventura 及以上)
 
 ```bash
-# 克隆仓库
-git clone https://github.com/koldllc/f50-monitor.git
-cd f50-monitor
-
-# 编译并生成 F50 Monitor.app
+# 编译并打包为 F50 Monitor.app 并自动安装到应用程序目录
 ./build.sh
 ```
 
-构建完成后，可在当前目录直接运行 `F50 Monitor.app`。
+### 📱 iOS 版 (SwiftUI + WidgetKit)
+
+环境要求：Xcode 16+（iOS 16.0+）
+
+1. 打开 `iOS/F50Monitor-iOS.xcodeproj`。
+2. 在 **Signing & Capabilities** 选择你的 Apple ID 团队（免费个人账号即可真机调试）。
+3. 选择真机运行；首次安装后在手机 **设置 → 通用 → VPN 与设备管理** 中信任开发者证书。
+
+> 工程由 XcodeGen 维护（`iOS/project.yml`），修改配置后运行 `cd iOS && xcodegen generate` 即可重新生成。
+
+### 🪟 Windows 版 (Tauri 2.0 + Vue 3 + Rust)
+
+环境要求：Node.js 20+、Rust 1.75+、WebView2
+
+```bash
+cd windows
+
+# 1. 安装依赖
+npm install
+
+# 2. 启动前端 Mock 调试
+npm run dev
+
+# 3. 启动桌面端调试
+npm run tauri dev
+
+# 4. 构建单文件可执行程序
+npm run tauri build -- --no-bundle
+```
+
+---
 
 ## 📄 许可证
 
