@@ -17,9 +17,10 @@
 | 🍏 **macOS (苹果电脑)** | [**`f50-monitor-macos.zip`**](https://github.com/koldllc/f50-monitor/releases/latest) | 菜单栏常驻工具，解压即用（支持 Apple Silicon M 系列芯片与 Intel Mac） |
 | 🪟 **Windows (主流电脑)** | [**`f50-monitor-windows-x64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用 99% 常见 Windows 电脑（Intel / AMD 处理器），绿色单文件免安装 |
 | 🪟 **Windows (ARM 设备)** | [**`f50-monitor-windows-arm64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用高通骁龙 ARM 架构 Windows 设备（如 Surface Pro 11 等） |
-| 📱 **iOS (iPhone)** | 源码编译 / 见下方指引 | 支持 iPhone 主 App 与锁屏/主屏 WidgetKit 桌面小组件 |
+| 📱 **iOS (iPhone)** | [**`f50-monitor-ios-unsigned.ipa`**](https://github.com/koldllc/f50-monitor/releases/latest) | 未签名 IPA 安装包（支持 Sideloadly / AltStore / TrollStore 等自签安装） |
 
-> 🍏 **macOS 首次运行提示**：若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。
+> 🍏 **macOS 首次运行提示**：若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。  
+> 📱 **iOS 安装提示**：iOS 安装包为未签名 `.ipa` 文件，可使用 Sideloadly、AltStore、SideStore 或 TrollStore（巨魔）自签安装使用。
 
 ---
 
