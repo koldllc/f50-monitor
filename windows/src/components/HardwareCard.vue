@@ -30,7 +30,7 @@
       <div class="hw-col">
         <div class="hw-head">
           <span class="hw-name">CPU</span>
-          <span class="hw-val" :style="{ color: cpuColor }">{{ state.status.cpuUsage ? state.status.cpuUsage.toFixed(0) : 0 }}%</span>
+          <span class="hw-val" :style="{ color: cpuColor }">{{ state.status.cpuUsage > 0 ? `${state.status.cpuUsage.toFixed(0)}%` : '--' }}</span>
         </div>
         <div class="progress-bar-track">
           <div class="progress-bar-fill" :style="{ width: `${state.status.cpuUsage || 0}%`, backgroundColor: cpuColor }"></div>
@@ -41,7 +41,7 @@
       <div class="hw-col">
         <div class="hw-head">
           <span class="hw-name">内存</span>
-          <span class="hw-val" :style="{ color: memColor }">{{ state.status.memUsage ? state.status.memUsage.toFixed(0) : 0 }}%</span>
+          <span class="hw-val" :style="{ color: memColor }">{{ state.status.memUsage > 0 ? `${state.status.memUsage.toFixed(0)}%` : '--' }}</span>
         </div>
         <div class="progress-bar-track">
           <div class="progress-bar-fill" :style="{ width: `${state.status.memUsage || 0}%`, backgroundColor: memColor }"></div>
@@ -52,7 +52,7 @@
       <div class="hw-col">
         <div class="hw-head">
           <span class="hw-name">芯片温度</span>
-          <span class="hw-val" :style="{ color: tempColor }">{{ state.status.temperature ? state.status.temperature.toFixed(1) : 0 }}℃</span>
+          <span class="hw-val" :style="{ color: tempColor }">{{ state.status.temperature > 0 ? `${state.status.temperature.toFixed(1)}℃` : '--' }}</span>
         </div>
         <div class="progress-bar-track">
           <div class="progress-bar-fill" :style="{ width: `${Math.min(100, (state.status.temperature || 0) * 1.2)}%`, backgroundColor: tempColor }"></div>
@@ -68,6 +68,7 @@ import { state } from '../stores/f50Store.js';
 
 const cpuColor = computed(() => {
   const v = state.status.cpuUsage || 0;
+  if (v <= 0) return 'var(--text-muted)';
   if (v < 50) return 'var(--color-green)';
   if (v < 80) return 'var(--color-orange)';
   return 'var(--color-red)';
@@ -75,6 +76,7 @@ const cpuColor = computed(() => {
 
 const memColor = computed(() => {
   const v = state.status.memUsage || 0;
+  if (v <= 0) return 'var(--text-muted)';
   if (v < 60) return 'var(--color-green)';
   if (v < 85) return 'var(--color-orange)';
   return 'var(--color-red)';
@@ -82,6 +84,7 @@ const memColor = computed(() => {
 
 const tempColor = computed(() => {
   const v = state.status.temperature || 0;
+  if (v <= 0) return 'var(--text-muted)';
   if (v < 45) return 'var(--color-green)';
   if (v < 60) return 'var(--color-orange)';
   return 'var(--color-red)';

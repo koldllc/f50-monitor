@@ -332,35 +332,39 @@ impl F50Fetcher {
     }
 
     async fn fetch_linux_shell_metrics(&self, ufi_base: &str, candidate_tokens: &[String], status: &mut F50Status) {
-        let path = "/api/user_shell";
-        let url = format!("{}{}", ufi_base, path);
+        let candidate_paths = ["/api/root_shell", "/api/user_shell"];
         let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null";
-        
         let body = serde_json::json!({ "command": cmd });
 
-        for token in candidate_tokens {
-            let mut headers = self.build_signed_ufi_headers(path, "POST", token);
-            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        'path_loop: for path in candidate_paths {
+            let url = format!("{}{}", ufi_base, path);
+            for token in candidate_tokens {
+                let mut headers = self.build_signed_ufi_headers(path, "POST", token);
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-            let req = self.client.post(&url)
-                .headers(headers)
-                .json(&body);
+                let req = self.client.post(&url)
+                    .headers(headers)
+                    .json(&body);
 
-            if let Ok(resp) = req.send().await {
-                if resp.status().is_success() {
-                    if let Ok(json) = resp.json::<Value>().await {
-                        let raw_output = if let Some(dict) = json.get("result").and_then(|r| r.as_object()) {
-                            dict.get("content").and_then(|c| c.as_str()).unwrap_or("")
-                        } else if let Some(s) = json.get("result").and_then(|r| r.as_str()) {
-                            s
-                        } else {
-                            ""
-                        };
+                if let Ok(resp) = req.send().await {
+                    let status_code = resp.status();
+                    if status_code.is_success() {
+                        if let Ok(json) = resp.json::<Value>().await {
+                            let raw_output = if let Some(dict) = json.get("result").and_then(|r| r.as_object()) {
+                                dict.get("content").and_then(|c| c.as_str()).unwrap_or("")
+                            } else if let Some(s) = json.get("result").and_then(|r| r.as_str()) {
+                                s
+                            } else {
+                                ""
+                            };
 
-                        if !raw_output.is_empty() {
-                            self.parse_linux_shell_output(raw_output, status).await;
-                            break;
+                            if !raw_output.is_empty() {
+                                self.parse_linux_shell_output(raw_output, status).await;
+                                break 'path_loop;
+                            }
                         }
+                    } else if status_code.as_u16() == 404 {
+                        break;
                     }
                 }
             }

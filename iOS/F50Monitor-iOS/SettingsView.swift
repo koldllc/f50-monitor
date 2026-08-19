@@ -116,7 +116,7 @@ struct SettingsView: View {
                 } header: {
                     Text("刷新与节能")
                 } footer: {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.1"
                     VStack(spacing: 6) {
                         Text("F50 Monitor v\(version)")
                             .font(.system(size: 12, weight: .medium))

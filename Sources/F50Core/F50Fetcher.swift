@@ -1460,10 +1460,16 @@ public class F50Fetcher: ObservableObject {
         qosTask?.resume()
     }
 
-    private func fetchLinuxShellMetrics(ufiBaseURL: String, candidateTokens: [String], generation: UInt) {
+    private func fetchLinuxShellMetrics(
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        candidatePaths: [String] = ["/api/root_shell", "/api/user_shell"],
+        generation: UInt
+    ) {
         guard generation == requestGeneration else { return }
         guard let tokenHash = candidateTokens.first,
-              let url = URL(string: "\(ufiBaseURL)/api/user_shell") else {
+              let path = candidatePaths.first,
+              let url = URL(string: "\(ufiBaseURL)\(path)") else {
             status.ufiAuthFailed = true
             finishExtension(generation: generation)
             return
@@ -1493,10 +1499,25 @@ public class F50Fetcher: ObservableObject {
                     self.status.mergeHardwareMetrics(from: metrics)
                     self.status.ufiAuthFailed = false
                     self.finishExtension(generation: generation)
+                } else if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 404, candidatePaths.count > 1 {
+                    self.fetchLinuxShellMetrics(
+                        ufiBaseURL: ufiBaseURL,
+                        candidateTokens: self.candidateTokens(),
+                        candidatePaths: Array(candidatePaths.dropFirst()),
+                        generation: generation
+                    )
                 } else if candidateTokens.count > 1 {
                     self.fetchLinuxShellMetrics(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
+                        candidatePaths: candidatePaths,
+                        generation: generation
+                    )
+                } else if candidatePaths.count > 1 {
+                    self.fetchLinuxShellMetrics(
+                        ufiBaseURL: ufiBaseURL,
+                        candidateTokens: self.candidateTokens(),
+                        candidatePaths: Array(candidatePaths.dropFirst()),
                         generation: generation
                     )
                 } else {
