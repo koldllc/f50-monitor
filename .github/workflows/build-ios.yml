@@ -57,7 +57,6 @@ jobs:
           mkdir Payload
           cp -r build/Build/Products/Release-iphoneos/F50Monitor-iOS.app Payload/
           zip -r -q f50-monitor-ios-unsigned.ipa Payload
-          cp f50-monitor-ios-unsigned.ipa f50-monitor-ios.ipa
           rm -rf Payload
 
       - name: Upload iOS Artifacts
@@ -65,17 +64,13 @@ jobs:
         with:
           name: F50-Monitor-iOS
           if-no-files-found: ignore
-          path: |
-            f50-monitor-ios-unsigned.ipa
-            f50-monitor-ios.ipa
+          path: f50-monitor-ios-unsigned.ipa
 
       - name: Release App (On Tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            f50-monitor-ios-unsigned.ipa
-            f50-monitor-ios.ipa
+          files: f50-monitor-ios-unsigned.ipa
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -85,6 +80,6 @@ jobs:
         run: |
           LATEST_TAG=$(gh release view --json tagName -q .tagName)
           echo "Target Release Tag: $LATEST_TAG"
-          gh release upload "$LATEST_TAG" f50-monitor-ios-unsigned.ipa f50-monitor-ios.ipa --clobber
+          gh release upload "$LATEST_TAG" f50-monitor-ios-unsigned.ipa --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
