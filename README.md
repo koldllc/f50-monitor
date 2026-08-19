@@ -1,8 +1,8 @@
 # F50 Monitor ⚡
 
-专为中兴 (ZTE) F50 5G 随身 WiFi (MiFi) 打造的轻量级 macOS 菜单栏状态监控应用。
+专为中兴 (ZTE) F50 5G 随身 WiFi (MiFi) 打造的全平台（macOS / iOS / Windows）状态监控与短信管理应用。
 
-![F50 Monitor v1.6 功能海报](assets/f50-monitor-v1.6-poster.jpg)
+![F50 Monitor 2.0 功能海报](assets/f50-monitor-v2.0-poster.jpg)
 
 > 💡 **说明**：显示全部完整数据（如 CPU/内存占用率、芯片温度及 QCI 签约速率等）需要设备安装 **UFI 高级后台 (UFI-TOOLS)**；理论上也适用于其他已安装 UFI 高级后台的随身 WiFi 设备。
 
