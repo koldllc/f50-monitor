@@ -567,7 +567,7 @@ public class F50Fetcher: ObservableObject {
         }
     }
 
-    /// 策略 1：/api/root_shell (及 /api/user_shell) Android 底层短信调用
+    /// 策略 1：/api/root_shell Android 底层短信调用
     private func sendSMSViaRootShell(
         ufiBaseURL: String,
         token: String,
@@ -576,7 +576,7 @@ public class F50Fetcher: ObservableObject {
         generation: UInt,
         completion: @escaping (Bool) -> Void
     ) {
-        guard let url = URL(string: "\(ufiBaseURL)/api/root_shell") ?? URL(string: "\(ufiBaseURL)/api/user_shell") else {
+        guard let url = URL(string: "\(ufiBaseURL)/api/root_shell") else {
             completion(false)
             return
         }
