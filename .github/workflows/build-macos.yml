@@ -1,0 +1,112 @@
+name: Build macOS Release
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Sources/**'
+      - 'Package.swift'
+      - 'build.sh'
+      - '.github/workflows/build-macos.yml'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.10"
+
+      - name: Build macOS App
+        run: |
+          swift build -c release
+          APP_DIR="F50 Monitor.app"
+          MACOS_DIR="$APP_DIR/Contents/MacOS"
+          RESOURCES_DIR="$APP_DIR/Contents/Resources"
+          rm -rf "$APP_DIR"
+          mkdir -p "$MACOS_DIR"
+          mkdir -p "$RESOURCES_DIR"
+          cp .build/release/F50Monitor "$MACOS_DIR/F50Monitor"
+          if [ -f "Sources/F50Monitor/AppIcon.icns" ]; then
+              cp Sources/F50Monitor/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
+          fi
+          for logo in Sources/F50Monitor/China*Logo.svg Sources/F50Monitor/China*Logo.png; do
+              [ -f "$logo" ] || continue
+              cp "$logo" "$RESOURCES_DIR/$(basename "$logo")"
+          done
+
+          # Extract version from tag or fallback
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
+              VERSION="2.1.1"
+          fi
+
+          cat << EOF > "$APP_DIR/Contents/Info.plist"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>F50Monitor</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.f50.monitor</string>
+              <key>CFBundleName</key>
+              <string>F50 Monitor</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>$VERSION</string>
+              <key>CFBundleVersion</key>
+              <string>$VERSION</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>13.0</string>
+              <key>LSUIElement</key>
+              <true/>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+              <key>NSAppTransportSecurity</key>
+              <dict>
+                  <key>NSAllowsArbitraryLoads</key>
+                  <true/>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+          chmod +x "$MACOS_DIR/F50Monitor"
+          codesign --force --sign - --timestamp=none "$APP_DIR"
+
+          ditto -c -k --keepParent "F50 Monitor.app" f50-monitor-macos.zip
+          cp f50-monitor-macos.zip F50.Monitor.zip
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: F50-Monitor-macOS
+          if-no-files-found: ignore
+          path: |
+            f50-monitor-macos.zip
+            F50.Monitor.zip
+
+      - name: Release App (On Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            f50-monitor-macos.zip
+            F50.Monitor.zip
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
