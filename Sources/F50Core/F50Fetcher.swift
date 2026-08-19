@@ -198,8 +198,9 @@ public class F50Fetcher: ObservableObject {
     public func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                self?.fetchData()
+                self.fetchData()
             }
         }
     }
@@ -351,8 +352,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         smsTask = session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
 
                 if let http = response as? HTTPURLResponse,
                    http.statusCode == 200,
@@ -605,8 +607,9 @@ public class F50Fetcher: ObservableObject {
         request.timeoutInterval = 8.0
 
         session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -664,8 +667,9 @@ public class F50Fetcher: ObservableObject {
             request.timeoutInterval = 10.0
 
             self.session.dataTask(with: request) { [weak self] data, response, _ in
+                guard let self else { return }
                 Task { @MainActor in
-                    guard let self, generation == self.requestGeneration else { return }
+                    guard generation == self.requestGeneration else { return }
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                           let data else {
                         completion(false, nil)
@@ -709,8 +713,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let data,
                       let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -729,8 +734,9 @@ public class F50Fetcher: ObservableObject {
                 }
 
                 self.session.dataTask(with: self.signedUFIRequest(url: rdURL, token: token)) { [weak self] data, response, _ in
+                    guard let self else { return }
                     Task { @MainActor in
-                        guard let self, generation == self.requestGeneration else { return }
+                        guard generation == self.requestGeneration else { return }
                         let rdDict = (data != nil) ? (try? JSONSerialization.jsonObject(with: data!) as? [String: Any]) : nil
                         let rd = (rdDict?["RD"] as? String) ?? ""
                         let ad = self.sha256(self.sha256(wa + cr) + rd).uppercased()
@@ -790,8 +796,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         baseTask = session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
 
                 if let http = response as? HTTPURLResponse,
                    http.statusCode == 200,
@@ -889,8 +896,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse,
                       http.statusCode == 200,
                       let data,
@@ -976,8 +984,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         baseTask = session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self = self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
 
                 if let error = error {
                     self.handleRouterFailure(
@@ -1265,8 +1274,9 @@ public class F50Fetcher: ObservableObject {
         let request = signedUFIRequest(url: url, token: tokenHash)
 
         session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 if let httpRes = response as? HTTPURLResponse,
                    httpRes.statusCode == 200,
                    let data,
@@ -1314,8 +1324,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         packageTask = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 defer { self.packageTask = nil }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let data,
@@ -1373,8 +1384,9 @@ public class F50Fetcher: ObservableObject {
         }
 
         bandTask = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 defer { self.bandTask = nil }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let data,
@@ -1435,8 +1447,9 @@ public class F50Fetcher: ObservableObject {
         let request = signedUFIRequest(url: url, token: tokenHash)
 
         qosTask = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self = self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 if let http = response as? HTTPURLResponse, http.statusCode == 200,
                    let data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1481,8 +1494,9 @@ public class F50Fetcher: ObservableObject {
         let request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
 
         shellTask = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self = self, generation == self.requestGeneration else { return }
+                guard generation == self.requestGeneration else { return }
                 if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
                    let data = data, let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
                     let rawResult: String
@@ -1685,8 +1699,9 @@ public class F50Fetcher: ObservableObject {
         ldReq.timeoutInterval = 4.0
 
         session.dataTask(with: ldReq) { [weak self] data, response, error in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self = self, let data = data,
+                guard let data = data,
                       let dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                       let ld = dict["LD"] as? String, !ld.isEmpty else {
                     completion(false)
@@ -1711,8 +1726,8 @@ public class F50Fetcher: ObservableObject {
                 loginReq.timeoutInterval = 4.0
 
                 self.session.dataTask(with: loginReq) { [weak self] data, response, error in
+                    guard let self else { return }
                     Task { @MainActor in
-                        guard let self else { return }
                         if let httpRes = response as? HTTPURLResponse,
                            let setCookie = httpRes.value(forHTTPHeaderField: "Set-Cookie") {
                             let cookieVal = setCookie.components(separatedBy: ";").first ?? setCookie
