@@ -553,4 +553,90 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertTrue(body.contains("encode_type=UNICODE"))
         XCTAssertTrue(body.contains("AD=SAMPLEAD123"))
     }
+
+    // MARK: - Address & Endpoint Resolution Tests (Domain / Intranet Penetration Support)
+
+    func testResolveEndpointsForLANIPDefault() {
+        let (r1, u1) = F50Configuration.resolveEndpoints(from: "192.168.0.1")
+        XCTAssertEqual(r1, "http://192.168.0.1")
+        XCTAssertEqual(u1, "http://192.168.0.1:2333")
+
+        let (r2, u2) = F50Configuration.resolveEndpoints(from: "http://192.168.0.1:2333")
+        XCTAssertEqual(r2, "http://192.168.0.1")
+        XCTAssertEqual(u2, "http://192.168.0.1:2333")
+
+        let (r3, u3) = F50Configuration.resolveEndpoints(from: "")
+        XCTAssertEqual(r3, "http://192.168.0.1")
+        XCTAssertEqual(u3, "http://192.168.0.1:2333")
+    }
+
+    func testResolveEndpointsForDomainIgnores2333Port() {
+        // 内网穿透域名：直接使用域名，不追加 :2333
+        let (r1, u1) = F50Configuration.resolveEndpoints(from: "f50.example.com")
+        XCTAssertEqual(r1, "http://f50.example.com")
+        XCTAssertEqual(u1, "http://f50.example.com")
+
+        let (r2, u2) = F50Configuration.resolveEndpoints(from: "https://f50.example.com")
+        XCTAssertEqual(r2, "https://f50.example.com")
+        XCTAssertEqual(u2, "https://f50.example.com")
+
+        let (r3, u3) = F50Configuration.resolveEndpoints(from: "my-f50.frp.tunnel.xyz")
+        XCTAssertEqual(r3, "http://my-f50.frp.tunnel.xyz")
+        XCTAssertEqual(u3, "http://my-f50.frp.tunnel.xyz")
+    }
+
+    func testResolveEndpointsWithCustomPort() {
+        let (r1, u1) = F50Configuration.resolveEndpoints(from: "f50.example.com:8443")
+        XCTAssertEqual(r1, "http://f50.example.com:8443")
+        XCTAssertEqual(u1, "http://f50.example.com:8443")
+
+        let (r2, u2) = F50Configuration.resolveEndpoints(from: "https://f50.example.com:8443")
+        XCTAssertEqual(r2, "https://f50.example.com:8443")
+        XCTAssertEqual(u2, "https://f50.example.com:8443")
+
+        let (r3, u3) = F50Configuration.resolveEndpoints(from: "192.168.0.1:8080")
+        XCTAssertEqual(r3, "http://192.168.0.1:8080")
+        XCTAssertEqual(u3, "http://192.168.0.1:8080")
+    }
+
+    func testIsValidAddressForIPAndDomain() {
+        // Valid IP addresses
+        XCTAssertTrue(F50Configuration.isValidAddress("192.168.0.1"))
+        XCTAssertTrue(F50Configuration.isValidAddress("10.0.0.1"))
+        XCTAssertTrue(F50Configuration.isValidAddress("192.168.0.1:2333"))
+        XCTAssertTrue(F50Configuration.isValidAddress("http://192.168.0.1"))
+
+        // Invalid IP addresses
+        XCTAssertFalse(F50Configuration.isValidAddress("999.999.999.999"))
+        XCTAssertFalse(F50Configuration.isValidAddress("192.168.0.300"))
+        XCTAssertFalse(F50Configuration.isValidAddress("192.168.1"))
+
+        // Valid Domain names
+        XCTAssertTrue(F50Configuration.isValidAddress("f50.example.com"))
+        XCTAssertTrue(F50Configuration.isValidAddress("https://f50.example.com"))
+        XCTAssertTrue(F50Configuration.isValidAddress("my-f50.frp.tunnel.xyz:8443"))
+        XCTAssertTrue(F50Configuration.isValidAddress("localhost"))
+
+        // Invalid hostnames / strings
+        XCTAssertFalse(F50Configuration.isValidAddress(""))
+        XCTAssertFalse(F50Configuration.isValidAddress("   "))
+        XCTAssertFalse(F50Configuration.isValidAddress("has space.com"))
+        XCTAssertFalse(F50Configuration.isValidAddress("invalid/path"))
+        XCTAssertFalse(F50Configuration.isValidAddress(".invalid.com"))
+    }
+
+    func testDisplayAddress() {
+        XCTAssertEqual(F50Configuration.displayAddress(from: "http://192.168.0.1:2333"), "192.168.0.1")
+        XCTAssertEqual(F50Configuration.displayAddress(from: "http://192.168.0.1"), "192.168.0.1")
+        XCTAssertEqual(F50Configuration.displayAddress(from: "http://f50.example.com"), "f50.example.com")
+        XCTAssertEqual(F50Configuration.displayAddress(from: "https://f50.example.com"), "https://f50.example.com")
+        XCTAssertEqual(F50Configuration.displayAddress(from: "http://f50.example.com:8443"), "f50.example.com:8443")
+    }
+
+    func testNormalizeBaseURL() {
+        XCTAssertEqual(F50Configuration.normalizeBaseURL("192.168.0.1"), "http://192.168.0.1:2333")
+        XCTAssertEqual(F50Configuration.normalizeBaseURL("f50.example.com"), "http://f50.example.com")
+        XCTAssertEqual(F50Configuration.normalizeBaseURL("https://f50.example.com"), "https://f50.example.com")
+        XCTAssertEqual(F50Configuration.normalizeBaseURL("f50.example.com:8443"), "http://f50.example.com:8443")
+    }
 }

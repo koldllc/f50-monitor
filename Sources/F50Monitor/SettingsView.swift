@@ -23,29 +23,8 @@ public struct SettingsView: View {
         self.onClose = onClose
     }
 
-    private var trimmedIP: String {
-        extractHostOrIP(from: tempIP)
-    }
-
     private var isIPValid: Bool {
-        let ip = trimmedIP
-        guard !ip.isEmpty else { return false }
-        let parts = ip.split(separator: ".")
-        if parts.count == 4, parts.allSatisfy({ Int($0) != nil && (0...255).contains(Int($0)!) }) {
-            return true
-        }
-        return !ip.contains("/") && !ip.contains(":") && !ip.contains(" ")
-    }
-
-    private func extractHostOrIP(from raw: String) -> String {
-        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let withScheme = clean.contains("://") ? clean : "http://" + clean
-        if let url = URL(string: withScheme), let host = url.host, !host.isEmpty {
-            return host
-        }
-        return clean.replacingOccurrences(of: "http://", with: "")
-            .replacingOccurrences(of: "https://", with: "")
-            .components(separatedBy: ":").first ?? clean
+        F50Configuration.isValidAddress(tempIP)
     }
     
     public var body: some View {
@@ -113,13 +92,13 @@ public struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
-                // 1. 设备 IP 地址
+                // 1. 设备 IP / 域名
                 HStack {
-                    Text("设备 IP 地址")
+                    Text("设备 IP / 域名")
                         .font(.system(size: 12, weight: .semibold))
                         .fixedSize()
                     Spacer(minLength: 12)
-                    TextField("192.168.0.1", text: $tempIP)
+                    TextField("192.168.0.1 或域名", text: $tempIP)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                         .font(.system(size: 12))
@@ -127,7 +106,7 @@ public struct SettingsView: View {
                 }
 
                 if !tempIP.isEmpty && !isIPValid {
-                    Text("请输入正确的 IP 地址（例如 192.168.0.1）")
+                    Text("请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）")
                         .font(.system(size: 10))
                         .foregroundColor(F50Theme.red)
                 }
@@ -376,7 +355,7 @@ public struct SettingsView: View {
                 Spacer()
 
                 Button("保存") {
-                    let finalURL = "http://\(trimmedIP)"
+                    let finalURL = F50Configuration.normalizeBaseURL(tempIP)
                     fetcher.applyConfiguration(
                         baseURL: finalURL,
                         password: tempPassword,
@@ -395,7 +374,7 @@ public struct SettingsView: View {
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
-            tempIP = extractHostOrIP(from: fetcher.baseURLString)
+            tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
             tempPassword = fetcher.password
             tempUFIToken = fetcher.ufiToken
             tempInterval = fetcher.refreshInterval

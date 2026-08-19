@@ -12,36 +12,13 @@ struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var isInitialized = false
 
-    private var trimmedIP: String {
-        extractHostOrIP(from: tempIP)
-    }
-
     private var isIPValid: Bool {
-        let ip = trimmedIP
-        guard !ip.isEmpty else { return false }
-        // IPv4 校验：四段 0-255 数字
-        let parts = ip.split(separator: ".")
-        if parts.count == 4, parts.allSatisfy({ Int($0) != nil && (0...255).contains(Int($0)!) }) {
-            return true
-        }
-        // 通用主机名校验（不含斜杠、冒号、空格）
-        return !ip.contains("/") && !ip.contains(":") && !ip.contains(" ")
-    }
-
-    private func extractHostOrIP(from raw: String) -> String {
-        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let withScheme = clean.contains("://") ? clean : "http://" + clean
-        if let url = URL(string: withScheme), let host = url.host, !host.isEmpty {
-            return host
-        }
-        return clean.replacingOccurrences(of: "http://", with: "")
-            .replacingOccurrences(of: "https://", with: "")
-            .components(separatedBy: ":").first ?? clean
+        F50Configuration.isValidAddress(tempIP)
     }
 
     private func autoSave() {
         guard isInitialized, isIPValid else { return }
-        let finalURL = "http://\(trimmedIP)"
+        let finalURL = F50Configuration.normalizeBaseURL(tempIP)
         fetcher.applyConfiguration(
             baseURL: finalURL,
             password: tempPassword,
@@ -55,21 +32,21 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("连接设置") {
-                    // 设备 IP 地址
+                    // 设备 IP / 域名
                     HStack {
-                        Text("设备 IP 地址")
+                        Text("设备 IP / 域名")
                             .foregroundColor(.primary)
                             .fixedSize()
                         Spacer(minLength: 12)
-                        TextField("192.168.0.1", text: $tempIP)
+                        TextField("192.168.0.1 或域名", text: $tempIP)
                             .multilineTextAlignment(.trailing)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .keyboardType(.numbersAndPunctuation)
+                            .keyboardType(.URL)
                     }
 
                     if !tempIP.isEmpty && !isIPValid {
-                        Text("请输入正确的 IP 地址（例如 192.168.0.1）")
+                        Text("请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）")
                             .font(.caption)
                             .foregroundColor(.red)
                     }
@@ -139,7 +116,7 @@ struct SettingsView: View {
                 } header: {
                     Text("刷新与节能")
                 } footer: {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
                     VStack(spacing: 6) {
                         Text("F50 Monitor v\(version)")
                             .font(.system(size: 12, weight: .medium))
@@ -158,7 +135,7 @@ struct SettingsView: View {
             }
             .navigationTitle("设置")
             .onAppear {
-                tempIP = extractHostOrIP(from: fetcher.baseURLString)
+                tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
                 tempPassword = fetcher.password
                 tempUFIToken = fetcher.ufiToken
                 tempInterval = fetcher.refreshInterval

@@ -35,14 +35,14 @@
         <span class="section-title">连接设置</span>
 
         <div class="form-group">
-          <label class="form-label">设备 IP 地址</label>
+          <label class="form-label">设备 IP / 域名</label>
           <input 
             v-model="form.baseURL" 
             type="text" 
-            placeholder="192.168.0.1" 
+            placeholder="192.168.0.1 或域名" 
           />
-          <span class="input-hint" v-if="!isIPValid">请输入正确的 IP 地址（例如 192.168.0.1）</span>
-          <span class="input-hint" v-else>中兴 F50 默认地址为 192.168.0.1</span>
+          <span class="input-hint" v-if="!isIPValid">请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）</span>
+          <span class="input-hint" v-else>默认地址为 192.168.0.1，内网穿透可直接输入域名</span>
         </div>
 
         <div class="form-group">
@@ -139,16 +139,24 @@ const form = reactive({
 const isIPValid = computed(() => {
   const raw = (form.baseURL || '').trim();
   if (!raw) return false;
-  const clean = raw.replace(/^https?:\/\//, '').split(':')[0].split('/')[0].trim();
+  const clean = raw.replace(/^https?:\/\//, '').split('/')[0].trim();
   if (!clean) return false;
-  const parts = clean.split('.');
-  if (parts.length === 4 && parts.every(p => {
-    const n = Number(p);
-    return !isNaN(n) && n >= 0 && n <= 255 && p.trim() !== '';
-  })) {
-    return true;
+  const host = clean.split(':')[0].trim();
+  if (!host) return false;
+
+  const parts = host.split('.');
+  const allNumeric = parts.length > 0 && parts.every(p => !isNaN(Number(p)) && p.trim() !== '');
+
+  if (allNumeric) {
+    return parts.length === 4 && parts.every(p => {
+      const n = Number(p);
+      return !isNaN(n) && n >= 0 && n <= 255 && p.trim() !== '';
+    });
   }
-  return !clean.includes('/') && !clean.includes(':') && !clean.includes(' ');
+
+  if (host.toLowerCase() === 'localhost') return true;
+
+  return !host.includes(' ') && !host.includes('/') && host.includes('.') && !host.startsWith('.') && !host.endsWith('.');
 });
 
 function handleRestoreDefault() {

@@ -2,8 +2,33 @@ import Foundation
 import Combine
 import CryptoKit
 
+final class F50NetworkDelegate: NSObject, URLSessionDelegate {
+    static let shared = F50NetworkDelegate()
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+           let serverTrust = challenge.protectionSpace.serverTrust {
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
+    }
+}
+
 @MainActor
 public class F50Fetcher: ObservableObject {
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 4.0
+        config.timeoutIntervalForResource = 8.0
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        return URLSession(configuration: config, delegate: F50NetworkDelegate.shared, delegateQueue: nil)
+    }()
+
     private enum ConnectionMode {
         case automatic
         case zteRouter
@@ -20,26 +45,14 @@ public class F50Fetcher: ObservableObject {
         }
     }
 
-    /// 路由器后台地址（Port 80，例如 http://192.168.0.1）
+    /// 路由器后台地址（例如 http://192.168.0.1 或 http://f50.example.com）
     public var routerURLString: String {
-        let clean = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-        let withScheme = clean.contains("://") ? clean : "http://" + clean
-        if let url = URL(string: withScheme), let host = url.host {
-            let scheme = url.scheme ?? "http"
-            return "\(scheme)://\(host)"
-        }
-        return "http://192.168.0.1"
+        F50Configuration.resolveEndpoints(from: baseURLString).routerBaseURL
     }
 
-    /// 随身 WiFi 后台地址（Port 2333，例如 http://192.168.0.1:2333）
+    /// 随身 WiFi / UFI 后台地址（例如 http://192.168.0.1:2333 或 http://f50.example.com）
     public var ufiURLString: String {
-        let clean = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-        let withScheme = clean.contains("://") ? clean : "http://" + clean
-        if let url = URL(string: withScheme), let host = url.host {
-            let scheme = url.scheme ?? "http"
-            return "\(scheme)://\(host):2333"
-        }
-        return "http://192.168.0.1:2333"
+        F50Configuration.resolveEndpoints(from: baseURLString).ufiBaseURL
     }
 
     @Published public var password: String {
@@ -105,6 +118,11 @@ public class F50Fetcher: ObservableObject {
     private var prevTotalCpu: Double = 0
     private var prevIdleCpu: Double = 0
     private var routerDetectedTrafficResetDay: Int = 0
+
+    // Network throughput tracking
+    private var prevNetDevRx: UInt64 = 0
+    private var prevNetDevTx: UInt64 = 0
+    private var prevNetDevTimestamp: Date? = nil
 
     @Published public var monthlyOffsetBytes: Int64
     @Published public var dailyOffsetBytes: Int64
@@ -231,7 +249,17 @@ public class F50Fetcher: ObservableObject {
 
         let shouldRefreshTraffic = Date().timeIntervalSince(lastTrafficRefreshDate)
             >= F50Configuration.trafficRefreshInterval
-        if connectionMode == .ufiAPI {
+
+        let isIP: Bool
+        if let url = URL(string: cleanBase.contains("://") ? cleanBase : "http://" + cleanBase),
+           let host = url.host {
+            isIP = F50Configuration.isIPAddress(host)
+        } else {
+            isIP = true
+        }
+
+        if connectionMode == .ufiAPI || (!isIP && connectionMode != .zteRouter) {
+            // 域名（内网穿透）默认优先走 UFI 接口直连（或已确认 UFI 模式）
             executeUFIFetch(
                 cleanBase: cleanBase,
                 hostOnly: endpoints.routerBaseURL,
@@ -240,7 +268,7 @@ public class F50Fetcher: ObservableObject {
                 refreshTraffic: shouldRefreshTraffic
             )
         } else {
-            // .automatic / .zteRouter：Router 优先（速度/信号/套餐字段齐全），失败时 UFI 兜底
+            // 本地 IP：Router 优先（速度/信号/套餐字段齐全），失败时 UFI 兜底
             executeFetch(
                 cleanBase: cleanBase,
                 hostOnly: endpoints.routerBaseURL,
@@ -295,7 +323,8 @@ public class F50Fetcher: ObservableObject {
     private func fetchSMSMessagesViaUFI(
         ufiBaseURL: String,
         candidateTokens: [String],
-        generation: UInt
+        generation: UInt,
+        hasTriedSchemeSwap: Bool = false
     ) {
         guard generation == requestGeneration,
               let token = candidateTokens.first,
@@ -321,7 +350,7 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        smsTask = URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+        smsTask = session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
 
@@ -346,11 +375,24 @@ public class F50Fetcher: ObservableObject {
                     self.fetchSMSMessagesViaUFI(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
-                        generation: generation
+                        generation: generation,
+                        hasTriedSchemeSwap: hasTriedSchemeSwap
+                    )
+                } else if !hasTriedSchemeSwap,
+                          let host = URL(string: ufiBaseURL)?.host,
+                          !F50Configuration.isIPAddress(host) {
+                    let targetScheme = ufiBaseURL.hasPrefix("https://") ? "http" : "https"
+                    let portPart = URL(string: ufiBaseURL)?.port.map { ":\($0)" } ?? ""
+                    let swappedURL = "\(targetScheme)://\(host)\(portPart)"
+                    self.fetchSMSMessagesViaUFI(
+                        ufiBaseURL: swappedURL,
+                        candidateTokens: self.candidateTokens(),
+                        generation: generation,
+                        hasTriedSchemeSwap: true
                     )
                 } else {
                     self.finishSMSFetch(
-                        message: error?.localizedDescription ?? "无法读取短信，请检查 UFI后台口令与短信权限",
+                        message: error?.localizedDescription ?? "无法读取短信，请检查 UFI 后台口令与短信权限",
                         generation: generation
                     )
                 }
@@ -421,7 +463,7 @@ public class F50Fetcher: ObservableObject {
                 contentType: "application/x-www-form-urlencoded; charset=UTF-8"
             )
             request.timeoutInterval = 5.0
-            URLSession.shared.dataTask(with: request).resume()
+            self.session.dataTask(with: request).resume()
         }
     }
 
@@ -562,7 +604,7 @@ public class F50Fetcher: ObservableObject {
         var request = signedUFIRequest(url: url, token: token, method: "POST", body: body)
         request.timeoutInterval = 8.0
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -621,7 +663,7 @@ public class F50Fetcher: ObservableObject {
             )
             request.timeoutInterval = 10.0
 
-            URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            self.session.dataTask(with: request) { [weak self] data, response, _ in
                 Task { @MainActor in
                     guard let self, generation == self.requestGeneration else { return }
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -666,7 +708,7 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+        session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -686,7 +728,7 @@ public class F50Fetcher: ObservableObject {
                     return
                 }
 
-                URLSession.shared.dataTask(with: self.signedUFIRequest(url: rdURL, token: token)) { [weak self] data, response, _ in
+                self.session.dataTask(with: self.signedUFIRequest(url: rdURL, token: token)) { [weak self] data, response, _ in
                     Task { @MainActor in
                         guard let self, generation == self.requestGeneration else { return }
                         let rdDict = (data != nil) ? (try? JSONSerialization.jsonObject(with: data!) as? [String: Any]) : nil
@@ -706,15 +748,7 @@ public class F50Fetcher: ObservableObject {
     }
 
     private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
-        let withScheme = cleanBase.contains("://") ? cleanBase : "http://" + cleanBase
-        guard let url = URL(string: withScheme), let host = url.host, !host.isEmpty else {
-            return ("http://192.168.0.1", "http://192.168.0.1:2333")
-        }
-
-        let scheme = url.scheme ?? "http"
-        let routerBaseURL = "\(scheme)://\(host)"
-        let port = url.port ?? 2333
-        return (routerBaseURL, "\(scheme)://\(host):\(port)")
+        F50Configuration.resolveEndpoints(from: cleanBase)
     }
 
     private func handleRouterFailure(
@@ -744,7 +778,8 @@ public class F50Fetcher: ObservableObject {
         ufiBaseURL: String,
         generation: UInt,
         refreshTraffic: Bool,
-        candidateTokens: [String]? = nil
+        candidateTokens: [String]? = nil,
+        hasTriedSchemeSwap: Bool = false
     ) {
         guard generation == requestGeneration else { return }
         let tokens = candidateTokens ?? self.candidateTokens()
@@ -754,7 +789,7 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        baseTask = URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
+        baseTask = session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, error in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
 
@@ -785,27 +820,51 @@ public class F50Fetcher: ObservableObject {
                     }
                 } else if tokens.count > 1,
                           let http = response as? HTTPURLResponse,
-                          http.statusCode == 401 {
-                    // 401 = UFI 存在但 token 无效：尝试下一个候选
+                          (http.statusCode == 401 || http.statusCode == 403 || http.statusCode == 400) {
+                    // 鉴权/接口报错：尝试下一个候选 token
                     self.executeUFIFetch(
                         cleanBase: cleanBase,
                         hostOnly: hostOnly,
                         ufiBaseURL: ufiBaseURL,
                         generation: generation,
                         refreshTraffic: refreshTraffic,
-                        candidateTokens: Array(tokens.dropFirst())
+                        candidateTokens: Array(tokens.dropFirst()),
+                        hasTriedSchemeSwap: hasTriedSchemeSwap
                     )
-                } else {
-                    // UFI 服务不可达（连接失败/超时/非 401 错误）：立即兜底 Router，避免逐个试 token 拖慢恢复
-                    self.connectionMode = .automatic
-                    self.executeFetch(
-                        cleanBase: cleanBase,
-                        hostOnly: hostOnly,
-                        ufiBaseURL: ufiBaseURL,
+                } else if !hasTriedSchemeSwap,
+                          let host = URL(string: ufiBaseURL)?.host,
+                          !F50Configuration.isIPAddress(host) {
+                    // 如果是域名访问且当前协议未连通（如 http 连不上改试 https，或反之），自动尝试切换协议
+                    let targetScheme = ufiBaseURL.hasPrefix("https://") ? "http" : "https"
+                    let portPart = URL(string: ufiBaseURL)?.port.map { ":\($0)" } ?? ""
+                    let swappedURL = "\(targetScheme)://\(host)\(portPart)"
+                    self.executeUFIFetch(
+                        cleanBase: swappedURL,
+                        hostOnly: swappedURL,
+                        ufiBaseURL: swappedURL,
                         generation: generation,
                         refreshTraffic: refreshTraffic,
-                        allowsUFIFallback: false
+                        candidateTokens: nil,
+                        hasTriedSchemeSwap: true
                     )
+                } else {
+                    let isIP = URL(string: ufiBaseURL)?.host.map { F50Configuration.isIPAddress($0) } ?? true
+                    if isIP {
+                        // 本地 IP：UFI 失败时兜底 Router 80 端口
+                        self.connectionMode = .automatic
+                        self.executeFetch(
+                            cleanBase: cleanBase,
+                            hostOnly: hostOnly,
+                            ufiBaseURL: ufiBaseURL,
+                            generation: generation,
+                            refreshTraffic: refreshTraffic,
+                            allowsUFIFallback: false
+                        )
+                    } else {
+                        // 域名穿透：直接上报连接错误提示
+                        let errorMsg = error?.localizedDescription ?? (response.map { "HTTP \((($0 as? HTTPURLResponse)?.statusCode ?? 0))" } ?? "无法连接设备 UFI 后台")
+                        self.updateStatusFailed(errorMsg, generation: generation)
+                    }
                 }
             }
         }
@@ -822,14 +881,14 @@ public class F50Fetcher: ObservableObject {
         // network_information dump 字段清零（返回空串）。因此这里绝不显式请求这
         // 四个命令，信号值统一由 network_information 的 dump（nr_rsrp/nr_rsrq/Nr_snr）
         // 提供，Z5g_rsrp 作为独立数据源保留作 RSRP 兑底。
-        let commands = "network_type,network_provider,signalbar,network_signalbar,network_information,Z5g_rsrp,Z5g_rsrq,Z5g_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date"
+        let commands = "network_type,network_provider,signalbar,network_signalbar,network_information,Z5g_rsrp,Z5g_rsrq,Z5g_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes"
         // 注意：minikano goform 要求 cmd 参数放在第一位，否则最后一个字段名会被拼坏
         guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=\(commands)&is_all=true") else {
             completion(nil)
             return
         }
 
-        URLSession.shared.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+        session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse,
@@ -863,6 +922,14 @@ public class F50Fetcher: ObservableObject {
         request.setValue(timestamp, forHTTPHeaderField: "kano-t")
         request.setValue(sign, forHTTPHeaderField: "kano-sign")
         request.setValue(token, forHTTPHeaderField: "authorization")
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        if let scheme = url.scheme, let host = url.host {
+            let portPart = url.port.map { ":\($0)" } ?? ""
+            let origin = "\(scheme)://\(host)\(portPart)"
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+            request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
+        }
         if let body {
             request.httpBody = body
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
@@ -908,7 +975,7 @@ public class F50Fetcher: ObservableObject {
             request.setValue(cookie, forHTTPHeaderField: "Cookie")
         }
 
-        baseTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        baseTask = session.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor in
                 guard let self = self, generation == self.requestGeneration else { return }
 
@@ -1197,7 +1264,7 @@ public class F50Fetcher: ObservableObject {
 
         let request = signedUFIRequest(url: url, token: tokenHash)
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 if let httpRes = response as? HTTPURLResponse,
@@ -1222,12 +1289,9 @@ public class F50Fetcher: ObservableObject {
         }.resume()
     }
 
-    /// 从 UFI 地址推导 Router 后台地址（去掉端口）
+    /// 从 UFI 地址推导 Router 后台地址
     private func routerBaseURL(from ufiBaseURL: String) -> String {
-        guard let url = URL(string: ufiBaseURL), let host = url.host else {
-            return "http://192.168.0.1"
-        }
-        return "\(url.scheme ?? "http")://\(host)"
+        F50Configuration.resolveEndpoints(from: ufiBaseURL).routerBaseURL
     }
 
     /// 获取套餐账单周期累计（monthly_rx/tx_bytes）与套餐限额/清零日。
@@ -1249,7 +1313,7 @@ public class F50Fetcher: ObservableObject {
             request.setValue(cookie, forHTTPHeaderField: "Cookie")
         }
 
-        packageTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        packageTask = session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 defer { self.packageTask = nil }
@@ -1308,7 +1372,7 @@ public class F50Fetcher: ObservableObject {
             request.setValue(cookie, forHTTPHeaderField: "Cookie")
         }
 
-        bandTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        bandTask = session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self, generation == self.requestGeneration else { return }
                 defer { self.bandTask = nil }
@@ -1349,6 +1413,7 @@ public class F50Fetcher: ObservableObject {
         }
 
         candidateTokens.append(sha256(F50Configuration.defaultCredential))
+        candidateTokens.append(F50Configuration.defaultCredential)
 
         var uniqueTokens: [String] = []
         for t in candidateTokens {
@@ -1369,7 +1434,7 @@ public class F50Fetcher: ObservableObject {
 
         let request = signedUFIRequest(url: url, token: tokenHash)
 
-        qosTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        qosTask = session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self = self, generation == self.requestGeneration else { return }
                 if let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -1404,12 +1469,12 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
+        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
         let bodyObj: [String: Any] = ["command": cmd]
         let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: [])
         let request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
 
-        shellTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+        shellTask = session.dataTask(with: request) { [weak self] data, response, _ in
             Task { @MainActor in
                 guard let self = self, generation == self.requestGeneration else { return }
                 if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
@@ -1475,6 +1540,8 @@ public class F50Fetcher: ObservableObject {
 
         var maxSocCpuTemp: Double = 0.0
         var fallbackTemp: Double = 0.0
+        var totalNetDevRx: UInt64 = 0
+        var totalNetDevTx: UInt64 = 0
 
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -1528,6 +1595,18 @@ public class F50Fetcher: ObservableObject {
                     }
                 }
             }
+
+            // 4. Network Dev throughput: "rmnet_data0: 123456 ... 789012 ..."
+            if trimmed.contains(":") && (trimmed.hasPrefix("rmnet") || trimmed.hasPrefix("wlan") || trimmed.hasPrefix("eth") || trimmed.hasPrefix("usb")) {
+                let parts = trimmed.components(separatedBy: ":")
+                if parts.count == 2 {
+                    let cols = parts[1].components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                    if cols.count >= 9, let rx = UInt64(cols[0]), let tx = UInt64(cols[8]) {
+                        totalNetDevRx &+= rx
+                        totalNetDevTx &+= tx
+                    }
+                }
+            }
         }
 
         // Memory %
@@ -1540,6 +1619,31 @@ public class F50Fetcher: ObservableObject {
         let finalTemp = maxSocCpuTemp > 0 ? maxSocCpuTemp : fallbackTemp
         if finalTemp > 0 {
             dict["ic_temp"] = finalTemp
+        }
+
+        // Realtime throughput calculation from Linux netdev counters
+        if totalNetDevRx > 0 || totalNetDevTx > 0 {
+            let now = Date()
+            if let prevTime = prevNetDevTimestamp, prevNetDevRx > 0 {
+                let dt = now.timeIntervalSince(prevTime)
+                if dt >= 0.5 && dt <= 10.0 {
+                    let rxDelta = Double(totalNetDevRx >= prevNetDevRx ? totalNetDevRx - prevNetDevRx : 0)
+                    let txDelta = Double(totalNetDevTx >= prevNetDevTx ? totalNetDevTx - prevNetDevTx : 0)
+                    let calcDl = rxDelta / dt
+                    let calcUl = txDelta / dt
+                    if self.status.dlSpeed <= 0 && calcDl > 0 {
+                        self.status.dlSpeed = calcDl
+                        self.status.recordSpeed(dl: self.status.dlSpeed, ul: self.status.ulSpeed)
+                    }
+                    if self.status.ulSpeed <= 0 && calcUl > 0 {
+                        self.status.ulSpeed = calcUl
+                        self.status.recordSpeed(dl: self.status.dlSpeed, ul: self.status.ulSpeed)
+                    }
+                }
+            }
+            prevNetDevRx = totalNetDevRx
+            prevNetDevTx = totalNetDevTx
+            prevNetDevTimestamp = now
         }
     }
 
@@ -1559,7 +1663,7 @@ public class F50Fetcher: ObservableObject {
         ldReq.setValue("\(hostOnly)/index.html", forHTTPHeaderField: "Referer")
         ldReq.timeoutInterval = 4.0
 
-        URLSession.shared.dataTask(with: ldReq) { [weak self] data, response, error in
+        session.dataTask(with: ldReq) { [weak self] data, response, error in
             Task { @MainActor in
                 guard let self = self, let data = data,
                       let dict = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
@@ -1585,7 +1689,7 @@ public class F50Fetcher: ObservableObject {
                 loginReq.httpBody = bodyString.data(using: .utf8)
                 loginReq.timeoutInterval = 4.0
 
-                URLSession.shared.dataTask(with: loginReq) { [weak self] data, response, error in
+                self.session.dataTask(with: loginReq) { [weak self] data, response, error in
                     Task { @MainActor in
                         guard let self else { return }
                         if let httpRes = response as? HTTPURLResponse,

@@ -38,7 +38,18 @@ impl F50Fetcher {
         }
     }
 
-    fn get_endpoints(&self, base_url: &str) -> (String, String) {
+    pub fn is_ip_address(host: &str) -> bool {
+        let parts: Vec<&str> = host.split('.').collect();
+        if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
+            return true;
+        }
+        if host.contains(':') || (host.starts_with('[') && host.ends_with(']')) {
+            return true;
+        }
+        false
+    }
+
+    pub fn get_endpoints_static(base_url: &str) -> (String, String) {
         let clean = base_url.trim().trim_end_matches('/');
         let with_scheme = if clean.contains("://") {
             clean.to_string()
@@ -49,10 +60,28 @@ impl F50Fetcher {
         if let Ok(parsed) = reqwest::Url::parse(&with_scheme) {
             let host = parsed.host_str().unwrap_or("192.168.0.1");
             let scheme = parsed.scheme();
-            (format!("{}://{}", scheme, host), format!("{}://{}:2333", scheme, host))
+            let is_ip = Self::is_ip_address(host);
+
+            if let Some(port) = parsed.port() {
+                if is_ip && port == 2333 {
+                    (format!("{}://{}", scheme, host), format!("{}://{}:2333", scheme, host))
+                } else {
+                    (format!("{}://{}:{}", scheme, host, port), format!("{}://{}:{}", scheme, host, port))
+                }
+            } else {
+                if is_ip {
+                    (format!("{}://{}", scheme, host), format!("{}://{}:2333", scheme, host))
+                } else {
+                    (format!("{}://{}", scheme, host), format!("{}://{}", scheme, host))
+                }
+            }
         } else {
             ("http://192.168.0.1".to_string(), "http://192.168.0.1:2333".to_string())
         }
+    }
+
+    fn get_endpoints(&self, base_url: &str) -> (String, String) {
+        Self::get_endpoints_static(base_url)
     }
 
     fn candidate_tokens(&self, ufi_token: &str, password: &str) -> Vec<String> {
@@ -116,48 +145,76 @@ impl F50Fetcher {
         let (router_base, ufi_base) = self.get_endpoints(&base_url);
         let mut status = self.status.read().await.clone();
 
-        // 1. Try ZTE Router 80 port
-        let mut router_success = false;
-        match self.fetch_router_status(&router_base).await {
-            Ok(payload) => {
-                self.parse_status_payload(&mut status, &payload, true);
-                status.is_online = true;
-                status.error_message = None;
-                router_success = true;
-            }
-            Err(e) => {
-                // If 401 or auth needed, try ZTE login once
-                if e.contains("401") || e.contains("auth") {
-                    if self.perform_zte_login(&router_base, &password).await {
-                        if let Ok(payload) = self.fetch_router_status(&router_base).await {
-                            self.parse_status_payload(&mut status, &payload, true);
-                            status.is_online = true;
-                            status.error_message = None;
-                            router_success = true;
-                        }
-                    }
-                }
-            }
-        }
+        let clean_for_check = if base_url.contains("://") { base_url.clone() } else { format!("http://{}", base_url.trim()) };
+        let is_ip = if let Ok(parsed) = reqwest::Url::parse(&clean_for_check) {
+            Self::is_ip_address(parsed.host_str().unwrap_or("192.168.0.1"))
+        } else {
+            true
+        };
 
-        // 2. Fallback to UFI 2333 port if router 80 port failed
-        if !router_success {
-            let tokens = self.candidate_tokens(&ufi_token, &password);
-            let mut ufi_success = false;
+        let mut success = false;
+        let tokens = self.candidate_tokens(&ufi_token, &password);
+
+        if !is_ip {
+            // 域名内网穿透优先走 UFI 2333 接口直连
             for token in &tokens {
                 if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token).await {
                     self.parse_status_payload(&mut status, &payload, false);
                     status.is_online = true;
                     status.error_message = None;
                     *self.cached_valid_token.write().await = Some(token.clone());
-                    ufi_success = true;
+                    success = true;
                     break;
                 }
             }
-            if !ufi_success {
-                status.is_online = false;
-                status.error_message = Some("无法连接中兴/UFI后台".to_string());
+            if !success {
+                if let Ok(payload) = self.fetch_router_status(&router_base).await {
+                    self.parse_status_payload(&mut status, &payload, true);
+                    status.is_online = true;
+                    status.error_message = None;
+                    success = true;
+                }
             }
+        } else {
+            // 本地 IP 优先走中兴 Router 80 端口
+            match self.fetch_router_status(&router_base).await {
+                Ok(payload) => {
+                    self.parse_status_payload(&mut status, &payload, true);
+                    status.is_online = true;
+                    status.error_message = None;
+                    success = true;
+                }
+                Err(e) => {
+                    if e.contains("401") || e.contains("auth") {
+                        if self.perform_zte_login(&router_base, &password).await {
+                            if let Ok(payload) = self.fetch_router_status(&router_base).await {
+                                self.parse_status_payload(&mut status, &payload, true);
+                                status.is_online = true;
+                                status.error_message = None;
+                                success = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !success {
+                for token in &tokens {
+                    if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token).await {
+                        self.parse_status_payload(&mut status, &payload, false);
+                        status.is_online = true;
+                        status.error_message = None;
+                        *self.cached_valid_token.write().await = Some(token.clone());
+                        success = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !success {
+            status.is_online = false;
+            status.error_message = Some("无法连接中兴/UFI后台".to_string());
         }
 
         // 3. Fetch extensions (Linux shell hardware metrics, Cellular usage & QoS) via UFI 2333 port
@@ -242,7 +299,7 @@ impl F50Fetcher {
     }
 
     async fn fetch_ufi_status(&self, ufi_base: &str, token: &str) -> Result<Value, String> {
-        let commands = "status,battery_value,battery_charging,wifi_access_sta_num,network_provider,network_type,signalbar,realtime_rx_thrpt,realtime_tx_thrpt,monthly_rx_bytes,monthly_tx_bytes,day_rx_bytes,day_tx_bytes,cpu_utility,mem_utility,ic_temp,cpu_temp,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date,sms_unread_num,qci,dl_ambr,ul_ambr,Z5g_rsrp,5g_rsrp,lte_rsrp,Z5g_snr,5g_snr,lte_snr,5g_rsrq,lte_rsrq,Nr_snr,nr_snr,sinr";
+        let commands = "status,battery_value,battery_charging,wifi_access_sta_num,network_provider,network_type,signalbar,network_signalbar,network_information,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes,day_rx_bytes,day_tx_bytes,cpu_utility,mem_utility,ic_temp,cpu_temp,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date,sms_unread_num,sms_sim_unread_num,qci,dl_ambr,ul_ambr,Z5g_rsrp,5g_rsrp,lte_rsrp,Z5g_snr,5g_snr,lte_snr,5g_rsrq,lte_rsrq,Nr_snr,nr_snr,sinr";
         
         let url = format!("{}/api/goform/goform_get_cmd_process?cmd={}&is_all=true", ufi_base, commands);
         let path = "/api/goform/goform_get_cmd_process";
@@ -277,7 +334,7 @@ impl F50Fetcher {
     async fn fetch_linux_shell_metrics(&self, ufi_base: &str, candidate_tokens: &[String], status: &mut F50Status) {
         let path = "/api/user_shell";
         let url = format!("{}{}", ufi_base, path);
-        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null";
+        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null";
         
         let body = serde_json::json!({ "command": cmd });
 

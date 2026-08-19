@@ -423,8 +423,54 @@ export async function launchMirroring() {
   }
 }
 
+export function resolveEndpoints(baseURL = 'http://192.168.0.1:2333') {
+  const clean = (baseURL || '').trim().replace(/\/+$/, '');
+  const withScheme = clean.includes('://') ? clean : `http://${clean}`;
+  try {
+    const url = new URL(withScheme);
+    const host = url.hostname || '192.168.0.1';
+    const scheme = url.protocol ? url.protocol.replace(':', '') : 'http';
+    const parts = host.split('.');
+    const isIP = parts.length === 4 && parts.every(p => {
+      const n = Number(p);
+      return !isNaN(n) && n >= 0 && n <= 255 && p.trim() !== '';
+    });
+
+    if (url.port) {
+      if (isIP && url.port === '2333') {
+        return {
+          routerURL: `${scheme}://${host}`,
+          ufiURL: `${scheme}://${host}:2333`
+        };
+      } else {
+        return {
+          routerURL: `${scheme}://${host}:${url.port}`,
+          ufiURL: `${scheme}://${host}:${url.port}`
+        };
+      }
+    } else {
+      if (isIP) {
+        return {
+          routerURL: `${scheme}://${host}`,
+          ufiURL: `${scheme}://${host}:2333`
+        };
+      } else {
+        return {
+          routerURL: `${scheme}://${host}`,
+          ufiURL: `${scheme}://${host}`
+        };
+      }
+    }
+  } catch (e) {
+    return {
+      routerURL: 'http://192.168.0.1',
+      ufiURL: 'http://192.168.0.1:2333'
+    };
+  }
+}
+
 export async function openWebAdmin(type = 'ufi') {
-  const host = state.config.baseURL.replace(/https?:\/\//, '').split('/')[0].split(':')[0] || '192.168.0.1';
-  const url = type === 'router' ? `http://${host}` : `http://${host}:2333`;
+  const { routerURL, ufiURL } = resolveEndpoints(state.config.baseURL);
+  const url = type === 'router' ? routerURL : ufiURL;
   await invokeTauri('open_url', { url });
 }

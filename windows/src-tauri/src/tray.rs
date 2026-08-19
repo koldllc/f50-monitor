@@ -38,9 +38,8 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         "http://192.168.0.1:2333".to_string()
                     };
-                    let clean = base_url.trim().trim_end_matches('/');
-                    let host = clean.replace("http://", "").replace("https://", "").split(':').next().unwrap_or("192.168.0.1").to_string();
-                    let _ = tauri_plugin_opener::open_url(format!("http://{}:2333", host), None::<&str>);
+                    let (_, ufi_url) = crate::fetcher::F50Fetcher::get_endpoints_static(&base_url);
+                    let _ = tauri_plugin_opener::open_url(ufi_url, None::<&str>);
                 });
             }
             "open_router" => {
@@ -51,9 +50,8 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         "http://192.168.0.1".to_string()
                     };
-                    let clean = base_url.trim().trim_end_matches('/');
-                    let host = clean.replace("http://", "").replace("https://", "").split(':').next().unwrap_or("192.168.0.1").to_string();
-                    let _ = tauri_plugin_opener::open_url(format!("http://{}", host), None::<&str>);
+                    let (router_url, _) = crate::fetcher::F50Fetcher::get_endpoints_static(&base_url);
+                    let _ = tauri_plugin_opener::open_url(router_url, None::<&str>);
                 });
             }
             "refresh" => {
