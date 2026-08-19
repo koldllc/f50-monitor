@@ -24,7 +24,7 @@ jobs:
 
       - name: Build macOS App
         run: |
-          swift build -c release -Xswiftc -swift-version -Xswiftc 5
+          swift build -c release -Xswiftc -strict-concurrency=minimal
           APP_DIR="F50 Monitor.app"
           MACOS_DIR="$APP_DIR/Contents/MacOS"
           RESOURCES_DIR="$APP_DIR/Contents/Resources"
