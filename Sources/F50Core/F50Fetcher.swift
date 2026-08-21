@@ -976,9 +976,6 @@ public class F50Fetcher: ObservableObject {
         request.setValue(timestamp, forHTTPHeaderField: "kano-t")
         request.setValue(sign, forHTTPHeaderField: "kano-sign")
         request.setValue(token, forHTTPHeaderField: "authorization")
-        request.setValue(token, forHTTPHeaderField: "token")
-        request.setValue(token, forHTTPHeaderField: "Token")
-        request.setValue(token, forHTTPHeaderField: "token-auth")
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
         if let scheme = url.scheme, let host = url.host {
@@ -1006,7 +1003,7 @@ public class F50Fetcher: ObservableObject {
         // 信号指标（nr_rsrp/nr_rsrq/Nr_snr）由 network_information 的 dump 提供：
         // F50 固件若在列表中显式请求这四个命令，会把 dump 对应字段清零（返回空串），
         // 所以这里不显式请求它们，只保留独立数据源 Z5g_rsrp 与其它兑底字段。
-        let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,Z5g_snr,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,temperature,cpu_temp,internal_temperature,cpu_utility,mem_utility,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
+        let statusCommands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,Z5g_snr,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr"
         let trafficCommands = "realtime_rx_bytes,realtime_tx_bytes,realtime_time,monthly_tx_bytes,monthly_rx_bytes,monthly_time,day_rx_bytes,day_tx_bytes,total_rx_bytes,total_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_limit_switch,data_volume_clear_date,monthly_clear_date,clear_date,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,traffic_clear_date"
         let cmdList = refreshTraffic ? "\(statusCommands),\(trafficCommands)" : statusCommands
 
@@ -1487,96 +1484,33 @@ public class F50Fetcher: ObservableObject {
         return uniqueTokens
     }
 
-    private func fetchQosMetrics(
-        ufiBaseURL: String,
-        candidateTokens: [String],
-        candidatePaths: [String] = ["/api/AT", "/api/execute_at", "/api/modem/at", "/api/at"],
-        usePost: Bool = false,
-        generation: UInt
-    ) {
+    private func fetchQosMetrics(ufiBaseURL: String, candidateTokens: [String], generation: UInt) {
         guard generation == requestGeneration else { return }
         guard let tokenHash = candidateTokens.first,
-              let currentPath = candidatePaths.first else {
+              let url = URL(string: "\(ufiBaseURL)/api/AT?command=AT%2BCGEQOSRDP%3D1&slot=0") else {
             failQos(generation: generation)
             return
         }
 
-        let request: URLRequest
-        if usePost {
-            guard let url = URL(string: "\(ufiBaseURL)\(currentPath)") else {
-                failQos(generation: generation)
-                return
-            }
-            let bodyObj: [String: Any] = ["command": "AT+CGEQOSRDP=1", "cmd": "AT+CGEQOSRDP=1", "slot": 0]
-            let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: [])
-            request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
-        } else {
-            guard let url = URL(string: "\(ufiBaseURL)\(currentPath)?command=AT%2BCGEQOSRDP%3D1&cmd=AT%2BCGEQOSRDP%3D1&slot=0") else {
-                failQos(generation: generation)
-                return
-            }
-            request = signedUFIRequest(url: url, token: tokenHash, method: "GET")
-        }
+        let request = signedUFIRequest(url: url, token: tokenHash)
 
         qosTask = session.dataTask(with: request) { [weak self] data, response, _ in
             guard let self else { return }
             Task { @MainActor in
                 guard generation == self.requestGeneration else { return }
-                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                if let http = response as? HTTPURLResponse, http.statusCode == 200,
                    let data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    var parsedQos: ParsedQos? = nil
-                    if let result = json["result"] as? String {
-                        parsedQos = F50ResponseParser.parseQos(result)
-                    } else if let dataStr = json["data"] as? String {
-                        parsedQos = F50ResponseParser.parseQos(dataStr)
-                    } else if let respStr = json["response"] as? String {
-                        parsedQos = F50ResponseParser.parseQos(respStr)
-                    } else if let output = json["output"] as? String {
-                        parsedQos = F50ResponseParser.parseQos(output)
-                    } else if let dictRes = json["result"] as? [String: Any] {
-                        if let q = dictRes["qci"] as? String {
-                            parsedQos = ParsedQos(qci: q, downlink: "", uplink: "")
-                        }
-                    } else {
-                        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
-                           let jsonString = String(data: jsonData, encoding: .utf8) {
-                            parsedQos = F50ResponseParser.parseQos(jsonString)
-                        }
-                    }
-
-                    if let qos = parsedQos {
-                        self.status.qci = qos.qci
-                        self.status.qosDl = qos.downlink
-                        self.status.qosUl = qos.uplink
-                        self.finishExtension(generation: generation)
-                        return
-                    }
-                }
-
-                // 尝试同 path 下的 POST 请求
-                if !usePost {
-                    self.fetchQosMetrics(
-                        ufiBaseURL: ufiBaseURL,
-                        candidateTokens: candidateTokens,
-                        candidatePaths: candidatePaths,
-                        usePost: true,
-                        generation: generation
-                    )
-                } else if candidatePaths.count > 1 {
-                    self.fetchQosMetrics(
-                        ufiBaseURL: ufiBaseURL,
-                        candidateTokens: candidateTokens,
-                        candidatePaths: Array(candidatePaths.dropFirst()),
-                        usePost: false,
-                        generation: generation
-                    )
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let result = json["result"] as? String,
+                   let qos = F50ResponseParser.parseQos(result) {
+                    self.status.qci = qos.qci
+                    self.status.qosDl = qos.downlink
+                    self.status.qosUl = qos.uplink
+                    self.finishExtension(generation: generation)
                 } else if candidateTokens.count > 1 {
                     self.fetchQosMetrics(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
-                        candidatePaths: ["/api/AT", "/api/execute_at", "/api/modem/at", "/api/at"],
-                        usePost: false,
                         generation: generation
                     )
                 } else {
@@ -1590,7 +1524,7 @@ public class F50Fetcher: ObservableObject {
     private func fetchLinuxShellMetrics(
         ufiBaseURL: String,
         candidateTokens: [String],
-        candidatePaths: [String] = ["/api/systemInfo", "/api/deviceInfo", "/api/baseDeviceInfo", "/api/root_shell", "/api/user_shell", "/api/shell", "/api/exec"],
+        candidatePaths: [String] = ["/api/root_shell", "/api/user_shell"],
         generation: UInt
     ) {
         guard generation == requestGeneration else { return }
@@ -1602,62 +1536,35 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        let isStructuredAPI = path.contains("systemInfo") || path.contains("deviceInfo") || path.contains("baseDeviceInfo")
-        let request: URLRequest
-
-        if isStructuredAPI {
-            request = signedUFIRequest(url: url, token: tokenHash, method: "GET")
-        } else {
-            let cmd = "cat /proc/stat 2>/dev/null | grep \"cpu \"; cat /proc/meminfo 2>/dev/null | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone* /sys/devices/virtual/thermal/thermal_zone*; do [ -d \"$f\" ] && echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
-            let bodyObj: [String: Any] = ["command": cmd, "cmd": cmd]
-            let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: [])
-            request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
-        }
+        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
+        let bodyObj: [String: Any] = ["command": cmd]
+        let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: [])
+        let request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
 
         shellTask = session.dataTask(with: request) { [weak self] data, response, _ in
             guard let self else { return }
             Task { @MainActor in
                 guard generation == self.requestGeneration else { return }
-                if let httpRes = response as? HTTPURLResponse, (200...299).contains(httpRes.statusCode),
+                if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
                    let data = data, let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                    
-                    if isStructuredAPI {
-                        let payload = (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
-                        let normalized = F50ResponseParser.normalizeUFIPayload(payload)
-                        self.status.mergeHardwareMetrics(from: normalized)
-                        if self.status.temperature > 0 || self.status.cpuUsage > 0 {
-                            self.status.ufiAuthFailed = false
-                            self.finishExtension(generation: generation)
-                            return
-                        }
+                    let rawResult: String
+                    if let dictRes = json["result"] as? [String: Any], let c = dictRes["content"] as? String {
+                        rawResult = c
+                    } else if let strRes = json["result"] as? String {
+                        rawResult = strRes
                     } else {
-                        let rawResult: String
-                        if let dictRes = json["result"] as? [String: Any], let c = dictRes["content"] as? String {
-                            rawResult = c
-                        } else if let strRes = json["result"] as? String {
-                            rawResult = strRes
-                        } else if let dataStr = json["data"] as? String {
-                            rawResult = dataStr
-                        } else {
-                            rawResult = ""
-                        }
-
-                        if !rawResult.isEmpty {
-                            var metrics: [String: Any] = [:]
-                            self.parseLinuxShellOutput(rawResult, into: &metrics)
-                            self.status.mergeHardwareMetrics(from: metrics)
-                            self.status.ufiAuthFailed = false
-                            self.finishExtension(generation: generation)
-                            return
-                        }
+                        rawResult = ""
                     }
-                }
 
-                // 候选路径轮询回退
-                if candidatePaths.count > 1 {
+                    var metrics: [String: Any] = [:]
+                    self.parseLinuxShellOutput(rawResult, into: &metrics)
+                    self.status.mergeHardwareMetrics(from: metrics)
+                    self.status.ufiAuthFailed = false
+                    self.finishExtension(generation: generation)
+                } else if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 404, candidatePaths.count > 1 {
                     self.fetchLinuxShellMetrics(
                         ufiBaseURL: ufiBaseURL,
-                        candidateTokens: candidateTokens,
+                        candidateTokens: self.candidateTokens(),
                         candidatePaths: Array(candidatePaths.dropFirst()),
                         generation: generation
                     )
@@ -1665,7 +1572,14 @@ public class F50Fetcher: ObservableObject {
                     self.fetchLinuxShellMetrics(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
-                        candidatePaths: ["/api/systemInfo", "/api/deviceInfo", "/api/baseDeviceInfo", "/api/root_shell", "/api/user_shell", "/api/shell", "/api/exec"],
+                        candidatePaths: candidatePaths,
+                        generation: generation
+                    )
+                } else if candidatePaths.count > 1 {
+                    self.fetchLinuxShellMetrics(
+                        ufiBaseURL: ufiBaseURL,
+                        candidateTokens: self.candidateTokens(),
+                        candidatePaths: Array(candidatePaths.dropFirst()),
                         generation: generation
                     )
                 } else {
