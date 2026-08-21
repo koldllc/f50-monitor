@@ -3,6 +3,39 @@ import CryptoKit
 @testable import F50Core
 
 final class F50ResponseParserTests: XCTestCase {
+    func testQosRefreshesWhenConnectionContextChanges() {
+        var previous = F50Status()
+        var current = previous
+        current.isOnline = true
+        XCTAssertTrue(current.requiresQosRefresh(comparedTo: previous))
+
+        previous = current
+        current.pppStatus = "已连接"
+        XCTAssertTrue(current.requiresQosRefresh(comparedTo: previous))
+
+        previous = current
+        current.carrier = "中国电信"
+        XCTAssertTrue(current.requiresQosRefresh(comparedTo: previous))
+
+        previous = current
+        current.networkType = "4G LTE"
+        XCTAssertTrue(current.requiresQosRefresh(comparedTo: previous))
+
+        previous = current
+        current.currentBands = "B3"
+        XCTAssertTrue(current.requiresQosRefresh(comparedTo: previous))
+    }
+
+    func testQosDoesNotRefreshWhenConnectionContextIsStable() {
+        var status = F50Status()
+        status.isOnline = true
+        status.pppStatus = "已连接"
+        status.carrier = "中国电信"
+        status.networkType = "5G SA"
+        status.currentBands = "n78"
+        XCTAssertFalse(status.requiresQosRefresh(comparedTo: status))
+    }
+
     func testDefaultsUseAdminForBothCredentials() {
         XCTAssertEqual(F50Configuration.defaultCredential, "admin")
     }

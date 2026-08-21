@@ -105,7 +105,8 @@ public class F50Fetcher: ObservableObject {
     private var lastADBHardwareRefreshDate = Date.distantPast
     private var lastADBQosRefreshDate = Date.distantPast
     private let adbHardwareRefreshInterval: TimeInterval = 10
-    private let adbQosRefreshInterval: TimeInterval = 30
+    // QCI 主要由连接上下文变化触发；5 分钟轮询仅用于设备未上报变化时兜底。
+    private let adbQosRefreshInterval: TimeInterval = 300
 
     // token 候选缓存：凭据不变时避免每个轮询周期重复计算 SHA-256
     private var cachedCandidateTokens: [String]?
@@ -1399,12 +1400,11 @@ public class F50Fetcher: ObservableObject {
                 status.temperature = adbStatus.temperature
             }
         }
-        if primaryStatus.qci.isEmpty,
-           let rawQos,
+        if let rawQos,
            let qos = F50ResponseParser.parseQos(rawQos) {
-            status.qci = qos.qci
-            status.qosDl = qos.downlink
-            status.qosUl = qos.uplink
+            if primaryStatus.qci.isEmpty { status.qci = qos.qci }
+            if primaryStatus.qosDl.isEmpty { status.qosDl = qos.downlink }
+            if primaryStatus.qosUl.isEmpty { status.qosUl = qos.uplink }
         }
         if status.cpuUsage > 0 || status.memUsage > 0 || status.temperature > 0 || !status.qci.isEmpty {
             status.ufiAuthFailed = false
@@ -2040,6 +2040,7 @@ public class F50Fetcher: ObservableObject {
         preserveQos: Bool,
         refreshTraffic: Bool
     ) {
+        let previousStatus = status
         var newStatus = F50Status()
         newStatus.isOnline = true
         newStatus.errorMessage = nil
@@ -2230,6 +2231,16 @@ public class F50Fetcher: ObservableObject {
             newStatus.trafficResetDay = self.status.trafficResetDay
             newStatus.monthlyOffsetBytes = status.monthlyOffsetBytes
             newStatus.dailyOffsetBytes = status.dailyOffsetBytes
+        }
+
+        if newStatus.requiresQosRefresh(comparedTo: previousStatus) {
+            // 网络上下文变化后不能继续展示旧承载的 QCI；仅保留本轮 80 端口明确返回的字段。
+            var primaryQos = F50Status()
+            primaryQos.mergeHardwareMetrics(from: dict)
+            newStatus.qci = primaryQos.qci
+            newStatus.qosDl = primaryQos.qosDl
+            newStatus.qosUl = primaryQos.qosUl
+            lastADBQosRefreshDate = .distantPast
         }
 
         self.status = newStatus

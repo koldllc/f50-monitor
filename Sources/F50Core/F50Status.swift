@@ -137,6 +137,15 @@ public struct F50Status: Equatable, Codable {
 
     public init() {}
 
+    func requiresQosRefresh(comparedTo previous: F50Status) -> Bool {
+        if isOnline && !previous.isOnline { return true }
+        if pppStatus == "已连接" && previous.pppStatus != "已连接" { return true }
+        if carrier != previous.carrier && carrier != "未知" { return true }
+        if networkType != previous.networkType && !networkType.isEmpty { return true }
+        if currentBands != previous.currentBands && !currentBands.isEmpty { return true }
+        return false
+    }
+
     mutating func mergeHardwareMetrics(from payload: [String: Any]) {
         if let value = payload["cpu_utility"] ?? payload["cpu_usage"] ?? payload["cpu_percent"] ?? payload["cpu_rate"] ?? payload["cpu"] ?? payload["cpu_load"] {
             let parsed = F50ResponseParser.parseDouble(value)
