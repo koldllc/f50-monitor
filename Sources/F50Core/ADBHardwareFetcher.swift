@@ -89,7 +89,6 @@ public enum ADBHardwareFetcher {
             _ = openPacket.withUnsafeBytes { ptr in send(sock, ptr.baseAddress!, ptr.count, 0) }
 
             var outputData = Data()
-            var receivedClose = false
             while true {
                 // 超时或半包都属于失败，不能把末尾缺失的输出当作完整结果。
                 guard let hdr = readExact(from: sock, count: 24) else { return nil }
@@ -108,13 +107,11 @@ public enum ADBHardwareFetcher {
                     let okayPkt = makePacket(command: A_OKAY, arg0: localId, arg1: pArg0)
                     _ = okayPkt.withUnsafeBytes { ptr in send(sock, ptr.baseAddress!, ptr.count, 0) }
                 } else if pCmd == A_CLSE {
-                    receivedClose = true
                     let closePacket = makePacket(command: A_CLSE, arg0: localId, arg1: pArg0)
                     _ = closePacket.withUnsafeBytes { ptr in send(sock, ptr.baseAddress!, ptr.count, 0) }
                     break
                 }
             }
-            guard receivedClose else { return nil }
             return String(data: outputData, encoding: .utf8)
         }.value
     }

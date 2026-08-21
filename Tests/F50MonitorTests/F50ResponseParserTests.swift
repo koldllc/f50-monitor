@@ -40,6 +40,13 @@ final class F50ResponseParserTests: XCTestCase {
         )
     }
 
+    func testParsesADBQosResponseWithCRLFBeforeOK() {
+        XCTAssertEqual(
+            F50ResponseParser.parseQos("+CGEQOSRDP: 1,8,0,0,0,0,500000,100000\r\nOK"),
+            ParsedQos(qci: "8", downlink: "500Mbps", uplink: "100Mbps")
+        )
+    }
+
     func testRejectsMalformedQosResponse() {
         XCTAssertNil(F50ResponseParser.parseQos("ERROR"))
     }

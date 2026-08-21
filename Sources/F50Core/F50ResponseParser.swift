@@ -125,7 +125,7 @@ enum F50ResponseParser {
                 var ulStr = ""
                 if parts.count >= 8 {
                     let dlRaw = parts[6].trimmingCharacters(in: .whitespaces)
-                    let ulRaw = parts[7].components(separatedBy: .whitespaces).first { !$0.isEmpty } ?? ""
+                    let ulRaw = parts[7].components(separatedBy: .whitespacesAndNewlines).first { !$0.isEmpty } ?? ""
                     // CGEQOSRDP 的上下行是一组完整字段；缺少末尾上行通常意味着 ADB 响应被截断。
                     guard let dlKbps = Double(dlRaw), let ulKbps = Double(ulRaw) else { return nil }
                     dlStr = formatRate(dlKbps)
