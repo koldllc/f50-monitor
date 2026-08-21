@@ -117,6 +117,36 @@ public class F50Fetcher: ObservableObject {
     private var prevIdleCpu: Double = 0
     private var routerDetectedTrafficResetDay: Int = 0
 
+    // Ring Log Buffer (脱敏诊断日志)
+    private var ringLogBuffer: [String] = []
+    private let maxLogCount = 100
+    private var diagnosticFirmwareVersion = ""
+    private var diagnosticChannelMode = "未知"
+
+    public func appendLog(_ category: String, _ message: String) {
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let formatted = "[\(ts)] [\(category)] \(message)"
+        ringLogBuffer.append(formatted)
+        if ringLogBuffer.count > maxLogCount {
+            ringLogBuffer.removeFirst(ringLogBuffer.count - maxLogCount)
+        }
+    }
+
+    public var currentDiagnosticFirmwareVersion: String { diagnosticFirmwareVersion }
+    public var currentDiagnosticChannelMode: String { diagnosticChannelMode }
+
+    public func getRecentLogs() -> [String] {
+        return ringLogBuffer
+    }
+
+    public func getCandidateTokensPublic() -> [String] {
+        return candidateTokens()
+    }
+
+    public var currentSessionCookie: String? {
+        return sessionCookie
+    }
+
     // Network throughput tracking
     private var prevNetDevRx: UInt64 = 0
     private var prevNetDevTx: UInt64 = 0
@@ -240,6 +270,7 @@ public class F50Fetcher: ObservableObject {
 
     public func fetchData() {
         guard !isFetching else { return }
+        appendLog("连接", "开始刷新 Router/UFI 状态")
         isFetching = true
         let generation = requestGeneration
 
@@ -1135,6 +1166,8 @@ public class F50Fetcher: ObservableObject {
                         let adbMemory = didTryADB ? self.status.memUsage : 0
                         let adbTemperature = didTryADB ? self.status.temperature : 0
                         self.parseStatusDict(merged, preserveQos: true, refreshTraffic: refreshTraffic)
+                        self.diagnosticChannelMode = "2333 UFI"
+                        self.appendLog("降级", "2333 UFI 状态读取成功")
                         if !adbQci.isEmpty { self.status.qci = adbQci }
                         if !adbQosDl.isEmpty { self.status.qosDl = adbQosDl }
                         if !adbQosUl.isEmpty { self.status.qosUl = adbQosUl }
@@ -1437,6 +1470,8 @@ public class F50Fetcher: ObservableObject {
                             preserveQos: true,
                             refreshTraffic: refreshTraffic
                         )
+                        self.diagnosticChannelMode = "80 Router"
+                        self.appendLog("连接", "80 Router 状态读取成功")
                         if refreshTraffic {
                             self.lastTrafficRefreshDate = Date()
                         }
@@ -1496,6 +1531,8 @@ public class F50Fetcher: ObservableObject {
         sessionCookie = nil
         cachedCandidateTokens = nil
         cachedTokenSource = ""
+        diagnosticFirmwareVersion = ""
+        diagnosticChannelMode = "未知"
         status.qci = ""
         status.qosDl = ""
         status.qosUl = ""
@@ -1623,6 +1660,8 @@ public class F50Fetcher: ObservableObject {
         let rawHardware = await hardwareTask?.value
         let rawQos = await qosTask?.value
         if let rawHardware, !rawHardware.isEmpty {
+            appendLog("降级", "5555 ADB 硬件指标读取成功")
+            diagnosticChannelMode = diagnosticChannelMode == "未知" ? "5555 ADB" : "\(diagnosticChannelMode) + 5555 ADB"
             var metrics: [String: Any] = [:]
             parseLinuxShellOutput(rawHardware, into: &metrics)
             var adbStatus = F50Status()
@@ -2269,6 +2308,7 @@ public class F50Fetcher: ObservableObject {
         guard generation == requestGeneration else { return }
         status.isOnline = false
         status.errorMessage = msg
+        appendLog("错误", msg)
         isFetching = false
     }
 
@@ -2283,6 +2323,12 @@ public class F50Fetcher: ObservableObject {
         newStatus.errorMessage = nil
         newStatus.ufiAuthFailed = status.ufiAuthFailed
         newStatus.lastUpdated = Date()
+        for key in ["wa_inner_version", "wa_version", "cr_version"] {
+            if let value = dict[key] as? String, !value.isEmpty {
+                diagnosticFirmwareVersion = value
+                break
+            }
+        }
 
         // 保留由独立异步请求维护的字段（cellularUsage / packageTask），
         // 避免每 2s 的主刷新把它们重置为 0 导致面板回退到错误值

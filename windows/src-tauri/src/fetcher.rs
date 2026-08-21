@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use reqwest::header::{HeaderMap, HeaderValue, COOKIE, REFERER, CONTENT_TYPE};
 use chrono::{Datelike, Local, NaiveDate, TimeZone};
@@ -18,6 +18,9 @@ pub struct F50Fetcher {
     prev_total_cpu: Arc<RwLock<f64>>,
     prev_idle_cpu: Arc<RwLock<f64>>,
     cached_valid_token: Arc<RwLock<Option<String>>>,
+    last_traffic_refresh: Arc<RwLock<Option<Instant>>>,
+    last_adb_hardware_refresh: Arc<RwLock<Option<Instant>>>,
+    last_qos_refresh: Arc<RwLock<Option<Instant>>>,
 }
 
 impl F50Fetcher {
@@ -35,6 +38,9 @@ impl F50Fetcher {
             prev_total_cpu: Arc::new(RwLock::new(0.0)),
             prev_idle_cpu: Arc::new(RwLock::new(0.0)),
             cached_valid_token: Arc::new(RwLock::new(None)),
+            last_traffic_refresh: Arc::new(RwLock::new(None)),
+            last_adb_hardware_refresh: Arc::new(RwLock::new(None)),
+            last_qos_refresh: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -111,7 +117,15 @@ impl F50Fetcher {
         unique
     }
 
-    fn build_signed_ufi_headers(&self, path: &str, method: &str, token: &str) -> HeaderMap {
+    pub(crate) fn diagnostic_candidate_tokens(&self, ufi_token: &str, password: &str) -> Vec<String> {
+        self.candidate_tokens(ufi_token, password)
+    }
+
+    pub(crate) async fn diagnostic_session_cookie(&self) -> Option<String> {
+        self.session_cookie.read().await.clone()
+    }
+
+    pub(crate) fn build_signed_ufi_headers(&self, path: &str, method: &str, token: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -143,7 +157,9 @@ impl F50Fetcher {
         };
 
         let (router_base, ufi_base) = self.get_endpoints(&base_url);
-        let mut status = self.status.read().await.clone();
+        let previous_status = self.status.read().await.clone();
+        let mut status = previous_status.clone();
+        let refresh_traffic = refresh_due(&self.last_traffic_refresh, Duration::from_secs(30)).await;
 
         let clean_for_check = if base_url.contains("://") { base_url.clone() } else { format!("http://{}", base_url.trim()) };
         let is_ip = if let Ok(parsed) = reqwest::Url::parse(&clean_for_check) {
@@ -153,13 +169,16 @@ impl F50Fetcher {
         };
 
         let mut success = false;
+        let mut router_payload: Option<Value> = None;
+        let mut source_payload: Option<Value> = None;
         let tokens = self.candidate_tokens(&ufi_token, &password);
 
         if !is_ip {
             // 域名内网穿透优先走 UFI 2333 接口直连
             for token in &tokens {
-                if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token).await {
-                    self.parse_status_payload(&mut status, &payload, false);
+                if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token, refresh_traffic).await {
+                    self.parse_status_payload(&mut status, &payload, false, refresh_traffic);
+                    source_payload = Some(payload);
                     status.is_online = true;
                     status.error_message = None;
                     *self.cached_valid_token.write().await = Some(token.clone());
@@ -168,8 +187,10 @@ impl F50Fetcher {
                 }
             }
             if !success {
-                if let Ok(payload) = self.fetch_router_status(&router_base).await {
-                    self.parse_status_payload(&mut status, &payload, true);
+                if let Ok(payload) = self.fetch_router_status(&router_base, refresh_traffic).await {
+                    self.parse_status_payload(&mut status, &payload, true, refresh_traffic);
+                    source_payload = Some(payload.clone());
+                    router_payload = Some(payload);
                     status.is_online = true;
                     status.error_message = None;
                     success = true;
@@ -177,9 +198,11 @@ impl F50Fetcher {
             }
         } else {
             // 本地 IP 优先走中兴 Router 80 端口
-            match self.fetch_router_status(&router_base).await {
+            match self.fetch_router_status(&router_base, refresh_traffic).await {
                 Ok(payload) => {
-                    self.parse_status_payload(&mut status, &payload, true);
+                    self.parse_status_payload(&mut status, &payload, true, refresh_traffic);
+                    source_payload = Some(payload.clone());
+                    router_payload = Some(payload);
                     status.is_online = true;
                     status.error_message = None;
                     success = true;
@@ -187,8 +210,10 @@ impl F50Fetcher {
                 Err(e) => {
                     if e.contains("401") || e.contains("auth") {
                         if self.perform_zte_login(&router_base, &password).await {
-                            if let Ok(payload) = self.fetch_router_status(&router_base).await {
-                                self.parse_status_payload(&mut status, &payload, true);
+                            if let Ok(payload) = self.fetch_router_status(&router_base, refresh_traffic).await {
+                                self.parse_status_payload(&mut status, &payload, true, refresh_traffic);
+                                source_payload = Some(payload.clone());
+                                router_payload = Some(payload);
                                 status.is_online = true;
                                 status.error_message = None;
                                 success = true;
@@ -200,8 +225,9 @@ impl F50Fetcher {
 
             if !success {
                 for token in &tokens {
-                    if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token).await {
-                        self.parse_status_payload(&mut status, &payload, false);
+                    if let Ok(payload) = self.fetch_ufi_status(&ufi_base, token, refresh_traffic).await {
+                        self.parse_status_payload(&mut status, &payload, false, refresh_traffic);
+                        source_payload = Some(payload);
                         status.is_online = true;
                         status.error_message = None;
                         *self.cached_valid_token.write().await = Some(token.clone());
@@ -217,10 +243,120 @@ impl F50Fetcher {
             status.error_message = Some("无法连接中兴/UFI后台".to_string());
         }
 
-        // 3. Fetch extensions (Linux shell hardware metrics, Cellular usage & QoS) via UFI 2333 port
+        let qos_context_changed = requires_qos_refresh(&status, &previous_status);
+        if qos_context_changed {
+            // 承载上下文变化后不能继续展示旧 QCI，只保留本轮 80 端口明确返回的值。
+            status.qci.clear();
+            status.qos_dl.clear();
+            status.qos_ul.clear();
+            if let Some(payload) = source_payload.as_ref() {
+                merge_payload_qos(&mut status, payload);
+            }
+        }
+
+        // 3. 本地设备按字段执行 80 → 原生 ADB 5555 → UFI 2333 降级。
         if status.is_online {
-            let tokens = self.candidate_tokens(&ufi_token, &password);
-            self.fetch_ufi_extensions(&ufi_base, &tokens, &mut status).await;
+            let router_has_hardware = router_payload.as_ref().is_some_and(payload_has_hardware);
+            let router_has_qos = router_payload.as_ref().is_some_and(payload_has_qos);
+            let source_has_hardware = source_payload.as_ref().is_some_and(payload_has_hardware);
+            let source_has_qos = source_payload.as_ref().is_some_and(payload_has_qos);
+            let (router_has_cpu, router_has_memory, router_has_temperature) = router_payload
+                .as_ref()
+                .map(payload_hardware_fields)
+                .unwrap_or((false, false, false));
+            let (router_has_qci, router_has_qos_dl, router_has_qos_ul) = router_payload
+                .as_ref()
+                .map(payload_qos_fields)
+                .unwrap_or((false, false, false));
+            let (source_has_cpu, source_has_memory, source_has_temperature) = source_payload
+                .as_ref()
+                .map(payload_hardware_fields)
+                .unwrap_or((false, false, false));
+            let (source_has_qci, source_has_qos_dl, source_has_qos_ul) = source_payload
+                .as_ref()
+                .map(payload_qos_fields)
+                .unwrap_or((false, false, false));
+            let hardware_missing = if is_ip { !router_has_hardware } else { !source_has_hardware };
+            let qos_missing = if is_ip { !router_has_qos } else { !source_has_qos };
+            let hardware_due = hardware_missing
+                && refresh_due(&self.last_adb_hardware_refresh, Duration::from_secs(10)).await;
+            let qos_due = qos_missing
+                && (qos_context_changed
+                    || refresh_due(&self.last_qos_refresh, Duration::from_secs(300)).await);
+
+            if hardware_due {
+                if !source_has_cpu { status.cpu_usage = 0.0; }
+                if !source_has_memory { status.mem_usage = 0.0; }
+                if !source_has_temperature { status.temperature = 0.0; }
+            }
+            if qos_due {
+                if !source_has_qci { status.qci.clear(); }
+                if !source_has_qos_dl { status.qos_dl.clear(); }
+                if !source_has_qos_ul { status.qos_ul.clear(); }
+            }
+
+            if is_ip && (hardware_due || qos_due) {
+                let host = reqwest::Url::parse(&router_base)
+                    .ok()
+                    .and_then(|url| url.host_str().map(str::to_string))
+                    .unwrap_or_else(|| "192.168.0.1".to_string());
+                let hardware_command = "for f in /sys/class/thermal/thermal_zone*; do [ -d \"$f\" ] || continue; type=; temp=; read -r type < \"$f/type\"; read -r temp < \"$f/temp\"; printf '%s:%s\\n' \"$type\" \"$temp\"; done; read -r cpu user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat; printf 'cpu %s %s %s %s %s %s %s %s %s %s\\n' \"$user\" \"$nice\" \"$system\" \"$idle\" \"$iowait\" \"$irq\" \"$softirq\" \"$steal\" \"$guest\" \"$guest_nice\"; while IFS= read -r line; do case \"$line\" in MemTotal:*|MemAvailable:*|MemFree:*|Buffers:*|Cached:*) printf '%s\\n' \"$line\";; esac; done < /proc/meminfo";
+                let (hardware_output, qos_output) = tokio::join!(
+                    async {
+                        if hardware_due {
+                            crate::adb::execute_shell(&host, hardware_command, 3).await
+                        } else {
+                            None
+                        }
+                    },
+                    async {
+                        if qos_due {
+                            crate::adb::execute_at(&host, "AT+CGEQOSRDP=1").await
+                        } else {
+                            None
+                        }
+                    }
+                );
+
+                if hardware_due {
+                    *self.last_adb_hardware_refresh.write().await = Some(Instant::now());
+                }
+                if qos_due {
+                    *self.last_qos_refresh.write().await = Some(Instant::now());
+                }
+                if let Some(output) = hardware_output {
+                    let mut adb_status = F50Status::default();
+                    self.parse_linux_shell_output(&output, &mut adb_status).await;
+                    if !router_has_cpu && adb_status.cpu_usage > 0.0 { status.cpu_usage = adb_status.cpu_usage; }
+                    if !router_has_memory && adb_status.mem_usage > 0.0 { status.mem_usage = adb_status.mem_usage; }
+                    if !router_has_temperature && adb_status.temperature > 0.0 { status.temperature = adb_status.temperature; }
+                }
+                if let Some(output) = qos_output {
+                    if let Some((qci, dl, ul)) = parse_qos_response(&output) {
+                        if !router_has_qci { status.qci = qci; }
+                        if !router_has_qos_dl { status.qos_dl = dl; }
+                        if !router_has_qos_ul { status.qos_ul = ul; }
+                    }
+                }
+            }
+
+            self.fetch_ufi_extensions(
+                &ufi_base,
+                &tokens,
+                &mut status,
+                refresh_traffic,
+                hardware_due,
+                qos_due,
+            ).await;
+            if hardware_due {
+                *self.last_adb_hardware_refresh.write().await = Some(Instant::now());
+            }
+            if qos_due {
+                *self.last_qos_refresh.write().await = Some(Instant::now());
+            }
+            if refresh_traffic {
+                *self.last_traffic_refresh.write().await = Some(Instant::now());
+            }
         }
 
         // 4. Update memory cache
@@ -277,10 +413,16 @@ impl F50Fetcher {
         false
     }
 
-    async fn fetch_router_status(&self, router_base: &str) -> Result<Value, String> {
-        let status_commands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,Z5g_snr,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr,realtime_rx_bytes,realtime_tx_bytes,monthly_tx_bytes,monthly_rx_bytes,day_rx_bytes,day_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date,billing_day,reset_day,traffic_clear_date,clear_date";
+    async fn fetch_router_status(&self, router_base: &str, refresh_traffic: bool) -> Result<Value, String> {
+        let status_commands = "usb_port_switch,battery_charging,sms_received_flag,sms_unread_num,sms_sim_unread_num,sim_msisdn,battery_value,battery_vol_percent,network_signalbar,network_rssi,cr_version,iccid,imei,imsi,ipv6_wan_ipaddr,lan_ipaddr,mac_address,msisdn,network_information,Lte_ca_status,rssi,Z5g_rsrp,Z5g_snr,lte_rsrp,wifi_access_sta_num,loginfo,realtime_rx_thrpt,realtime_tx_thrpt,network_type,network_provider,ppp_status,ic_temp,cpu_utility,mem_utility,5g_rsrp,5g_rsrq,5g_snr,lte_rsrq,lte_snr,signalbar,qci,ambr,dl_ambr,ul_ambr";
+        let traffic_commands = "realtime_rx_bytes,realtime_tx_bytes,monthly_tx_bytes,monthly_rx_bytes,day_rx_bytes,day_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date,billing_day,reset_day,traffic_clear_date,clear_date";
+        let commands = if refresh_traffic {
+            format!("{status_commands},{traffic_commands}")
+        } else {
+            status_commands.to_string()
+        };
         
-        let url = format!("{}/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd={}", router_base, status_commands);
+        let url = format!("{}/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd={}", router_base, commands);
 
         let mut req = self.client.get(&url)
             .header(REFERER, format!("{}/index.html", router_base));
@@ -298,8 +440,14 @@ impl F50Fetcher {
         Ok(json)
     }
 
-    async fn fetch_ufi_status(&self, ufi_base: &str, token: &str) -> Result<Value, String> {
-        let commands = "status,battery_value,battery_charging,wifi_access_sta_num,network_provider,network_type,signalbar,network_signalbar,network_information,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes,day_rx_bytes,day_tx_bytes,cpu_utility,mem_utility,ic_temp,cpu_temp,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date,sms_unread_num,sms_sim_unread_num,qci,dl_ambr,ul_ambr,Z5g_rsrp,5g_rsrp,lte_rsrp,Z5g_snr,5g_snr,lte_snr,5g_rsrq,lte_rsrq,Nr_snr,nr_snr,sinr";
+    async fn fetch_ufi_status(&self, ufi_base: &str, token: &str, refresh_traffic: bool) -> Result<Value, String> {
+        let status_commands = "status,battery_value,battery_charging,wifi_access_sta_num,network_provider,network_type,signalbar,network_signalbar,network_information,realtime_rx_thrpt,realtime_tx_thrpt,cpu_utility,mem_utility,ic_temp,cpu_temp,sms_unread_num,sms_sim_unread_num,qci,dl_ambr,ul_ambr,Z5g_rsrp,5g_rsrp,lte_rsrp,Z5g_snr,5g_snr,lte_snr,5g_rsrq,lte_rsrq,Nr_snr,nr_snr,sinr";
+        let traffic_commands = "realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes,day_rx_bytes,day_tx_bytes,data_volume_limit_size,data_volume_limit_unit,data_volume_clear_date,monthly_clear_date";
+        let commands = if refresh_traffic {
+            format!("{status_commands},{traffic_commands}")
+        } else {
+            status_commands.to_string()
+        };
         
         let url = format!("{}/api/goform/goform_get_cmd_process?cmd={}&is_all=true", ufi_base, commands);
         let path = "/api/goform/goform_get_cmd_process";
@@ -320,15 +468,38 @@ impl F50Fetcher {
         Ok(json)
     }
 
-    async fn fetch_ufi_extensions(&self, ufi_base: &str, candidate_tokens: &[String], status: &mut F50Status) {
-        // 1. Linux Shell Metrics (CPU, Memory, Temperature)
-        self.fetch_linux_shell_metrics(ufi_base, candidate_tokens, status).await;
+    async fn fetch_ufi_extensions(
+        &self,
+        ufi_base: &str,
+        candidate_tokens: &[String],
+        status: &mut F50Status,
+        refresh_traffic: bool,
+        allow_hardware_fallback: bool,
+        allow_qos_fallback: bool,
+    ) {
+        let needs_hardware = allow_hardware_fallback
+            && (status.cpu_usage <= 0.0 || status.mem_usage <= 0.0 || status.temperature <= 0.0);
+        if needs_hardware {
+            let mut fallback = F50Status::default();
+            self.fetch_linux_shell_metrics(ufi_base, candidate_tokens, &mut fallback).await;
+            if status.cpu_usage <= 0.0 { status.cpu_usage = fallback.cpu_usage; }
+            if status.mem_usage <= 0.0 { status.mem_usage = fallback.mem_usage; }
+            if status.temperature <= 0.0 { status.temperature = fallback.temperature; }
+        }
 
-        // 2. QoS Metrics (QCI, DL rate, UL rate)
-        self.fetch_qos_metrics(ufi_base, candidate_tokens, status).await;
+        let needs_qos = allow_qos_fallback
+            && (status.qci.is_empty() || status.qos_dl.is_empty() || status.qos_ul.is_empty());
+        if needs_qos {
+            let mut fallback = F50Status::default();
+            self.fetch_qos_metrics(ufi_base, candidate_tokens, &mut fallback).await;
+            if status.qci.is_empty() { status.qci = fallback.qci; }
+            if status.qos_dl.is_empty() { status.qos_dl = fallback.qos_dl; }
+            if status.qos_ul.is_empty() { status.qos_ul = fallback.qos_ul; }
+        }
 
-        // 3. Cellular Usage (Today and Month precise date range)
-        self.fetch_cellular_usage_metrics(ufi_base, candidate_tokens, status).await;
+        if refresh_traffic {
+            self.fetch_cellular_usage_metrics(ufi_base, candidate_tokens, status).await;
+        }
     }
 
     async fn fetch_linux_shell_metrics(&self, ufi_base: &str, candidate_tokens: &[String], status: &mut F50Status) {
@@ -519,7 +690,13 @@ impl F50Fetcher {
         None
     }
 
-    fn parse_status_payload(&self, status: &mut F50Status, payload: &Value, is_router: bool) {
+    fn parse_status_payload(
+        &self,
+        status: &mut F50Status,
+        payload: &Value,
+        is_router: bool,
+        refresh_traffic: bool,
+    ) {
         // Lowercase key lookup map for case-insensitive access
         let mut map: HashMap<String, &Value> = HashMap::new();
         if let Some(obj) = payload.as_object() {
@@ -592,15 +769,18 @@ impl F50Fetcher {
             status.snr = format!("{:.0} dB", snr);
         }
 
-        // QCI fallback from status map if present
-        if let Some(q) = map.get("qci").or_else(|| map.get("5g_qci")).or_else(|| map.get("QCI")) {
-            if let Some(s) = q.as_str() {
-                let clean = s.trim().trim_start_matches("QCI").trim_start_matches("qci").trim().trim_start_matches(':').trim();
-                if !clean.is_empty() && clean != "0" {
-                    status.qci = clean.to_string();
-                }
-            }
+        // 80 端口直接返回的硬件与 QoS 字段拥有最高优先级。
+        if let Some(value) = first_positive_metric(&map, &["cpu_utility", "cpu_usage", "cpu_percent", "cpu_rate", "cpu", "cpu_load"]) {
+            status.cpu_usage = value.clamp(0.0, 100.0);
         }
+        if let Some(value) = first_positive_metric(&map, &["mem_utility", "mem_usage", "mem_percent", "memory_rate", "memory", "mem_used_percent"]) {
+            status.mem_usage = value.clamp(0.0, 100.0);
+        }
+        if let Some(mut value) = first_positive_metric(&map, &["cpu_temp", "temperature", "temp", "ic_temp", "soc_temp", "modem_temp", "internal_temperature", "chip_temp", "device_temp"]) {
+            if value > 1000.0 { value /= 1000.0; }
+            if value < 130.0 { status.temperature = value; }
+        }
+        merge_payload_qos(status, payload);
 
         // PPP Status
         if let Some(ppp) = map.get("ppp_status").and_then(|v| v.as_str()) {
@@ -643,29 +823,30 @@ impl F50Fetcher {
             status.is_charging = chg == "1" || chg.eq_ignore_ascii_case("true") || chg.eq_ignore_ascii_case("charging");
         }
 
-        // Traffic limits and package usage
-        if let Some(rx) = map.get("monthly_rx_bytes").and_then(|v| parse_u64(v)) {
-            status.monthly_rx = rx;
-            if is_router { status.package_rx = rx; }
-        }
-        if let Some(tx) = map.get("monthly_tx_bytes").and_then(|v| parse_u64(v)) {
-            status.monthly_tx = tx;
-            if is_router { status.package_tx = tx; }
-        }
-        status.package_total = status.package_rx + status.package_tx;
+        if refresh_traffic {
+            // 流量统计独立 30 秒刷新，避免拖慢高频状态采集。
+            if let Some(rx) = map.get("monthly_rx_bytes").and_then(|v| parse_u64(v)) {
+                status.monthly_rx = rx;
+                if is_router { status.package_rx = rx; }
+            }
+            if let Some(tx) = map.get("monthly_tx_bytes").and_then(|v| parse_u64(v)) {
+                status.monthly_tx = tx;
+                if is_router { status.package_tx = tx; }
+            }
+            status.package_total = status.package_rx + status.package_tx;
 
-        if let Some(rx) = map.get("day_rx_bytes").or_else(|| map.get("today_rx_bytes")).and_then(|v| parse_u64(v)) {
-            status.daily_rx = rx;
-        }
-        if let Some(tx) = map.get("day_tx_bytes").or_else(|| map.get("today_tx_bytes")).and_then(|v| parse_u64(v)) {
-            status.daily_tx = tx;
-        }
+            if let Some(rx) = map.get("day_rx_bytes").or_else(|| map.get("today_rx_bytes")).and_then(|v| parse_u64(v)) {
+                status.daily_rx = rx;
+            }
+            if let Some(tx) = map.get("day_tx_bytes").or_else(|| map.get("today_tx_bytes")).and_then(|v| parse_u64(v)) {
+                status.daily_tx = tx;
+            }
 
-        // Traffic limit (parses sizes like "100_1024", "1536_1", "100GB")
-        let limit_size = map.get("data_volume_limit_size");
-        let limit_unit = map.get("data_volume_limit_unit");
-        if limit_size.is_some() {
-            status.traffic_limit = parse_traffic_limit(limit_size.copied(), limit_unit.copied());
+            let limit_size = map.get("data_volume_limit_size");
+            let limit_unit = map.get("data_volume_limit_unit");
+            if limit_size.is_some() {
+                status.traffic_limit = parse_traffic_limit(limit_size.copied(), limit_unit.copied());
+            }
         }
 
         // Reset Day
@@ -865,6 +1046,101 @@ impl F50Fetcher {
 }
 
 // Helpers
+
+async fn refresh_due(last_refresh: &RwLock<Option<Instant>>, interval: Duration) -> bool {
+    last_refresh
+        .read()
+        .await
+        .is_none_or(|instant| instant.elapsed() >= interval)
+}
+
+fn requires_qos_refresh(current: &F50Status, previous: &F50Status) -> bool {
+    (current.is_online && !previous.is_online)
+        || (current.ppp_status == "已连接" && previous.ppp_status != "已连接")
+        || (current.carrier != previous.carrier && current.carrier != "未知")
+        || (current.network_type != previous.network_type && !current.network_type.is_empty())
+        || (current.current_bands != previous.current_bands && !current.current_bands.is_empty())
+}
+
+fn payload_map(payload: &Value) -> HashMap<String, &Value> {
+    payload
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .map(|(key, value)| (key.to_lowercase(), value))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn has_positive_metric(map: &HashMap<String, &Value>, keys: &[&str]) -> bool {
+    first_positive_metric(map, keys).is_some()
+}
+
+fn first_positive_metric(map: &HashMap<String, &Value>, keys: &[&str]) -> Option<f64> {
+    keys.iter().find_map(|key| {
+        map.get(*key)
+            .and_then(|value| parse_f64(value))
+            .filter(|value| *value > 0.0)
+    })
+}
+
+fn payload_has_hardware(payload: &Value) -> bool {
+    let (cpu, memory, temperature) = payload_hardware_fields(payload);
+    cpu && memory && temperature
+}
+
+fn payload_hardware_fields(payload: &Value) -> (bool, bool, bool) {
+    let map = payload_map(payload);
+    (
+        has_positive_metric(&map, &["cpu_utility", "cpu_usage", "cpu_percent", "cpu_rate", "cpu", "cpu_load"]),
+        has_positive_metric(&map, &["mem_utility", "mem_usage", "mem_percent", "memory_rate", "memory", "mem_used_percent"]),
+        has_positive_metric(&map, &["cpu_temp", "temperature", "temp", "ic_temp", "soc_temp", "modem_temp", "internal_temperature", "chip_temp", "device_temp"]),
+    )
+}
+
+fn clean_qos_value(value: Option<&&Value>) -> Option<String> {
+    let raw = match value? {
+        Value::String(value) => value.trim().to_string(),
+        Value::Number(value) => value.to_string(),
+        _ => return None,
+    };
+    let clean = raw
+        .trim_start_matches("QCI")
+        .trim_start_matches("qci")
+        .trim()
+        .trim_start_matches(':')
+        .trim();
+    (!clean.is_empty() && clean != "0" && clean != "null").then(|| clean.to_string())
+}
+
+fn payload_has_qos(payload: &Value) -> bool {
+    let (qci, downlink, uplink) = payload_qos_fields(payload);
+    qci && downlink && uplink
+}
+
+fn payload_qos_fields(payload: &Value) -> (bool, bool, bool) {
+    let map = payload_map(payload);
+    (
+        clean_qos_value(map.get("qci").or_else(|| map.get("qci_val")).or_else(|| map.get("qos_qci"))).is_some(),
+        clean_qos_value(map.get("qos_dl").or_else(|| map.get("qos_downlink"))).is_some(),
+        clean_qos_value(map.get("qos_ul").or_else(|| map.get("qos_uplink"))).is_some(),
+    )
+}
+
+fn merge_payload_qos(status: &mut F50Status, payload: &Value) {
+    let map = payload_map(payload);
+    if let Some(value) = clean_qos_value(map.get("qci").or_else(|| map.get("qci_val")).or_else(|| map.get("qos_qci"))) {
+        status.qci = value;
+    }
+    if let Some(value) = clean_qos_value(map.get("qos_dl").or_else(|| map.get("qos_downlink"))) {
+        status.qos_dl = value;
+    }
+    if let Some(value) = clean_qos_value(map.get("qos_ul").or_else(|| map.get("qos_uplink"))) {
+        status.qos_ul = value;
+    }
+}
 
 fn first_valid_signal_value(map: &HashMap<String, &Value>, keys: &[&str]) -> Option<f64> {
     for k in keys {

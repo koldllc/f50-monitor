@@ -99,6 +99,16 @@
         </div>
       </div>
 
+      <!-- Troubleshooting & Feedback -->
+      <div class="settings-section">
+        <span class="section-title">帮助与反馈</span>
+        <div class="form-group">
+          <button class="btn-icon feedback-btn" @click="showFeedbackModal = true">
+            📋 问题反馈与新设备适配
+          </button>
+        </div>
+      </div>
+
       <!-- Footer Info & Actions -->
       <div class="footer-links">
         <span>© 2026 Kold. All rights reserved.</span>
@@ -114,17 +124,22 @@
         </button>
       </div>
     </div>
+
+    <!-- Device Feedback Modal Component -->
+    <DeviceFeedbackModal :isOpen="showFeedbackModal" @close="showFeedbackModal = false" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed } from 'vue';
 import { state, saveConfig } from '../stores/f50Store.js';
+import DeviceFeedbackModal from './DeviceFeedbackModal.vue';
 
 const emit = defineEmits(['close']);
 
 const showRouterPwd = ref(false);
 const showUfiToken = ref(false);
+const showFeedbackModal = ref(false);
 
 const form = reactive({
   baseURL: state.config.baseURL,

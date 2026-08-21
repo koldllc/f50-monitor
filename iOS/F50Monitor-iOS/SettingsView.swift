@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var isUFITokenVisible = false
     @State private var tempInterval: Double = 2.0
     @State private var isInitialized = false
+    @State private var isShowingFeedback = false
 
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
@@ -116,7 +117,7 @@ struct SettingsView: View {
                 } header: {
                     Text("刷新与节能")
                 } footer: {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.1"
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
                     VStack(spacing: 6) {
                         Text("F50 Monitor v\(version)")
                             .font(.system(size: 12, weight: .medium))
@@ -132,8 +133,21 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 28)
                 }
+
+                Section("帮助与反馈") {
+                    Button {
+                        isShowingFeedback = true
+                    } label: {
+                        Label("问题反馈与设备适配", systemImage: "ladybug.fill")
+                    }
+                }
             }
             .navigationTitle("设置")
+            .sheet(isPresented: $isShowingFeedback) {
+                DeviceFeedbackView(fetcher: fetcher) {
+                    isShowingFeedback = false
+                }
+            }
             .onAppear {
                 tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
                 tempPassword = fetcher.password

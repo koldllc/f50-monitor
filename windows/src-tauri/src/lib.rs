@@ -1,15 +1,35 @@
 pub mod models;
 pub mod crypto;
+pub mod adb;
 pub mod config;
 pub mod fetcher;
 pub mod scrcpy;
 pub mod autostart;
 pub mod tray;
 
+pub mod diagnostic;
+
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 use models::{F50Configuration, F50SMSMessage, F50Status, ScrcpyStatus};
 use fetcher::F50Fetcher;
+
+#[tauri::command]
+async fn submit_feedback(
+    category: String,
+    device_model: String,
+    user_notes: String,
+    contact: String,
+    fetcher: State<'_, Arc<F50Fetcher>>,
+) -> Result<String, String> {
+    diagnostic::execute_and_submit_feedback(
+        fetcher.inner().clone(),
+        category,
+        device_model,
+        user_notes,
+        contact,
+    ).await
+}
 
 #[tauri::command]
 async fn get_status(fetcher: State<'_, Arc<F50Fetcher>>) -> Result<F50Status, String> {
@@ -128,7 +148,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             download_scrcpy,
             launch_scrcpy,
             open_url,
-            toggle_window
+            toggle_window,
+            submit_feedback
         ])
         .run(tauri::generate_context!())?;
 

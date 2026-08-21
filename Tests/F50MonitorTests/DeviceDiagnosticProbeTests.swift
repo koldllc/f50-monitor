@@ -57,6 +57,15 @@ final class DeviceDiagnosticProbeTests: XCTestCase {
         XCTAssertTrue(sanitized.contains("138****5678"))
     }
 
+    func testSanitizesNestedContentObjects() {
+        let rawJSON = #"{"data":{"content":{"body":"短信正文不应泄漏","items":[{"content":"验证码 1234"}]}},"snr":"18"}"#
+        let sanitized = DiagnosticSanitizer.sanitizeResponseSnippet(rawJSON, contentType: "application/json")
+        XCTAssertFalse(sanitized.contains("短信正文不应泄漏"))
+        XCTAssertFalse(sanitized.contains("验证码 1234"))
+        XCTAssertTrue(sanitized.contains("[已脱敏过滤]"))
+        XCTAssertTrue(sanitized.contains("18"))
+    }
+
     func testGeneratesMarkdownReportWithCategoryAndAppState() {
         let endpoints = [
             EndpointProbeResult(
@@ -115,5 +124,32 @@ final class DeviceDiagnosticProbeTests: XCTestCase {
         XCTAssertTrue(masked.contains("token=******"))
         XCTAssertTrue(masked.contains("pass=******"))
         XCTAssertTrue(masked.contains("user=test"))
+    }
+
+    func testDoesNotMaskSNRMetric() {
+        let rawJSON = """
+        {
+            "snr": "18.5",
+            "rsnr": "22.0",
+            "sn": "ZTE1234567890",
+            "imei": "861234567890123"
+        }
+        """
+
+        let sanitized = DiagnosticSanitizer.sanitizeResponseSnippet(rawJSON, contentType: "application/json")
+        XCTAssertTrue(sanitized.contains("18.5"))
+        XCTAssertTrue(sanitized.contains("22.0"))
+        XCTAssertTrue(sanitized.contains("snr"))
+        XCTAssertTrue(sanitized.contains("rsnr"))
+        XCTAssertFalse(sanitized.contains("ZTE1234567890"))
+        XCTAssertTrue(sanitized.contains("ZTE****7890"))
+    }
+
+    func testKanoSignatureConstructionIsDeterministic() {
+        let data = "minikanoGET/api/baseDeviceInfo1234567890"
+        let first = F50ResponseParser.kanoSign(key: F50Configuration.kanoSignKey, data: data)
+        let second = F50ResponseParser.kanoSign(key: F50Configuration.kanoSignKey, data: data)
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertEqual(first, second)
     }
 }
