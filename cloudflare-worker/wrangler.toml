@@ -5,6 +5,10 @@ compatibility_date = "2026-08-21"
 [vars]
 GITHUB_REPO = "koldllc/f50-monitor"
 
+[[routes]]
+pattern = "feedback-api.koldllc.com"
+custom_domain = true
+
 # 私有反馈诊断数据存储
 [[kv_namespaces]]
 binding = "FEEDBACK_KV"

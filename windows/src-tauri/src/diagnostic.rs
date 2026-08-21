@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 use tokio::time::Duration;
 use tokio::task::JoinSet;
 use crate::fetcher::F50Fetcher;
-use crate::models::F50Status;
 use crate::crypto::{kano_sign, KANO_SIGN_KEY};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,7 +227,7 @@ pub async fn execute_and_submit_feedback(
         return Err("诊断数据超过 512 KB 限制，请减少接口明细后重试。".to_string());
     }
 
-    let webhook_url = "https://f50-feedback-api.kelvsze.workers.dev";
+    let webhook_url = "https://feedback-api.koldllc.com";
     let timestamp = chrono::Utc::now().timestamp_millis().to_string();
     let request_id = format!("win_{}_{}", timestamp, std::process::id());
     let post_resp = public_client.post(webhook_url)

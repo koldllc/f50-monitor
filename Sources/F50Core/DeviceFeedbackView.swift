@@ -28,7 +28,7 @@ public struct DeviceFeedbackView: View {
     @State private var statusFeedbackMessage: String? = nil
     @State private var createdIssueURL: String? = nil
 
-    private let webhookURL = URL(string: "https://f50-feedback-api.kelvsze.workers.dev")!
+    private let webhookURL = URL(string: "https://feedback-api.koldllc.com")!
 
     public init(fetcher: F50Fetcher, onClose: @escaping () -> Void) {
         self.fetcher = fetcher

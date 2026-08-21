@@ -7,7 +7,11 @@ pub mod scrcpy;
 pub mod autostart;
 pub mod tray;
 
-pub mod diagnostic;
+// Keep the implementation file name for compatibility, but avoid exposing a
+// crate-level `diagnostic` module that can shadow rustc's diagnostic paths in
+// `tauri::command` macro expansions on Windows.
+#[path = "diagnostic.rs"]
+mod feedback_diagnostic;
 
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -22,7 +26,7 @@ async fn submit_feedback(
     contact: String,
     fetcher: State<'_, Arc<F50Fetcher>>,
 ) -> Result<String, String> {
-    diagnostic::execute_and_submit_feedback(
+    feedback_diagnostic::execute_and_submit_feedback(
         fetcher.inner().clone(),
         category,
         device_model,

@@ -37,9 +37,9 @@ cat << 'EOF' > "$APP_DIR/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.1.1</string>
+    <string>2.2.0</string>
     <key>CFBundleVersion</key>
-    <string>2.1.1</string>
+    <string>2.2.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -70,4 +70,3 @@ echo "🔄 正在重启 F50 Monitor..."
 killall F50Monitor 2>/dev/null || true
 sleep 0.5
 open "/Applications/$APP_DIR"
-

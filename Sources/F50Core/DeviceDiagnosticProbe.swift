@@ -1096,7 +1096,7 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         guard let jsonData = report.toJSONData() else {
             throw NSError(domain: "F50Diagnostic", code: -1, userInfo: [NSLocalizedDescriptionKey: "序列化诊断报告失败"])
         }
-        guard jsonData.count <= Self.maxPayloadBytes else {
+        guard jsonData.count <= DeviceDiagnosticReport.maxPayloadBytes else {
             throw NSError(domain: "F50Diagnostic", code: -3, userInfo: [NSLocalizedDescriptionKey: "诊断数据超过 512 KB 限制，请移除截图后重试"])
         }
 
