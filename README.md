@@ -10,7 +10,7 @@
 
 ## 📦 各平台下载安装
 
-前往 [GitHub Releases](https://github.com/koldllc/f50-monitor/releases/latest) 下载最新稳定版本（**v2.2.0**）：
+前往 [GitHub Releases](https://github.com/koldllc/f50-monitor/releases/latest) 下载最新稳定版本（**v2.2.1**）：
 
 | 平台 / 设备 | 推荐下载文件 | 说明 |
 | :--- | :--- | :--- |

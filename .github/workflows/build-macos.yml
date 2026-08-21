@@ -43,7 +43,7 @@ jobs:
           # Extract version from tag or fallback
           VERSION="${GITHUB_REF_NAME#v}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ] || [ "$VERSION" = "master" ]; then
-              VERSION="2.2.0"
+              VERSION="2.2.1"
           fi
 
           cat << EOF > "$APP_DIR/Contents/Info.plist"

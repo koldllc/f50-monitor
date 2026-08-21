@@ -16,17 +16,18 @@
 		48EDD3951E186CF1D1D2BF17 /* F50iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */; };
 		4B3D6E7AF0C693A3DBA13587 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE426A585E5ACC39D46A60F /* SettingsView.swift */; };
 		4F5342D65D640BFA9C074A64 /* F50Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89766F43C86001C45B5E81B1 /* F50Status.swift */; };
+		71B4CF8DDA7F6BD4C52F131D /* DeviceFeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5ACAA691B7B55EEA53D514 /* DeviceFeedbackView.swift */; };
+		75B91A4B03BA9AB12BA52C72 /* DeviceDiagnosticProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A57B9283A4F8F09188B26A4 /* DeviceDiagnosticProbe.swift */; };
 		893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */; };
 		8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98379B8BC17A9858D569301 /* F50ResponseParser.swift */; };
 		9BD590C306BAAFC5E150B4B7 /* F50MonitorWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88757B1003B6203002724A0 /* F50MonitorWidget.swift */; };
 		9F0B2E55B01FE592511659E8 /* SMSNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */; };
 		B6EAD7BD5A69AC85A5E2E264 /* F50Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; };
 		BAA3D9CE9770D3A7FBBF153A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200C7CBFDFAD1274C4C1834A /* Assets.xcassets */; };
+		BF1DE2F9FE395F15D1578601 /* ADBHardwareFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4504C9A6F913914886451D /* ADBHardwareFetcher.swift */; };
 		C9C74D56E4CD72FF224BE0E2 /* F50MonitorWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D4804E8A708915BF7370847E /* F50MonitorWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D5EEEAB259F505EC13C5C41B /* F50Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */; };
-		E101A1A1A1A1A1A1B2C3D4E5 /* DeviceDiagnosticProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = E101A1A1A1A1A1A1B2C3D4E6 /* DeviceDiagnosticProbe.swift */; };
-		E101A1A1A1A1A1A1B2C3D4E7 /* DeviceFeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E101A1A1A1A1A1A1B2C3D4E8 /* DeviceFeedbackView.swift */; };
 		F4474EE6CDA29D1CEDA8CBF8 /* F50Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; };
 /* End PBXBuildFile section */
 
@@ -80,6 +81,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0A4504C9A6F913914886451D /* ADBHardwareFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADBHardwareFetcher.swift; sourceTree = "<group>"; };
 		0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
 		1118F60CAA519BD93D0FB79D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		200C7CBFDFAD1274C4C1834A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -88,11 +90,13 @@
 		56EF02DAC980BCBC4A16C254 /* F50Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = F50Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50SMSMessage.swift; sourceTree = "<group>"; };
 		7732F1A3FEA24F865A12BA48 /* F50Monitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = F50Monitor.entitlements; sourceTree = "<group>"; };
+		7A57B9283A4F8F09188B26A4 /* DeviceDiagnosticProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDiagnosticProbe.swift; sourceTree = "<group>"; };
 		89766F43C86001C45B5E81B1 /* F50Status.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Status.swift; sourceTree = "<group>"; };
 		8A6E537BE8C7321F883183A0 /* SMSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSView.swift; sourceTree = "<group>"; };
 		8F1096D2D8034A8D422EADEA /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
 		A98379B8BC17A9858D569301 /* F50ResponseParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50ResponseParser.swift; sourceTree = "<group>"; };
 		AE4B0A9065739D0B0D24B8B7 /* F50MonitorWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = F50MonitorWidget.entitlements; sourceTree = "<group>"; };
+		BD5ACAA691B7B55EEA53D514 /* DeviceFeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceFeedbackView.swift; sourceTree = "<group>"; };
 		BF707A8982A0FFBFBA4F2A71 /* F50Monitor-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "F50Monitor-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CACBC8FF3BE2D3C40D80CF3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50iOSApp.swift; sourceTree = "<group>"; };
@@ -100,8 +104,6 @@
 		D4804E8A708915BF7370847E /* F50MonitorWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = F50MonitorWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E88757B1003B6203002724A0 /* F50MonitorWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50MonitorWidget.swift; sourceTree = "<group>"; };
 		ECE426A585E5ACC39D46A60F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		E101A1A1A1A1A1A1B2C3D4E6 /* DeviceDiagnosticProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDiagnosticProbe.swift; sourceTree = "<group>"; };
-		E101A1A1A1A1A1A1B2C3D4E8 /* DeviceFeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceFeedbackView.swift; sourceTree = "<group>"; };
 		F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50WidgetDataStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -151,8 +153,9 @@
 		69FB375F537C1EB3FEBE9432 /* F50Core */ = {
 			isa = PBXGroup;
 			children = (
-				E101A1A1A1A1A1A1B2C3D4E6 /* DeviceDiagnosticProbe.swift */,
-				E101A1A1A1A1A1A1B2C3D4E8 /* DeviceFeedbackView.swift */,
+				0A4504C9A6F913914886451D /* ADBHardwareFetcher.swift */,
+				7A57B9283A4F8F09188B26A4 /* DeviceDiagnosticProbe.swift */,
+				BD5ACAA691B7B55EEA53D514 /* DeviceFeedbackView.swift */,
 				37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */,
 				20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */,
 				A98379B8BC17A9858D569301 /* F50ResponseParser.swift */,
@@ -330,8 +333,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E101A1A1A1A1A1A1B2C3D4E7 /* DeviceFeedbackView.swift in Sources */,
-				E101A1A1A1A1A1A1B2C3D4E5 /* DeviceDiagnosticProbe.swift in Sources */,
+				BF1DE2F9FE395F15D1578601 /* ADBHardwareFetcher.swift in Sources */,
+				75B91A4B03BA9AB12BA52C72 /* DeviceDiagnosticProbe.swift in Sources */,
+				71B4CF8DDA7F6BD4C52F131D /* DeviceFeedbackView.swift in Sources */,
 				0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */,
 				D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */,
 				8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */,
@@ -539,14 +543,14 @@
 				CODE_SIGN_ENTITLEMENTS = "F50Monitor-iOS/F50Monitor.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = VFB889K3T3;
 				INFOPLIST_FILE = "F50Monitor-iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 2.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kold.f50.monitor.ios;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -562,14 +566,14 @@
 				CODE_SIGN_ENTITLEMENTS = "F50Monitor-iOS/F50Monitor.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = VFB889K3T3;
 				INFOPLIST_FILE = "F50Monitor-iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 2.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kold.f50.monitor.ios;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;

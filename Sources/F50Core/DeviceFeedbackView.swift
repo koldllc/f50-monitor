@@ -316,8 +316,8 @@ public struct DeviceFeedbackView: View {
                 .padding(.horizontal, 2)
             }
         }
-        .padding(12)
-        .frame(minWidth: 420, minHeight: 460)
+        .padding(10)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions
