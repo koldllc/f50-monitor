@@ -15,6 +15,31 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(parsed, ParsedQos(qci: "8", downlink: "500Mbps", uplink: "60Mbps"))
     }
 
+    func testDecodesQosFromADBServiceParcel() {
+        let parcel = """
+        Result: Parcel(
+          0x00000000: 00000000 0000002b 0043002b 00450047
+          0x00000010: 004f0051 00520053 00500044 0020003a
+          0x00000020: 002c0031 002c0038 002c0030 002c0030
+          0x00000030: 002c0030 002c0030 00300035 00300030
+          0x00000040: 00300030 0031002c 00300030 00300030
+          0x00000050: 000d0030 004f000a 000d004b 0000000a
+        )
+        """
+
+        let decoded = ADBHardwareFetcher.decodeBinderParcel(parcel)
+        XCTAssertEqual(
+            F50ResponseParser.parseQos(decoded),
+            ParsedQos(qci: "8", downlink: "500Mbps", uplink: "100Mbps")
+        )
+    }
+
+    func testRejectsTruncatedADBQosResponseWithoutUplink() {
+        XCTAssertNil(
+            F50ResponseParser.parseQos("+CGEQOSRDP: 1,8,0,0,0,0,500000,")
+        )
+    }
+
     func testRejectsMalformedQosResponse() {
         XCTAssertNil(F50ResponseParser.parseQos("ERROR"))
     }

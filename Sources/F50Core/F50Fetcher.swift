@@ -29,12 +29,6 @@ public class F50Fetcher: ObservableObject {
         return URLSession(configuration: config, delegate: F50NetworkDelegate.shared, delegateQueue: nil)
     }()
 
-    private enum ConnectionMode {
-        case automatic
-        case zteRouter
-        case ufiAPI
-    }
-
     @Published public var status: F50Status = F50Status()
     @Published public var baseURLString: String {
         didSet {
@@ -108,7 +102,10 @@ public class F50Fetcher: ObservableObject {
     private var pendingExtensionRequests = 0
     private var isApplyingConfiguration = false
     private var lastTrafficRefreshDate = Date.distantPast
-    private var connectionMode: ConnectionMode = .automatic
+    private var lastADBHardwareRefreshDate = Date.distantPast
+    private var lastADBQosRefreshDate = Date.distantPast
+    private let adbHardwareRefreshInterval: TimeInterval = 10
+    private let adbQosRefreshInterval: TimeInterval = 30
 
     // token 候选缓存：凭据不变时避免每个轮询周期重复计算 SHA-256
     private var cachedCandidateTokens: [String]?
@@ -251,34 +248,15 @@ public class F50Fetcher: ObservableObject {
         let shouldRefreshTraffic = Date().timeIntervalSince(lastTrafficRefreshDate)
             >= F50Configuration.trafficRefreshInterval
 
-        let isIP: Bool
-        if let url = URL(string: cleanBase.contains("://") ? cleanBase : "http://" + cleanBase),
-           let host = url.host {
-            isIP = F50Configuration.isIPAddress(host)
-        } else {
-            isIP = true
-        }
-
-        if connectionMode == .ufiAPI || (!isIP && connectionMode != .zteRouter) {
-            // 域名（内网穿透）默认优先走 UFI 接口直连（或已确认 UFI 模式）
-            executeUFIFetch(
-                cleanBase: cleanBase,
-                hostOnly: endpoints.routerBaseURL,
-                ufiBaseURL: endpoints.ufiBaseURL,
-                generation: generation,
-                refreshTraffic: shouldRefreshTraffic
-            )
-        } else {
-            // 本地 IP：Router 优先（速度/信号/套餐字段齐全），失败时 UFI 兜底
-            executeFetch(
-                cleanBase: cleanBase,
-                hostOnly: endpoints.routerBaseURL,
-                ufiBaseURL: endpoints.ufiBaseURL,
-                generation: generation,
-                refreshTraffic: shouldRefreshTraffic,
-                allowsUFIFallback: true
-            )
-        }
+        // 所有连接统一从 Router/Goform 开始；缺失项再依次尝试 ADB 与 UFI。
+        executeFetch(
+            cleanBase: cleanBase,
+            hostOnly: endpoints.routerBaseURL,
+            ufiBaseURL: endpoints.ufiBaseURL,
+            generation: generation,
+            refreshTraffic: shouldRefreshTraffic,
+            allowsUFIFallback: true
+        )
     }
 
     public func fetchDataAsync() async {
@@ -304,7 +282,7 @@ public class F50Fetcher: ObservableObject {
 
         let generation = requestGeneration
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-        let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
+        let endpoints = connectionEndpoints(from: cleanBase)
         let tokens = candidateTokens()
 
         guard !tokens.isEmpty else {
@@ -314,26 +292,19 @@ public class F50Fetcher: ObservableObject {
 
         isFetchingSMS = true
         smsErrorMessage = nil
-        fetchSMSMessagesViaUFI(
-            ufiBaseURL: ufiBaseURL,
+        fetchSMSMessagesViaRouter(
+            routerBaseURL: endpoints.routerBaseURL,
+            ufiBaseURL: endpoints.ufiBaseURL,
             candidateTokens: tokens,
             generation: generation
         )
     }
 
-    private func fetchSMSMessagesViaUFI(
-        ufiBaseURL: String,
-        candidateTokens: [String],
-        generation: UInt,
-        hasTriedSchemeSwap: Bool = false
-    ) {
-        guard generation == requestGeneration,
-              let token = candidateTokens.first,
-              var components = URLComponents(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process") else {
-            finishSMSFetch(message: "短信接口地址无效", generation: generation)
-            return
-        }
-
+    private func smsMessagesURL(baseURL: String, isUFIProxy: Bool) -> URL? {
+        let path = isUFIProxy
+            ? "/api/goform/goform_get_cmd_process"
+            : "/goform/goform_get_cmd_process"
+        guard var components = URLComponents(string: "\(baseURL)\(path)") else { return nil }
         components.queryItems = [
             URLQueryItem(name: "multi_data", value: "1"),
             URLQueryItem(name: "isTest", value: "false"),
@@ -345,8 +316,75 @@ public class F50Fetcher: ObservableObject {
             URLQueryItem(name: "order_by", value: "order by id desc"),
             URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
         ]
+        return components.url
+    }
 
-        guard let url = components.url else {
+    private func fetchSMSMessagesViaRouter(
+        routerBaseURL: String,
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        generation: UInt
+    ) {
+        guard generation == requestGeneration,
+              let url = smsMessagesURL(baseURL: routerBaseURL, isUFIProxy: false) else {
+            finishSMSFetch(message: "短信接口地址无效", generation: generation)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 4.0
+        request.setValue("\(routerBaseURL)/index.html", forHTTPHeaderField: "Referer")
+        if let sessionCookie, !sessionCookie.isEmpty {
+            request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+        }
+
+        smsTask = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let self else { return }
+            Task { @MainActor in
+                guard generation == self.requestGeneration else { return }
+                if let http = response as? HTTPURLResponse,
+                   http.statusCode == 200,
+                   let data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   self.applySMSPayload(json) {
+                    return
+                }
+
+                let host = URL(string: routerBaseURL)?.host ?? "192.168.0.1"
+                if let localURL = self.smsMessagesURL(baseURL: "http://127.0.0.1", isUFIProxy: false) {
+                    let urlText = localURL.absoluteString.replacingOccurrences(of: "'", with: "'\\''")
+                    let adbCommand = "if command -v curl >/dev/null 2>&1; then curl -sS -H 'Referer: http://127.0.0.1/index.html' '\(urlText)'; elif command -v wget >/dev/null 2>&1; then wget -qO- --header='Referer: http://127.0.0.1/index.html' '\(urlText)'; fi"
+                    if let output = await ADBHardwareFetcher.executeShell(
+                        host: host,
+                        port: 5555,
+                        command: adbCommand,
+                        timeoutSec: 2.0
+                    ),
+                       let adbData = output.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: adbData) as? [String: Any],
+                       self.applySMSPayload(json) {
+                        return
+                    }
+                }
+
+                self.fetchSMSMessagesViaUFI(
+                    ufiBaseURL: ufiBaseURL,
+                    candidateTokens: candidateTokens,
+                    generation: generation
+                )
+            }
+        }
+        smsTask?.resume()
+    }
+
+    private func fetchSMSMessagesViaUFI(
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        generation: UInt,
+        hasTriedSchemeSwap: Bool = false
+    ) {
+        guard generation == requestGeneration,
+              let token = candidateTokens.first,
+              let url = smsMessagesURL(baseURL: ufiBaseURL, isUFIProxy: true) else {
             finishSMSFetch(message: "短信接口地址无效", generation: generation)
             return
         }
@@ -360,19 +398,8 @@ public class F50Fetcher: ObservableObject {
                    http.statusCode == 200,
                    let data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let messages = F50ResponseParser.parseSMSMessages(json) {
-                    let readIds = self.locallyReadSMSIds
-                    self.smsMessages = messages.map { msg in
-                        var m = msg
-                        if readIds.contains(msg.id) {
-                            m.isLocallyRead = true
-                        }
-                        return m
-                    }
-                    self.status.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
-                    self.smsErrorMessage = nil
-                    self.isFetchingSMS = false
-                    self.smsTask = nil
+                   self.applySMSPayload(json) {
+                    return
                 } else if candidateTokens.count > 1 {
                     self.fetchSMSMessagesViaUFI(
                         ufiBaseURL: ufiBaseURL,
@@ -401,6 +428,24 @@ public class F50Fetcher: ObservableObject {
             }
         }
         smsTask?.resume()
+    }
+
+    @discardableResult
+    private func applySMSPayload(_ json: [String: Any]) -> Bool {
+        guard let messages = F50ResponseParser.parseSMSMessages(json) else { return false }
+        let readIds = locallyReadSMSIds
+        smsMessages = messages.map { message in
+            var updated = message
+            if readIds.contains(message.id) {
+                updated.isLocallyRead = true
+            }
+            return updated
+        }
+        status.smsUnreadCount = smsMessages.filter { $0.isUnread }.count
+        smsErrorMessage = nil
+        isFetchingSMS = false
+        smsTask = nil
+        return true
     }
 
     private func finishSMSFetch(message: String, generation: UInt) {
@@ -769,13 +814,19 @@ public class F50Fetcher: ObservableObject {
             return
         }
         let hostOnly = routerBaseURL(from: ufiBaseURL)
-        executeUFIFetch(
-            cleanBase: hostOnly,
-            hostOnly: hostOnly,
-            ufiBaseURL: ufiBaseURL,
-            generation: generation,
-            refreshTraffic: refreshTraffic
-        )
+        let host = URL(string: hostOnly)?.host ?? "192.168.0.1"
+        Task { @MainActor in
+            await self.applyADBMetrics(host: host, primaryPayload: nil)
+            guard generation == self.requestGeneration else { return }
+            self.executeUFIFetch(
+                cleanBase: hostOnly,
+                hostOnly: hostOnly,
+                ufiBaseURL: ufiBaseURL,
+                generation: generation,
+                refreshTraffic: refreshTraffic,
+                didTryADB: true
+            )
+        }
     }
 
     private func executeUFIFetch(
@@ -785,7 +836,8 @@ public class F50Fetcher: ObservableObject {
         generation: UInt,
         refreshTraffic: Bool,
         candidateTokens: [String]? = nil,
-        hasTriedSchemeSwap: Bool = false
+        hasTriedSchemeSwap: Bool = false,
+        didTryADB: Bool = false
     ) {
         guard generation == requestGeneration else { return }
         let tokens = candidateTokens ?? self.candidateTokens()
@@ -816,7 +868,11 @@ public class F50Fetcher: ObservableObject {
                         if let resDict = payload["result"] as? [String: Any] {
                             resDict.forEach { merged[$0.key] = $0.value }
                         }
-                        payload.forEach { merged[$0.key] = $0.value }
+                        payload.forEach {
+                            if $0.key != "data" && $0.key != "result" {
+                                merged[$0.key] = $0.value
+                            }
+                        }
 
                         if let signalPayload {
                             if let dataDict = signalPayload["data"] as? [String: Any] {
@@ -825,21 +881,40 @@ public class F50Fetcher: ObservableObject {
                             if let resDict = signalPayload["result"] as? [String: Any] {
                                 resDict.forEach { merged[$0.key] = $0.value }
                             }
-                            signalPayload.forEach { merged[$0.key] = $0.value }
+                            signalPayload.forEach {
+                                if $0.key != "data" && $0.key != "result" {
+                                    merged[$0.key] = $0.value
+                                }
+                            }
                         }
 
                         merged = F50ResponseParser.normalizeUFIPayload(merged)
                         guard generation == self.requestGeneration else { return }
-                        self.connectionMode = .ufiAPI
+                        let adbQci = didTryADB ? self.status.qci : ""
+                        let adbQosDl = didTryADB ? self.status.qosDl : ""
+                        let adbQosUl = didTryADB ? self.status.qosUl : ""
+                        let adbCPU = didTryADB ? self.status.cpuUsage : 0
+                        let adbMemory = didTryADB ? self.status.memUsage : 0
+                        let adbTemperature = didTryADB ? self.status.temperature : 0
                         self.parseStatusDict(merged, preserveQos: true, refreshTraffic: refreshTraffic)
+                        if !adbQci.isEmpty { self.status.qci = adbQci }
+                        if !adbQosDl.isEmpty { self.status.qosDl = adbQosDl }
+                        if !adbQosUl.isEmpty { self.status.qosUl = adbQosUl }
+                        if adbCPU > 0 { self.status.cpuUsage = adbCPU }
+                        if adbMemory > 0 { self.status.memUsage = adbMemory }
+                        if adbTemperature > 0 { self.status.temperature = adbTemperature }
                         if refreshTraffic {
                             self.lastTrafficRefreshDate = Date()
                         }
                         self.isFetching = false
-                        self.fetchExtensionMetricsIfNeeded(
+                        self.fetchHardwareAndExtensionMetrics(
+                            hostOnly: hostOnly,
                             ufiBaseURL: ufiBaseURL,
                             generation: generation,
-                            refreshTraffic: refreshTraffic
+                            refreshTraffic: refreshTraffic,
+                            primaryPayload: merged,
+                            skipADB: didTryADB,
+                            routerAvailable: false
                         )
                     }
                 } else if tokens.count > 1,
@@ -853,7 +928,8 @@ public class F50Fetcher: ObservableObject {
                         generation: generation,
                         refreshTraffic: refreshTraffic,
                         candidateTokens: Array(tokens.dropFirst()),
-                        hasTriedSchemeSwap: hasTriedSchemeSwap
+                        hasTriedSchemeSwap: hasTriedSchemeSwap,
+                        didTryADB: didTryADB
                     )
                 } else if !hasTriedSchemeSwap,
                           let host = URL(string: ufiBaseURL)?.host,
@@ -869,26 +945,12 @@ public class F50Fetcher: ObservableObject {
                         generation: generation,
                         refreshTraffic: refreshTraffic,
                         candidateTokens: nil,
-                        hasTriedSchemeSwap: true
+                        hasTriedSchemeSwap: true,
+                        didTryADB: didTryADB
                     )
                 } else {
-                    let isIP = URL(string: ufiBaseURL)?.host.map { F50Configuration.isIPAddress($0) } ?? true
-                    if isIP {
-                        // 本地 IP：UFI 失败时兜底 Router 80 端口
-                        self.connectionMode = .automatic
-                        self.executeFetch(
-                            cleanBase: cleanBase,
-                            hostOnly: hostOnly,
-                            ufiBaseURL: ufiBaseURL,
-                            generation: generation,
-                            refreshTraffic: refreshTraffic,
-                            allowsUFIFallback: false
-                        )
-                    } else {
-                        // 域名穿透：直接上报连接错误提示
-                        let errorMsg = error?.localizedDescription ?? (response.map { "HTTP \((($0 as? HTTPURLResponse)?.statusCode ?? 0))" } ?? "无法连接设备 UFI 后台")
-                        self.updateStatusFailed(errorMsg, generation: generation)
-                    }
+                    let errorMsg = error?.localizedDescription ?? (response.map { "HTTP \((($0 as? HTTPURLResponse)?.statusCode ?? 0))" } ?? "无法连接设备 UFI 后台")
+                    self.updateStatusFailed(errorMsg, generation: generation)
                 }
             }
         }
@@ -1132,7 +1194,6 @@ public class F50Fetcher: ObservableObject {
                             return
                         }
 
-                        self.connectionMode = .zteRouter
                         self.parseStatusDict(
                             dict,
                             preserveQos: true,
@@ -1143,10 +1204,14 @@ public class F50Fetcher: ObservableObject {
                         }
                         self.isFetching = false
                         self.fetchBandMetrics(hostOnly: hostOnly, generation: generation)
-                        self.fetchExtensionMetricsIfNeeded(
+                        self.fetchHardwareAndExtensionMetrics(
+                            hostOnly: hostOnly,
                             ufiBaseURL: ufiBaseURL,
                             generation: generation,
-                            refreshTraffic: refreshTraffic
+                            refreshTraffic: refreshTraffic,
+                            primaryPayload: dict,
+                            skipADB: false,
+                            routerAvailable: true
                         )
                     } else {
                         self.handleRouterFailure(
@@ -1191,7 +1256,6 @@ public class F50Fetcher: ObservableObject {
         smsMessages = []
         smsErrorMessage = nil
         sessionCookie = nil
-        connectionMode = .automatic
         cachedCandidateTokens = nil
         cachedTokenSource = ""
         status.qci = ""
@@ -1209,30 +1273,142 @@ public class F50Fetcher: ObservableObject {
         prevTotalCpu = 0
         prevIdleCpu = 0
         lastTrafficRefreshDate = .distantPast
+        lastADBHardwareRefreshDate = .distantPast
+        lastADBQosRefreshDate = .distantPast
     }
 
-    private func fetchExtensionMetricsIfNeeded(
+    /// 优先级体系：
+    /// 1. 80 端口（中兴 Router 后台）为主数据通道（信号、速率、流量、频段等）。
+    /// 2. 5555 端口（ADB 原生 Socket）优先获取底层硬件指标（CPU 占用、内存占用、芯片温度）。
+    /// 3. 2333 端口（UFI / MiniKano 工具箱）作为硬件指标与 QCI 的兜底/补充通道。
+    private func fetchHardwareAndExtensionMetrics(
+        hostOnly: String,
         ufiBaseURL: String,
         generation: UInt,
-        refreshTraffic: Bool
+        refreshTraffic: Bool,
+        primaryPayload: [String: Any]?,
+        skipADB: Bool,
+        routerAvailable: Bool
     ) {
         guard !isFetchingExtensions else { return }
-        let tokens = candidateTokens()
-        guard !tokens.isEmpty else {
-            clearQos(generation: generation)
-            return
+        isFetchingExtensions = true
+
+        let host = URL(string: hostOnly)?.host ?? "192.168.0.1"
+        Task { @MainActor in
+            guard generation == self.requestGeneration else { return }
+
+            if !skipADB {
+                await self.applyADBMetrics(host: host, primaryPayload: primaryPayload)
+            }
+            guard generation == self.requestGeneration else { return }
+
+            // 仅对 80 与 5555 均未取得的数据调用 UFI。
+            let needsQos = self.status.qci.isEmpty
+                || self.status.qosDl.isEmpty
+                || self.status.qosUl.isEmpty
+            let needsHardware = self.status.cpuUsage <= 0
+                || self.status.memUsage <= 0
+                || self.status.temperature <= 0
+            let needsUFFICellularUsage = refreshTraffic
+                && (self.status.dailyRx + self.status.dailyTx == 0
+                    || self.status.monthlyRx + self.status.monthlyTx == 0)
+            let needsRouterPackageUsage = refreshTraffic && routerAvailable
+            let requestCount = (needsQos ? 1 : 0)
+                + (needsHardware ? 1 : 0)
+                + (needsUFFICellularUsage ? 1 : 0)
+                + (needsRouterPackageUsage ? 1 : 0)
+
+            guard requestCount > 0 else {
+                self.isFetchingExtensions = false
+                return
+            }
+
+            let tokens = self.candidateTokens()
+            self.pendingExtensionRequests = requestCount
+            if needsQos {
+                self.fetchQosMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
+            }
+            if needsHardware {
+                self.fetchLinuxShellMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
+            }
+            if needsUFFICellularUsage {
+                self.fetchCellularUsageMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
+            }
+            if needsRouterPackageUsage {
+                self.fetchPackageUsageMetrics(routerBaseURL: hostOnly, generation: generation)
+            }
+        }
+    }
+
+    /// 将 5555 结果只写入 80 端口本轮未提供的字段，保证来源优先级不反转。
+    private func applyADBMetrics(host: String, primaryPayload: [String: Any]?) async {
+        var primaryStatus = F50Status()
+        if let primaryPayload {
+            primaryStatus.mergeHardwareMetrics(from: primaryPayload)
         }
 
-        isFetchingExtensions = true
-        pendingExtensionRequests = refreshTraffic ? 4 : 2
-        fetchQosMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
-        if refreshTraffic {
-            // 当日/本月：UFI cellularUsage 按日期范围精确查询（与 F50 后台同口径）
-            fetchCellularUsageMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
-            // 套餐账单周期累计（Router 80 端口），与 UFI 的“本月已用”分开获取
-            fetchPackageUsageMetrics(routerBaseURL: routerBaseURL(from: ufiBaseURL), generation: generation)
+        let now = Date()
+        let needsHardware = (primaryStatus.cpuUsage <= 0
+            || primaryStatus.memUsage <= 0
+            || primaryStatus.temperature <= 0)
+            && now.timeIntervalSince(lastADBHardwareRefreshDate) >= adbHardwareRefreshInterval
+        let needsQos = (primaryStatus.qci.isEmpty
+            || primaryStatus.qosDl.isEmpty
+            || primaryStatus.qosUl.isEmpty)
+            && now.timeIntervalSince(lastADBQosRefreshDate) >= adbQosRefreshInterval
+
+        guard needsHardware || needsQos else { return }
+
+        // 全部使用 shell 内建读取，避免每个温度节点各启动两个 cat 进程。
+        let hardwareCommand = "for f in /sys/class/thermal/thermal_zone*; do [ -d \"$f\" ] || continue; type=; temp=; read -r type < \"$f/type\"; read -r temp < \"$f/temp\"; printf '%s:%s\\n' \"$type\" \"$temp\"; done; read -r cpu user nice system idle iowait irq softirq steal guest guest_nice < /proc/stat; printf 'cpu %s %s %s %s %s %s %s %s %s %s\\n' \"$user\" \"$nice\" \"$system\" \"$idle\" \"$iowait\" \"$irq\" \"$softirq\" \"$steal\" \"$guest\" \"$guest_nice\"; while IFS= read -r line; do case \"$line\" in MemTotal:*|MemAvailable:*|MemFree:*|Buffers:*|Cached:*) printf '%s\\n' \"$line\";; esac; done < /proc/meminfo"
+
+        let hardwareTask = needsHardware ? Task {
+            await ADBHardwareFetcher.executeShell(
+                host: host,
+                port: 5555,
+                command: hardwareCommand,
+                timeoutSec: 3.0
+            )
+        } : nil
+        let qosTask = needsQos ? Task {
+            await ADBHardwareFetcher.executeAT(
+                host: host,
+                port: 5555,
+                command: "AT+CGEQOSRDP=1",
+                timeoutSec: 3.0
+            )
+        } : nil
+
+        if needsHardware { lastADBHardwareRefreshDate = now }
+        if needsQos { lastADBQosRefreshDate = now }
+
+        let rawHardware = await hardwareTask?.value
+        let rawQos = await qosTask?.value
+        if let rawHardware, !rawHardware.isEmpty {
+            var metrics: [String: Any] = [:]
+            parseLinuxShellOutput(rawHardware, into: &metrics)
+            var adbStatus = F50Status()
+            adbStatus.mergeHardwareMetrics(from: metrics)
+            if primaryStatus.cpuUsage <= 0, adbStatus.cpuUsage > 0 {
+                status.cpuUsage = adbStatus.cpuUsage
+            }
+            if primaryStatus.memUsage <= 0, adbStatus.memUsage > 0 {
+                status.memUsage = adbStatus.memUsage
+            }
+            if primaryStatus.temperature <= 0, adbStatus.temperature > 0 {
+                status.temperature = adbStatus.temperature
+            }
         }
-        fetchLinuxShellMetrics(ufiBaseURL: ufiBaseURL, candidateTokens: tokens, generation: generation)
+        if primaryStatus.qci.isEmpty,
+           let rawQos,
+           let qos = F50ResponseParser.parseQos(rawQos) {
+            status.qci = qos.qci
+            status.qosDl = qos.downlink
+            status.qosUl = qos.uplink
+        }
+        if status.cpuUsage > 0 || status.memUsage > 0 || status.temperature > 0 || !status.qci.isEmpty {
+            status.ufiAuthFailed = false
+        }
     }
 
     /// UFI cellularUsage：按日期范围精确查询当日/本月用量。
@@ -1500,14 +1676,31 @@ public class F50Fetcher: ObservableObject {
                 guard generation == self.requestGeneration else { return }
                 if let http = response as? HTTPURLResponse, http.statusCode == 200,
                    let data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let result = json["result"] as? String,
-                   let qos = F50ResponseParser.parseQos(result) {
-                    self.status.qci = qos.qci
-                    self.status.qosDl = qos.downlink
-                    self.status.qosUl = qos.uplink
-                    self.finishExtension(generation: generation)
-                } else if candidateTokens.count > 1 {
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let rawResult: String
+                    if let resStr = json["result"] as? String {
+                        rawResult = resStr
+                    } else if let resDict = json["result"] as? [String: Any], let c = resDict["content"] as? String {
+                        rawResult = c
+                    } else if let dataStr = json["data"] as? String {
+                        rawResult = dataStr
+                    } else if let dataDict = json["data"] as? [String: Any], let c = dataDict["content"] as? String {
+                        rawResult = c
+                    } else {
+                        rawResult = ""
+                    }
+
+                    let stringToParse = rawResult.isEmpty ? (String(data: data, encoding: .utf8) ?? "") : rawResult
+                    if let qos = F50ResponseParser.parseQos(stringToParse) {
+                        self.status.qci = qos.qci
+                        self.status.qosDl = qos.downlink
+                        self.status.qosUl = qos.uplink
+                        self.finishExtension(generation: generation)
+                        return
+                    }
+                }
+
+                if candidateTokens.count > 1 {
                     self.fetchQosMetrics(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: Array(candidateTokens.dropFirst()),
@@ -1524,7 +1717,7 @@ public class F50Fetcher: ObservableObject {
     private func fetchLinuxShellMetrics(
         ufiBaseURL: String,
         candidateTokens: [String],
-        candidatePaths: [String] = ["/api/root_shell", "/api/user_shell"],
+        candidatePaths: [String] = ["/api/user_shell", "/api/root_shell"],
         generation: UInt
     ) {
         guard generation == requestGeneration else { return }
@@ -1536,7 +1729,7 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
+        let cmd = "cat /proc/stat | grep \"cpu \"; cat /proc/meminfo | grep -E \"MemTotal|MemAvailable|MemFree|Buffers|Cached\"; for f in /sys/class/thermal/thermal_zone*; do echo \"$(cat $f/type 2>/dev/null):$(cat $f/temp 2>/dev/null)\"; done; cat /proc/net/dev 2>/dev/null | grep -E \"rmnet|wlan|eth|usb\"; dumpsys netstats 2>/dev/null | grep -i -E \"rmnet|wlan\" | head -n 30; cat /data/data/com.kano*/files/* 2>/dev/null; cat /sdcard/ufi* 2>/dev/null"
         let bodyObj: [String: Any] = ["command": cmd]
         let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: [])
         let request = signedUFIRequest(url: url, token: tokenHash, method: "POST", body: body)
@@ -1552,16 +1745,35 @@ public class F50Fetcher: ObservableObject {
                         rawResult = c
                     } else if let strRes = json["result"] as? String {
                         rawResult = strRes
+                    } else if let dataStr = json["data"] as? String {
+                        rawResult = dataStr
+                    } else if let dataDict = json["data"] as? [String: Any], let c = dataDict["content"] as? String {
+                        rawResult = c
                     } else {
                         rawResult = ""
                     }
 
                     var metrics: [String: Any] = [:]
                     self.parseLinuxShellOutput(rawResult, into: &metrics)
-                    self.status.mergeHardwareMetrics(from: metrics)
-                    self.status.ufiAuthFailed = false
-                    self.finishExtension(generation: generation)
-                } else if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 404, candidatePaths.count > 1 {
+                    if !metrics.isEmpty || self.prevTotalCpu > 0 {
+                        var fallbackStatus = F50Status()
+                        fallbackStatus.mergeHardwareMetrics(from: metrics)
+                        if self.status.cpuUsage <= 0, fallbackStatus.cpuUsage > 0 {
+                            self.status.cpuUsage = fallbackStatus.cpuUsage
+                        }
+                        if self.status.memUsage <= 0, fallbackStatus.memUsage > 0 {
+                            self.status.memUsage = fallbackStatus.memUsage
+                        }
+                        if self.status.temperature <= 0, fallbackStatus.temperature > 0 {
+                            self.status.temperature = fallbackStatus.temperature
+                        }
+                        self.status.ufiAuthFailed = false
+                        self.finishExtension(generation: generation)
+                        return
+                    }
+                }
+
+                if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 404, candidatePaths.count > 1 {
                     self.fetchLinuxShellMetrics(
                         ufiBaseURL: ufiBaseURL,
                         candidateTokens: self.candidateTokens(),
@@ -1591,18 +1803,8 @@ public class F50Fetcher: ObservableObject {
         shellTask?.resume()
     }
 
-    private func clearQos(generation: UInt) {
-        guard generation == requestGeneration else { return }
-        status.qci = ""
-        status.qosDl = ""
-        status.qosUl = ""
-    }
-
     private func failQos(generation: UInt) {
         guard generation == requestGeneration else { return }
-        status.qci = ""
-        status.qosDl = ""
-        status.qosUl = ""
         finishExtension(generation: generation)
     }
 
@@ -1662,6 +1864,24 @@ public class F50Fetcher: ObservableObject {
                     dict["_mem_avail"] = availKb
                 }
             }
+            if trimmed.hasPrefix("MemFree:") {
+                let clean = trimmed.replacingOccurrences(of: "MemFree:", with: "").replacingOccurrences(of: "kB", with: "").trimmingCharacters(in: .whitespaces)
+                if let freeKb = Double(clean) {
+                    dict["_mem_free"] = freeKb
+                }
+            }
+            if trimmed.hasPrefix("Buffers:") {
+                let clean = trimmed.replacingOccurrences(of: "Buffers:", with: "").replacingOccurrences(of: "kB", with: "").trimmingCharacters(in: .whitespaces)
+                if let bufKb = Double(clean) {
+                    dict["_mem_buffers"] = bufKb
+                }
+            }
+            if trimmed.hasPrefix("Cached:") {
+                let clean = trimmed.replacingOccurrences(of: "Cached:", with: "").replacingOccurrences(of: "kB", with: "").trimmingCharacters(in: .whitespaces)
+                if let cacheKb = Double(clean) {
+                    dict["_mem_cached"] = cacheKb
+                }
+            }
 
             // 3. Thermal Zone Lines: "type:temp" e.g. "soc-thmzone:61190" or "nr0-thmzone:61180"
             let parts = trimmed.components(separatedBy: ":")
@@ -1693,9 +1913,21 @@ public class F50Fetcher: ObservableObject {
         }
 
         // Memory %
-        if let totalKb = dict["_mem_total"] as? Double, let availKb = dict["_mem_avail"] as? Double, totalKb > 0 {
-            let memUsage = max(0.0, min(100.0, (1.0 - availKb / totalKb) * 100.0))
-            dict["mem_utility"] = memUsage
+        if let totalKb = dict["_mem_total"] as? Double, totalKb > 0 {
+            let availKb: Double
+            if let a = dict["_mem_avail"] as? Double {
+                availKb = a
+            } else if let free = dict["_mem_free"] as? Double {
+                let buffers = dict["_mem_buffers"] as? Double ?? 0
+                let cached = dict["_mem_cached"] as? Double ?? 0
+                availKb = free + buffers + cached
+            } else {
+                availKb = 0
+            }
+            if availKb > 0 {
+                let memUsage = max(0.0, min(100.0, (1.0 - availKb / totalKb) * 100.0))
+                dict["mem_utility"] = memUsage
+            }
         }
 
         // Temperature selection matching UFI-TOOLS web page
@@ -1703,6 +1935,7 @@ public class F50Fetcher: ObservableObject {
         if finalTemp > 0 {
             dict["cpu_temp"] = finalTemp
             dict["ic_temp"] = finalTemp
+            dict["temperature"] = finalTemp
         }
 
         // Realtime throughput calculation from Linux netdev counters
@@ -1921,8 +2154,11 @@ public class F50Fetcher: ObservableObject {
         }
 
         // QCI if returned by network
-        if let val = dict["qci"] ?? dict["QCI"] ?? dict["5g_qci"] ?? dict["nr_qci"], !String(describing: val).isEmpty {
-            newStatus.qci = String(describing: val)
+        if let val = dict["qci"] ?? dict["QCI"] ?? dict["5g_qci"] ?? dict["nr_qci"] {
+            let str = String(describing: val).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !str.isEmpty && str != "0" && str != "null" && str != "nil" {
+                newStatus.qci = str
+            }
         }
 
         // Carrier / Provider
