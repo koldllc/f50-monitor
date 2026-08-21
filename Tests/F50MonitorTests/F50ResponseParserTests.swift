@@ -639,4 +639,50 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50Configuration.normalizeBaseURL("https://f50.example.com"), "https://f50.example.com")
         XCTAssertEqual(F50Configuration.normalizeBaseURL("f50.example.com:8443"), "http://f50.example.com:8443")
     }
+
+    func testNormalizesTemperatureAndUsageAliasesInUFIPayload() {
+        let rawPayload: [String: Any] = [
+            "soc_temp": 58500,
+            "cpu_usage": 35.5,
+            "mem_usage": 62.0,
+            "qci_val": "9"
+        ]
+        let normalized = F50ResponseParser.normalizeUFIPayload(rawPayload)
+        XCTAssertEqual(normalized["cpu_temp"] as? Double, 58.5)
+        XCTAssertEqual(normalized["cpu_utility"] as? Double, 35.5)
+        XCTAssertEqual(normalized["mem_utility"] as? Double, 62.0)
+        XCTAssertEqual(normalized["qci"] as? String, "9")
+    }
+
+    func testParsesQosFromJSONAndNumericFormats() {
+        // Direct JSON string
+        let jsonQos = "{\"qci\": \"9\", \"qos_dl\": \"300Mbps\", \"qos_ul\": \"50Mbps\"}"
+        let parsedJSON = F50ResponseParser.parseQos(jsonQos)
+        XCTAssertEqual(parsedJSON?.qci, "9")
+        XCTAssertEqual(parsedJSON?.downlink, "300Mbps")
+        XCTAssertEqual(parsedJSON?.uplink, "50Mbps")
+
+        // Pure numeric QCI
+        let numQos = F50ResponseParser.parseQos("6")
+        XCTAssertEqual(numQos?.qci, "6")
+    }
+
+    func testMergeHardwareMetricsFromRouterAndUFIAliases() {
+        var status = F50Status()
+        let payload: [String: Any] = [
+            "internal_temperature": "54.2",
+            "cpu_percent": "28.4",
+            "mem_percent": "45.0",
+            "qci": "9",
+            "qos_dl": "500Mbps",
+            "qos_ul": "100Mbps"
+        ]
+        status.mergeHardwareMetrics(from: payload)
+        XCTAssertEqual(status.temperature, 54.2)
+        XCTAssertEqual(status.cpuUsage, 28.4)
+        XCTAssertEqual(status.memUsage, 45.0)
+        XCTAssertEqual(status.qci, "9")
+        XCTAssertEqual(status.qosDl, "500Mbps")
+        XCTAssertEqual(status.qosUl, "100Mbps")
+    }
 }

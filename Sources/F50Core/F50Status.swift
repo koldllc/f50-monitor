@@ -138,17 +138,32 @@ public struct F50Status: Equatable, Codable {
     public init() {}
 
     mutating func mergeHardwareMetrics(from payload: [String: Any]) {
-        if let value = payload["cpu_utility"] ?? payload["cpu_usage"] {
+        if let value = payload["cpu_utility"] ?? payload["cpu_usage"] ?? payload["cpu_percent"] ?? payload["cpu_rate"] ?? payload["cpu"] ?? payload["cpu_load"] {
             let parsed = F50ResponseParser.parseDouble(value)
-            if parsed > 0 { cpuUsage = parsed }
+            if parsed > 0 { cpuUsage = min(100.0, max(0.0, parsed)) }
         }
-        if let value = payload["mem_utility"] ?? payload["mem_usage"] {
+        if let value = payload["mem_utility"] ?? payload["mem_usage"] ?? payload["mem_percent"] ?? payload["memory_rate"] ?? payload["memory"] ?? payload["mem_used_percent"] {
             let parsed = F50ResponseParser.parseDouble(value)
-            if parsed > 0 { memUsage = parsed }
+            if parsed > 0 { memUsage = min(100.0, max(0.0, parsed)) }
         }
-        if let value = payload["ic_temp"] ?? payload["soc_temp"] ?? payload["modem_temp"] ?? payload["cpu_temp"] {
-            let parsed = F50ResponseParser.parseDouble(value)
-            if parsed > 0 { temperature = parsed }
+        if let value = payload["cpu_temp"] ?? payload["temperature"] ?? payload["temp"] ?? payload["ic_temp"] ?? payload["soc_temp"] ?? payload["modem_temp"] ?? payload["internal_temperature"] ?? payload["chip_temp"] ?? payload["device_temp"] {
+            var parsed = F50ResponseParser.parseDouble(value)
+            if parsed > 1_000 { parsed /= 1_000.0 }
+            if parsed > 0 && parsed < 130 { temperature = parsed }
+        }
+        if let value = payload["qci"] ?? payload["qci_val"] ?? payload["qos_qci"] {
+            let str = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !str.isEmpty && str != "0" && str != "null" {
+                qci = str
+            }
+        }
+        if let dl = payload["qos_dl"] ?? payload["qos_downlink"] {
+            let str = String(describing: dl).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !str.isEmpty && str != "0" && str != "null" { qosDl = str }
+        }
+        if let ul = payload["qos_ul"] ?? payload["qos_uplink"] {
+            let str = String(describing: ul).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !str.isEmpty && str != "0" && str != "null" { qosUl = str }
         }
     }
 

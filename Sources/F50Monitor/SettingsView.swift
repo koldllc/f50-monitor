@@ -5,6 +5,7 @@ public struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
+    var onOpenFeedback: () -> Void = {}
     var onClose: () -> Void
     
     @State private var tempIP: String = ""
@@ -16,10 +17,17 @@ public struct SettingsView: View {
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     
-    init(fetcher: F50Fetcher, updateManager: UpdateManager, screenMirroringManager: ScreenMirroringManager, onClose: @escaping () -> Void) {
+    init(
+        fetcher: F50Fetcher,
+        updateManager: UpdateManager,
+        screenMirroringManager: ScreenMirroringManager,
+        onOpenFeedback: @escaping () -> Void = {},
+        onClose: @escaping () -> Void
+    ) {
         self.fetcher = fetcher
         self.updateManager = updateManager
         self.screenMirroringManager = screenMirroringManager
+        self.onOpenFeedback = onOpenFeedback
         self.onClose = onClose
     }
 
@@ -283,6 +291,31 @@ public struct SettingsView: View {
                     }
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("意见与反馈")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("问题反馈与设备适配")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("提交使用问题、Bug 或新设备适配")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("去反馈") {
+                        onOpenFeedback()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding(12)

@@ -32,14 +32,27 @@ enum F50ResponseParser {
     static func normalizeUFIPayload(_ payload: [String: Any]) -> [String: Any] {
         var normalized = payload
 
-        copyFirstValue(in: &normalized, to: "battery_value", from: ["battery", "battery_percent"])
-        copyFirstValue(in: &normalized, to: "battery_charging", from: ["is_charging", "charging"])
-        copyFirstValue(in: &normalized, to: "wifi_access_sta_num", from: ["station_num", "client_count", "connected_devices"])
-        copyFirstValue(in: &normalized, to: "network_provider", from: ["carrier", "operator", "operator_name"])
-        copyFirstValue(in: &normalized, to: "network_type", from: ["network_mode", "rat"])
-        copyFirstValue(in: &normalized, to: "signalbar", from: ["signal_bar", "signal_level"])
-        copyFirstValue(in: &normalized, to: "realtime_rx_thrpt", from: ["download_speed", "rx_speed"])
-        copyFirstValue(in: &normalized, to: "realtime_tx_thrpt", from: ["upload_speed", "tx_speed"])
+        copyFirstValue(in: &normalized, to: "battery_value", from: ["battery", "battery_percent", "bat_val", "battery_level"])
+        copyFirstValue(in: &normalized, to: "battery_charging", from: ["is_charging", "charging", "battery_charging_status"])
+        copyFirstValue(in: &normalized, to: "wifi_access_sta_num", from: ["station_num", "client_count", "connected_devices", "sta_num", "access_sta_num"])
+        copyFirstValue(in: &normalized, to: "network_provider", from: ["carrier", "operator", "operator_name", "provider"])
+        copyFirstValue(in: &normalized, to: "network_type", from: ["network_mode", "rat", "network_type_display"])
+        copyFirstValue(in: &normalized, to: "signalbar", from: ["signal_bar", "signal_level", "signal_strength", "signal"])
+        copyFirstValue(in: &normalized, to: "realtime_rx_thrpt", from: ["download_speed", "rx_speed", "dl_rate"])
+        copyFirstValue(in: &normalized, to: "realtime_tx_thrpt", from: ["upload_speed", "tx_speed", "ul_rate"])
+
+        // CPU & 内存占用率多别名
+        copyFirstValue(in: &normalized, to: "cpu_utility", from: ["cpu_usage", "cpu_percent", "cpu_rate", "cpu", "cpu_load"])
+        copyFirstValue(in: &normalized, to: "mem_utility", from: ["mem_usage", "mem_percent", "memory_rate", "memory", "mem_used_percent"])
+
+        // 温度多别名
+        copyFirstValue(in: &normalized, to: "cpu_temp", from: [
+            "temperature", "temp", "soc_temp", "soc_thmzone", "chip_temp",
+            "internal_temperature", "internal_temp", "device_temp", "battery_temp"
+        ])
+
+        // QCI 多别名
+        copyFirstValue(in: &normalized, to: "qci", from: ["qci_val", "qos_qci", "bearer_qci", "cgeqosrdp_qci"])
 
         copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_rx_bytes", "today_rx_bytes"])
         copyFirstValue(in: &normalized, to: "day_tx_bytes", from: ["daily_tx_bytes", "today_tx_bytes"])
@@ -67,6 +80,8 @@ enum F50ResponseParser {
             let value = parseDouble(temperature)
             if value > 1_000 {
                 normalized["cpu_temp"] = value / 1_000
+            } else if value > 0 {
+                normalized["cpu_temp"] = value
             }
         }
         return normalized
@@ -100,19 +115,49 @@ enum F50ResponseParser {
     static func parseQos(_ raw: String) -> ParsedQos? {
         let clean = raw.replacingOccurrences(of: "*", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = clean.components(separatedBy: ",")
-        guard parts.count >= 8, parts[0].contains("+CGEQOSRDP:") else { return nil }
 
-        let qci = parts[1].trimmingCharacters(in: .whitespaces)
-        let dlRaw = parts[6].trimmingCharacters(in: .whitespaces)
-        let ulRaw = parts[7].components(separatedBy: .whitespaces).first { !$0.isEmpty } ?? ""
-        guard let dlKbps = Double(dlRaw), let ulKbps = Double(ulRaw) else { return nil }
+        // 1. 标准 AT+CGEQOSRDP: 1,9,... 格式
+        if clean.contains("+CGEQOSRDP:") {
+            let parts = clean.components(separatedBy: ",")
+            if parts.count >= 2 {
+                let qci = parts[1].trimmingCharacters(in: .whitespaces)
+                var dlStr = ""
+                var ulStr = ""
+                if parts.count >= 8 {
+                    let dlRaw = parts[6].trimmingCharacters(in: .whitespaces)
+                    let ulRaw = parts[7].components(separatedBy: .whitespaces).first { !$0.isEmpty } ?? ""
+                    if let dlKbps = Double(dlRaw) { dlStr = formatRate(dlKbps) }
+                    if let ulKbps = Double(ulRaw) { ulStr = formatRate(ulKbps) }
+                }
+                if !qci.isEmpty && qci != "0" {
+                    return ParsedQos(qci: qci, downlink: dlStr, uplink: ulStr)
+                }
+            }
+        }
 
-        return ParsedQos(
-            qci: qci,
-            downlink: formatRate(dlKbps),
-            uplink: formatRate(ulKbps)
-        )
+        // 2. 如果是 JSON 格式如 {"qci": "9", "qos_dl": "...", "qos_ul": "..."}
+        if clean.hasPrefix("{") && clean.hasSuffix("}"),
+           let data = clean.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let qci = (json["qci"] ?? json["qci_val"] ?? json["qos_qci"]) as? String, !qci.isEmpty {
+                let dl = (json["qos_dl"] ?? json["downlink"]) as? String ?? ""
+                let ul = (json["qos_ul"] ?? json["uplink"]) as? String ?? ""
+                return ParsedQos(qci: qci, downlink: dl, uplink: ul)
+            }
+            if let result = json["result"] as? String {
+                return parseQos(result)
+            }
+            if let dataStr = json["data"] as? String {
+                return parseQos(dataStr)
+            }
+        }
+
+        // 3. 纯数字 QCI (如 "9" 或 "6")
+        if let num = Int(clean), num > 0 && num <= 15 {
+            return ParsedQos(qci: String(num), downlink: "", uplink: "")
+        }
+
+        return nil
     }
 
     static func parsePPPStatus(_ raw: String) -> String {

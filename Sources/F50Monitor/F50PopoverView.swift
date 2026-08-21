@@ -7,6 +7,7 @@ struct F50PopoverView: View {
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
     @State private var isShowingSettings = false
     @State private var isShowingSMS = false
+    @State private var isShowingFeedback = false
 
     var body: some View {
         Group {
@@ -14,21 +15,31 @@ struct F50PopoverView: View {
                 SMSListView(fetcher: fetcher) {
                     isShowingSMS = false
                 }
+            } else if isShowingFeedback {
+                DeviceFeedbackView(fetcher: fetcher) {
+                    isShowingFeedback = false
+                }
             } else if isShowingSettings {
                 SettingsView(
                     fetcher: fetcher,
                     updateManager: updateManager,
-                    screenMirroringManager: screenMirroringManager
-                ) {
-                    isShowingSettings = false
-                }
+                    screenMirroringManager: screenMirroringManager,
+                    onOpenFeedback: {
+                        isShowingSettings = false
+                        isShowingFeedback = true
+                    },
+                    onClose: {
+                        isShowingSettings = false
+                    }
+                )
             } else {
                 F50PanelView(
                     fetcher: fetcher,
                     updateManager: updateManager,
                     screenMirroringManager: screenMirroringManager,
                     onOpenSettings: { isShowingSettings = true },
-                    onOpenSMS: { isShowingSMS = true }
+                    onOpenSMS: { isShowingSMS = true },
+                    onOpenFeedback: { isShowingFeedback = true }
                 )
             }
         }

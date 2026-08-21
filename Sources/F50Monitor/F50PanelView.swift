@@ -280,6 +280,7 @@ struct F50PanelView: View {
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onOpenSettings: () -> Void
     var onOpenSMS: () -> Void
+    var onOpenFeedback: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -288,13 +289,15 @@ struct F50PanelView: View {
         updateManager: UpdateManager,
         screenMirroringManager: ScreenMirroringManager,
         onOpenSettings: @escaping () -> Void,
-        onOpenSMS: @escaping () -> Void
+        onOpenSMS: @escaping () -> Void,
+        onOpenFeedback: @escaping () -> Void = {}
     ) {
         self.fetcher = fetcher
         self.updateManager = updateManager
         self.screenMirroringManager = screenMirroringManager
         self.onOpenSettings = onOpenSettings
         self.onOpenSMS = onOpenSMS
+        self.onOpenFeedback = onOpenFeedback
     }
 
     private var carrierLogoAssetName: String? {
@@ -422,17 +425,30 @@ struct F50PanelView: View {
 
     // MARK: - Error Alert Box
     private var errorAlertBox: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(F50Theme.orange)
-                Text(fetcher.status.errorMessage ?? "无法连接到 F50 后台")
+                Text(fetcher.status.errorMessage ?? "无法连接到设备后台")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.primary)
             }
-            Text("请在设置中检查管理密码及 IP 地址，并确认已连接 F50 Wi-Fi")
+            Text("请在设置中检查管理密码及 IP 地址，并确认已连接 Wi-Fi")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+
+            Button {
+                onOpenFeedback()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "stethoscope")
+                    Text("新设备无法识别？提交接口诊断")
+                }
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(F50Theme.blue)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
         }
         .padding(10)
         .frame(maxWidth: .infinity)
