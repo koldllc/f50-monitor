@@ -538,24 +538,279 @@ public class F50Fetcher: ObservableObject {
 
         let generation = requestGeneration
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-        let ufiBaseURL = connectionEndpoints(from: cleanBase).ufiBaseURL
+        let endpoints = connectionEndpoints(from: cleanBase)
         let tokens = candidateTokens()
-        guard !tokens.isEmpty else {
-            smsSendErrorMessage = "请先配置 UFI后台口令"
-            return
-        }
 
         isSendingSMS = true
         smsSendErrorMessage = nil
         smsSendSuccess = false
 
-        attemptSendSMS(
-            ufiBaseURL: ufiBaseURL,
+        attemptSendSMSViaRouter(
+            routerBaseURL: endpoints.routerBaseURL,
+            ufiBaseURL: endpoints.ufiBaseURL,
             candidateTokens: tokens,
             number: cleanNumber,
             content: cleanContent,
             generation: generation
         )
+    }
+
+    /// 短信发送与设备数据读取保持相同优先级：80 Router → 5555 ADB → 2333 UFI。
+    private func attemptSendSMSViaRouter(
+        routerBaseURL: String,
+        ufiBaseURL: String,
+        candidateTokens: [String],
+        number: String,
+        content: String,
+        generation: UInt
+    ) {
+        sendSMSViaRouter(
+            routerBaseURL: routerBaseURL,
+            number: number,
+            content: content,
+            generation: generation
+        ) { [weak self] routerSuccess in
+            guard let self, generation == self.requestGeneration else { return }
+            if routerSuccess {
+                self.finishSMSSent()
+                return
+            }
+
+            let host = URL(string: routerBaseURL)?.host ?? "192.168.0.1"
+            Task { @MainActor in
+                let adbSuccess = await self.sendSMSViaADB(
+                    host: host,
+                    number: number,
+                    content: content,
+                    generation: generation
+                )
+                guard generation == self.requestGeneration else { return }
+                if adbSuccess {
+                    self.finishSMSSent()
+                } else {
+                    self.attemptSendSMS(
+                        ufiBaseURL: ufiBaseURL,
+                        candidateTokens: candidateTokens,
+                        number: number,
+                        content: content,
+                        generation: generation
+                    )
+                }
+            }
+        }
+    }
+
+    private func finishSMSSent() {
+        smsSendSuccess = true
+        smsSendErrorMessage = nil
+        isSendingSMS = false
+        fetchSMSMessages()
+    }
+
+    private func sendSMSViaRouter(
+        routerBaseURL: String,
+        number: String,
+        content: String,
+        generation: UInt,
+        didLogin: Bool = false,
+        completion: @escaping (Bool) -> Void
+    ) {
+        computeSMSADViaRouter(
+            routerBaseURL: routerBaseURL,
+            generation: generation
+        ) { [weak self] ad in
+            guard let self, generation == self.requestGeneration else { return }
+            guard let ad,
+                  let url = URL(string: "\(routerBaseURL)/goform/goform_set_cmd_process") else {
+                self.retryRouterSMSSendAfterLogin(
+                    routerBaseURL: routerBaseURL,
+                    number: number,
+                    content: content,
+                    generation: generation,
+                    didLogin: didLogin,
+                    completion: completion
+                )
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 5.0
+            request.setValue("\(routerBaseURL)/index.html", forHTTPHeaderField: "Referer")
+            request.setValue(
+                "application/x-www-form-urlencoded; charset=UTF-8",
+                forHTTPHeaderField: "Content-Type"
+            )
+            if let sessionCookie = self.sessionCookie, !sessionCookie.isEmpty {
+                request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+            }
+            request.httpBody = F50ResponseParser.buildSMSRequestBody(
+                number: number,
+                content: content,
+                ad: ad
+            ).data(using: .utf8)
+
+            self.session.dataTask(with: request) { [weak self] data, response, _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard generation == self.requestGeneration else { return }
+                    if let http = response as? HTTPURLResponse,
+                       http.statusCode == 200,
+                       let data,
+                       self.isSMSSendSuccess(data) {
+                        completion(true)
+                    } else {
+                        self.retryRouterSMSSendAfterLogin(
+                            routerBaseURL: routerBaseURL,
+                            number: number,
+                            content: content,
+                            generation: generation,
+                            didLogin: didLogin,
+                            completion: completion
+                        )
+                    }
+                }
+            }.resume()
+        }
+    }
+
+    private func retryRouterSMSSendAfterLogin(
+        routerBaseURL: String,
+        number: String,
+        content: String,
+        generation: UInt,
+        didLogin: Bool,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard !didLogin else {
+            completion(false)
+            return
+        }
+        performZTELogin(hostOnly: routerBaseURL) { [weak self] loginSuccess in
+            guard let self, generation == self.requestGeneration else { return }
+            guard loginSuccess else {
+                completion(false)
+                return
+            }
+            self.sendSMSViaRouter(
+                routerBaseURL: routerBaseURL,
+                number: number,
+                content: content,
+                generation: generation,
+                didLogin: true,
+                completion: completion
+            )
+        }
+    }
+
+    private func computeSMSADViaRouter(
+        routerBaseURL: String,
+        generation: UInt,
+        completion: @escaping (String?) -> Void
+    ) {
+        let ts = String(Int64(Date().timeIntervalSince1970 * 1000))
+        guard let versionURL = URL(
+            string: "\(routerBaseURL)/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version&multi_data=1&isTest=false&_=\(ts)"
+        ) else {
+            completion(nil)
+            return
+        }
+        var versionRequest = URLRequest(url: versionURL)
+        versionRequest.timeoutInterval = 4.0
+        versionRequest.setValue("\(routerBaseURL)/index.html", forHTTPHeaderField: "Referer")
+        if let sessionCookie, !sessionCookie.isEmpty {
+            versionRequest.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+        }
+
+        session.dataTask(with: versionRequest) { [weak self] data, response, _ in
+            guard let self else { return }
+            Task { @MainActor in
+                guard generation == self.requestGeneration,
+                      let http = response as? HTTPURLResponse,
+                      http.statusCode == 200,
+                      let data,
+                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    completion(nil)
+                    return
+                }
+                let wa = (dict["wa_inner_version"] as? String) ?? (dict["wa_version"] as? String) ?? ""
+                let cr = (dict["cr_version"] as? String) ?? ""
+                let ts2 = String(Int64(Date().timeIntervalSince1970 * 1000))
+                guard let rdURL = URL(
+                    string: "\(routerBaseURL)/goform/goform_get_cmd_process?cmd=RD&isTest=false&_=\(ts2)"
+                ) else {
+                    completion(nil)
+                    return
+                }
+                var rdRequest = URLRequest(url: rdURL)
+                rdRequest.timeoutInterval = 4.0
+                rdRequest.setValue("\(routerBaseURL)/index.html", forHTTPHeaderField: "Referer")
+                if let sessionCookie = self.sessionCookie, !sessionCookie.isEmpty {
+                    rdRequest.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+                }
+                self.session.dataTask(with: rdRequest) { [weak self] data, response, _ in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        guard generation == self.requestGeneration,
+                              let http = response as? HTTPURLResponse,
+                              http.statusCode == 200,
+                              let data,
+                              let rdDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            completion(nil)
+                            return
+                        }
+                        let rd = (rdDict["RD"] as? String) ?? ""
+                        completion(self.sha256(self.sha256(wa + cr) + rd).uppercased())
+                    }
+                }.resume()
+            }
+        }.resume()
+    }
+
+    private func sendSMSViaADB(
+        host: String,
+        number: String,
+        content: String,
+        generation: UInt
+    ) async -> Bool {
+        guard generation == requestGeneration,
+              let output = await ADBHardwareFetcher.executeShell(
+                host: host,
+                port: 5555,
+                command: smsShellCommand(number: number, content: content),
+                timeoutSec: 8.0
+              ) else {
+            return false
+        }
+        return output.contains("Result: Parcel") && !output.contains("Exception")
+    }
+
+    private func smsShellCommand(number: String, content: String) -> String {
+        let cleanNum = number.components(
+            separatedBy: CharacterSet(charactersIn: "0123456789+").inverted
+        ).joined()
+        let b64Body = Data(content.utf8).base64EncodedString()
+        return """
+        sub_id=$(content query --uri content://telephony/siminfo --projection _id --where "sim_id>=0" 2>/dev/null | grep -o "_id=[0-9]*" | head -n 1 | cut -d= -f2)
+        if [ -z "$sub_id" ]; then sub_id=3; fi
+        BODY=$(echo "\(b64Body)" | base64 -d)
+        service call isms 6 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
+        service call isms 7 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
+        service call isms 5 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1
+        """
+    }
+
+    private func isSMSSendSuccess(_ data: Data) -> Bool {
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let resultInt = dict["result"] as? Int
+            let resultStr = (dict["result"] as? String)?.lowercased()
+            return resultInt == 0 || resultInt == 3
+                || resultStr == "0" || resultStr == "3" || resultStr == "success"
+        }
+        guard let raw = String(data: data, encoding: .utf8) else { return false }
+        return raw.contains("\"result\":0")
+            || raw.contains("\"result\":\"0\"")
+            || raw.lowercased().contains("success")
     }
 
     private func attemptSendSMS(
@@ -580,10 +835,7 @@ public class F50Fetcher: ObservableObject {
         ) { [weak self] shellSuccess in
             guard let self, generation == self.requestGeneration else { return }
             if shellSuccess {
-                self.smsSendSuccess = true
-                self.smsSendErrorMessage = nil
-                self.isSendingSMS = false
-                self.fetchSMSMessages()
+                self.finishSMSSent()
             } else {
                 // 策略 2：通过 /api/goform/goform_set_cmd_process 标准接口发送
                 self.sendSMSViaGoform(
@@ -595,10 +847,7 @@ public class F50Fetcher: ObservableObject {
                 ) { [weak self] goformSuccess, errMsg in
                     guard let self, generation == self.requestGeneration else { return }
                     if goformSuccess {
-                        self.smsSendSuccess = true
-                        self.smsSendErrorMessage = nil
-                        self.isSendingSMS = false
-                        self.fetchSMSMessages()
+                        self.finishSMSSent()
                     } else if candidateTokens.count > 1 {
                         self.attemptSendSMS(
                             ufiBaseURL: ufiBaseURL,
@@ -629,19 +878,7 @@ public class F50Fetcher: ObservableObject {
             return
         }
 
-        let cleanNum = number.components(separatedBy: CharacterSet(charactersIn: "0123456789+").inverted).joined()
-        let b64Body = Data(content.utf8).base64EncodedString()
-
-        // 动态查询当前可用 SIM 的 subId，base64 解码正文，并通过 ISms 方法 6 (sendTextForSubscriber) 下发
-        let cmd = """
-        sub_id=$(content query --uri content://telephony/siminfo --projection _id --where "sim_id>=0" 2>/dev/null | grep -o "_id=[0-9]*" | head -n 1 | cut -d= -f2)
-        if [ -z "$sub_id" ]; then sub_id=3; fi
-        BODY=$(echo "\(b64Body)" | base64 -d)
-        service call isms 6 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
-        service call isms 7 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1 || \
-        service call isms 5 i32 $sub_id s16 "com.android.phone" s16 "null" s16 "\(cleanNum)" s16 "null" s16 "$BODY" s16 "null" s16 "null" i32 1
-
-        """
+        let cmd = smsShellCommand(number: number, content: content)
 
         let bodyObj: [String: Any] = ["command": cmd]
         guard let body = try? JSONSerialization.data(withJSONObject: bodyObj, options: []) else {
