@@ -809,8 +809,25 @@ public class F50Fetcher: ObservableObject {
                         token: token,
                         generation: generation
                     ) { signalPayload in
-                        var merged = payload
-                        signalPayload?.forEach { merged[$0.key] = $0.value }
+                        var merged: [String: Any] = [:]
+                        if let dataDict = payload["data"] as? [String: Any] {
+                            dataDict.forEach { merged[$0.key] = $0.value }
+                        }
+                        if let resDict = payload["result"] as? [String: Any] {
+                            resDict.forEach { merged[$0.key] = $0.value }
+                        }
+                        payload.forEach { merged[$0.key] = $0.value }
+
+                        if let signalPayload {
+                            if let dataDict = signalPayload["data"] as? [String: Any] {
+                                dataDict.forEach { merged[$0.key] = $0.value }
+                            }
+                            if let resDict = signalPayload["result"] as? [String: Any] {
+                                resDict.forEach { merged[$0.key] = $0.value }
+                            }
+                            signalPayload.forEach { merged[$0.key] = $0.value }
+                        }
+
                         merged = F50ResponseParser.normalizeUFIPayload(merged)
                         guard generation == self.requestGeneration else { return }
                         self.connectionMode = .ufiAPI
@@ -888,7 +905,7 @@ public class F50Fetcher: ObservableObject {
         // network_information dump 字段清零（返回空串）。因此这里绝不显式请求这
         // 四个命令，信号值统一由 network_information 的 dump（nr_rsrp/nr_rsrq/Nr_snr）
         // 提供，Z5g_rsrp 作为独立数据源保留作 RSRP 兑底。
-        let commands = "network_type,network_provider,signalbar,network_signalbar,network_information,Z5g_rsrp,Z5g_rsrq,Z5g_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes"
+        let commands = "network_type,network_provider,signalbar,network_signalbar,network_information,Z5g_rsrp,Z5g_rsrq,Z5g_snr,5g_rsrp,5g_rsrq,5g_snr,lte_rsrp,lte_rsrq,lte_snr,wifi_access_sta_num,sms_unread_num,sms_sim_unread_num,wan_active_band,lte_band,lte_ca_pcell_band,nr5g_action_band,nr5g_action_nsa_band,ZCELLINFO_band,Z5g_CELLINFO_band,nr_ca_pcell_band,data_volume_clear_day,monthly_clear_day,clear_day,data_volume_reset_day,billing_day,clear_date,reset_day,traffic_clear_date,realtime_rx_thrpt,realtime_tx_thrpt,realtime_rx_bytes,realtime_tx_bytes,monthly_rx_bytes,monthly_tx_bytes,total_rx_bytes,total_tx_bytes,temperature,cpu_temp,internal_temperature,ic_temp,cpu_utility,mem_utility,qci"
         // 注意：minikano goform 要求 cmd 参数放在第一位，否则最后一个字段名会被拼坏
         guard let url = URL(string: "\(ufiBaseURL)/api/goform/goform_get_cmd_process?cmd=\(commands)&is_all=true") else {
             completion(nil)
@@ -899,13 +916,42 @@ public class F50Fetcher: ObservableObject {
             guard let self else { return }
             Task { @MainActor in
                 guard generation == self.requestGeneration else { return }
+                if let http = response as? HTTPURLResponse,
+                   http.statusCode == 200,
+                   let data,
+                   let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   !payload.isEmpty, payload["Error"] == nil {
+                    completion(payload)
+                } else {
+                    // 如果 /api/goform 在该 UFI 版本未开启或失败，尝试回退到 /api/signalDeviceInfo
+                    self.fetchUFISignalDeviceInfo(ufiBaseURL: ufiBaseURL, token: token, generation: generation, completion: completion)
+                }
+            }
+        }.resume()
+    }
+
+    private func fetchUFISignalDeviceInfo(
+        ufiBaseURL: String,
+        token: String,
+        generation: UInt,
+        completion: @escaping ([String: Any]?) -> Void
+    ) {
+        guard let url = URL(string: "\(ufiBaseURL)/api/signalDeviceInfo") else {
+            completion(nil)
+            return
+        }
+        session.dataTask(with: signedUFIRequest(url: url, token: token)) { [weak self] data, response, _ in
+            guard let self else { return }
+            Task { @MainActor in
+                guard generation == self.requestGeneration else { return }
                 guard let http = response as? HTTPURLResponse,
                       http.statusCode == 200,
                       let data,
-                      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     completion(nil)
                     return
                 }
+                let payload = (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
                 completion(payload)
             }
         }.resume()
