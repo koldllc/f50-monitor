@@ -24,24 +24,58 @@ struct SMSView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                        Button("重试") { fetcher.fetchSMSMessages() }
-                            .font(.caption.weight(.medium))
-                            .buttonStyle(.bordered)
+
+                        HStack(spacing: 10) {
+                            Button("重试") { fetcher.fetchSMSMessages() }
+                                .font(.caption.weight(.medium))
+                                .buttonStyle(.bordered)
+
+                            if !fetcher.isDemoMode {
+                                Button("开启演示模式") {
+                                    fetcher.isDemoMode = true
+                                }
+                                .font(.caption.weight(.medium))
+                                .buttonStyle(.borderedProminent)
+                            }
+                        }
                     }
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if fetcher.smsMessages.isEmpty {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 12) {
                         Image(systemName: "envelope.open")
                             .font(.system(size: 38))
                             .foregroundColor(F50Theme.gray.opacity(0.7))
                         Text("暂无短信记录")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+
+                        if !fetcher.isDemoMode {
+                            Button("开启演示模式体验短信功能") {
+                                fetcher.isDemoMode = true
+                            }
+                            .font(.caption.weight(.medium))
+                            .buttonStyle(.borderedProminent)
+                            .padding(.top, 4)
+                        }
                     }
+                    .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
+                        if fetcher.isDemoMode {
+                            Section {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                        .foregroundColor(F50Theme.blue)
+                                    Text("演示模式：展示模拟短信与验证码识别")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+
                         ForEach(fetcher.smsMessages) { message in
                             messageRow(message)
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))

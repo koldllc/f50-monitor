@@ -440,9 +440,10 @@ public enum DiagnosticSanitizer {
 
     public static func isSensitiveKey(_ key: String) -> Bool {
         let lower = key.lowercased()
+        if lower == "ad" || lower == "rd" { return true }
         let sensitiveWords = [
             "pass", "pwd", "token", "secret", "psk", "wpa_key", "key",
-            "credential", "auth", "session", "ad", "rd", "wa_inner_version_key"
+            "credential", "auth", "session", "wa_inner_version_key"
         ]
         return sensitiveWords.contains { lower.contains($0) }
     }
@@ -451,7 +452,8 @@ public enum DiagnosticSanitizer {
         if lowerKey == "snr" || lowerKey == "rsnr" || lowerKey.hasSuffix("_snr") {
             return false
         }
-        if lowerKey.contains("imei") || lowerKey.contains("imsi") || lowerKey.contains("iccid") {
+        if lowerKey.contains("imei") || lowerKey.contains("imsi") || lowerKey.contains("iccid") ||
+           lowerKey.contains("phone") || lowerKey.contains("number") || lowerKey.contains("msisdn") {
             return true
         }
         return lowerKey == "sn" || lowerKey.contains("serial")

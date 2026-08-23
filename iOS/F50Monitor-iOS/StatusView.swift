@@ -152,7 +152,9 @@ struct StatusView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: cardSpacing) {
-                        if !status.isOnline {
+                        if fetcher.isDemoMode {
+                            demoModeBanner
+                        } else if !status.isOnline {
                             errorBox
                         }
 
@@ -222,21 +224,76 @@ struct StatusView: View {
             .shadow(color: Color.black.opacity(0.02), radius: 6, y: 2)
     }
 
-    private var errorBox: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.footnote)
-                .foregroundColor(F50Theme.orange)
-                .padding(.top, 1)
+    private var demoModeBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(F50Theme.blue)
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(status.errorMessage ?? "无法连接到 F50 后台")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(.primary)
-                Text("请在设置中检查密码及 IP 地址，并确认已连接 F50 Wi-Fi")
+                HStack(spacing: 6) {
+                    Text("演示模式")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text("DEMO")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(F50Theme.blue)
+                        .clipShape(Capsule())
+                }
+                Text("当前展示模拟 5G 信号与全量数据，审核/体验无需物理硬件")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
             Spacer()
+            Button("退出") {
+                fetcher.isDemoMode = false
+            }
+            .font(.caption.weight(.medium))
+            .buttonStyle(.bordered)
+            .tint(.secondary)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(F50Theme.blue.opacity(0.12))
+        )
+    }
+
+    private var errorBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundColor(F50Theme.orange)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.errorMessage ?? "无法连接到 F50 随身 WiFi")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text("请检查是否已连接设备 Wi-Fi，或直接开启演示模式体验全量功能")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            Button {
+                fetcher.isDemoMode = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.circle.fill")
+                    Text("进入演示模式（无需物理硬件）")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.blue)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.borderless)
         }
         .padding(10)
         .background(

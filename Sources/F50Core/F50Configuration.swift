@@ -17,6 +17,7 @@ public enum F50Configuration {
     public static let screenMirroringPortDefaultsKey = "F50_ScreenMirroringPort"
     public static let defaultADBPort = 5555
     public static let trafficResetDayDefaultsKey = "F50_TrafficResetDay"
+    public static let demoModeDefaultsKey = "F50_DemoMode"
 
     // UFI-TOOLS 签名密钥（设备端协议固定值）
     public static let kanoSignKey = "minikano_kOyXz0Ciz4V7wR0IeKmJFYFQ20jd"

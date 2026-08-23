@@ -88,6 +88,23 @@ public class F50Fetcher: ObservableObject {
     public private(set) var locallyReadSMSIds: Set<String> = []
     private var smsAutoRefreshTimer: Timer?
 
+    @Published public var isDemoMode: Bool {
+        didSet {
+            if isDemoMode != oldValue {
+                UserDefaults.standard.set(isDemoMode, forKey: F50Configuration.demoModeDefaultsKey)
+                configurationDidChange()
+                if isDemoMode {
+                    applyDemoData()
+                } else {
+                    demoTick = 0
+                    fetchData()
+                    fetchSMSMessages()
+                }
+            }
+        }
+    }
+    private var demoTick: Int = 0
+
     private var timer: Timer?
      public private(set) var isFetching = false
     private var sessionCookie: String? = nil
@@ -213,14 +230,31 @@ public class F50Fetcher: ObservableObject {
         }
 
         self.locallyReadSMSIds = Set(UserDefaults.standard.stringArray(forKey: "F50_LocallyReadSMSIds") ?? [])
+        self.isDemoMode = UserDefaults.standard.bool(forKey: F50Configuration.demoModeDefaultsKey)
+
         if !self.locallyReadSMSIds.isEmpty {
             self.status.smsUnreadCount = 0
+        }
+
+        if self.isDemoMode {
+            self.status = F50Status.mockStatus(tick: 0)
+            self.smsMessages = F50SMSMessage.mockMessages
+            self.status.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
         }
 
         updateEffectiveTrafficResetDay()
         startTimer()
         fetchData()
         fetchSMSMessages()
+    }
+
+    public func applyDemoData() {
+        self.status = F50Status.mockStatus(tick: demoTick)
+        self.smsMessages = F50SMSMessage.mockMessages
+        self.status.smsUnreadCount = self.smsMessages.filter { $0.isUnread }.count
+        self.smsErrorMessage = nil
+        self.isFetchingSMS = false
+        F50WidgetDataStore.saveStatus(self.status)
     }
 
     public func startTimer() {
@@ -269,6 +303,13 @@ public class F50Fetcher: ObservableObject {
     }
 
     public func fetchData() {
+        if isDemoMode {
+            demoTick += 1
+            self.status = F50Status.mockStatus(tick: demoTick)
+            F50WidgetDataStore.saveStatus(self.status)
+            return
+        }
+
         guard !isFetching else { return }
         appendLog("连接", "开始刷新 Router/UFI 状态")
         isFetching = true
@@ -293,6 +334,7 @@ public class F50Fetcher: ObservableObject {
 
     public func fetchDataAsync() async {
         fetchData()
+        guard !isDemoMode else { return }
         guard isFetching else { return }
         for _ in 0..<40 {
             try? await Task.sleep(nanoseconds: 200_000_000)
@@ -302,6 +344,7 @@ public class F50Fetcher: ObservableObject {
 
     public func fetchSMSMessagesAsync() async {
         fetchSMSMessages()
+        guard !isDemoMode else { return }
         guard isFetchingSMS else { return }
         for _ in 0..<50 {
             try? await Task.sleep(nanoseconds: 200_000_000)
@@ -310,6 +353,15 @@ public class F50Fetcher: ObservableObject {
     }
 
     public func fetchSMSMessages() {
+        if isDemoMode {
+            if self.smsMessages.isEmpty {
+                self.smsMessages = F50SMSMessage.mockMessages
+            }
+            self.smsErrorMessage = nil
+            self.isFetchingSMS = false
+            return
+        }
+
         guard !isFetchingSMS else { return }
 
         let generation = requestGeneration
@@ -520,6 +572,7 @@ public class F50Fetcher: ObservableObject {
             return m
         }
         status.smsUnreadCount = smsMessages.filter { $0.isUnread }.count
+        if isDemoMode { return }
 
         // 同步设备端标记已读
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
@@ -564,6 +617,28 @@ public class F50Fetcher: ObservableObject {
         let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanNumber.isEmpty, !cleanContent.isEmpty else {
             smsSendErrorMessage = "请填写手机号和短信内容"
+            return
+        }
+
+        if isDemoMode {
+            isSendingSMS = true
+            smsSendErrorMessage = nil
+            smsSendSuccess = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                let newMsg = F50SMSMessage(
+                    id: "demo-out-\(UUID().uuidString.prefix(6))",
+                    number: cleanNumber,
+                    content: cleanContent,
+                    dateText: formatter.string(from: Date()),
+                    tag: "2",
+                    isLocallyRead: true
+                )
+                self.smsMessages.insert(newMsg, at: 0)
+                self.finishSMSSent()
+            }
             return
         }
 

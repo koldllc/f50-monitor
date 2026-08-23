@@ -323,6 +323,73 @@ public struct F50Status: Equatable, Codable {
             ulHistory.removeFirst(ulHistory.count - 16)
         }
     }
+
+    // MARK: - 审核与演示模式模拟数据 (Demo Mode Mock Data)
+    public static var mock: F50Status {
+        mockStatus(tick: 0)
+    }
+
+    public static func mockStatus(tick: Int = 0) -> F50Status {
+        var s = F50Status()
+        s.isOnline = true
+        s.errorMessage = nil
+        s.ufiAuthFailed = false
+
+        s.networkType = "5G SA"
+        s.signalBar = 4
+        s.rsrp = "-82 dBm"
+        s.rsrq = "-7 dB"
+        s.snr = "19 dB"
+        s.carrier = "中国移动"
+        s.currentBands = "B3 + n78"
+        s.pppStatus = "已连接"
+
+        s.qci = "9 (默认互联网承载)"
+        s.qosDl = "1000 Mbps"
+        s.qosUl = "150 Mbps"
+
+        // 模拟自然呼吸波动的上下行速率
+        let baseDl = 48.5 * 1024.0 * 1024.0
+        let baseUl = 6.2 * 1024.0 * 1024.0
+        let wave = sin(Double(tick) * 0.5) * 6.0 * 1024.0 * 1024.0
+        s.dlSpeed = max(12.0 * 1024.0 * 1024.0, baseDl + wave)
+        s.ulSpeed = max(1.5 * 1024.0 * 1024.0, baseUl + (wave * 0.18))
+
+        s.dlHistory = [
+            18.2 * 1024 * 1024,
+            24.5 * 1024 * 1024,
+            31.0 * 1024 * 1024,
+            42.8 * 1024 * 1024,
+            55.3 * 1024 * 1024,
+            49.1 * 1024 * 1024,
+            46.7 * 1024 * 1024,
+            s.dlSpeed
+        ]
+        s.ulHistory = [
+            2.1 * 1024 * 1024,
+            3.4 * 1024 * 1024,
+            4.2 * 1024 * 1024,
+            5.8 * 1024 * 1024,
+            6.5 * 1024 * 1024,
+            5.9 * 1024 * 1024,
+            6.1 * 1024 * 1024,
+            s.ulSpeed
+        ]
+
+        s.connectedDevices = 3
+        s.smsUnreadCount = 1
+        s.cpuUsage = max(15.0, min(85.0, 26.5 + (sin(Double(tick) * 0.35) * 4.0)))
+        s.memUsage = 41.8
+        s.temperature = max(30.0, min(65.0, 39.2 + (sin(Double(tick) * 0.2) * 0.8)))
+
+        s.packageRx = 38_654_705_664 // ~36.0 GB
+        s.packageTx = 4_294_967_296  // ~4.0 GB
+        s.trafficLimit = 107_374_182_400 // 100 GB
+        s.trafficResetDay = 1
+        s.batteryValue = -1
+
+        return s
+    }
 }
 
 /// 高级低饱和度调色盘与全局主题规范

@@ -13,7 +13,7 @@ struct F50StatusEntry: TimelineEntry {
 
 struct F50StatusProvider: TimelineProvider {
     func placeholder(in context: Context) -> F50StatusEntry {
-        F50StatusEntry(date: Date(), status: nil)
+        F50StatusEntry(date: Date(), status: F50Status.mock)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (F50StatusEntry) -> Void) {
