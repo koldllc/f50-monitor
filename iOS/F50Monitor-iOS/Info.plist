@@ -32,7 +32,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>需要访问本地网络以连接您的 F50 随身 WiFi 设备（192.168.0.1），用于读取信号、流量与短信数据。</string>
+	<string>需要访问本地网络以连接您的中兴 F50/V50 随身 WiFi 设备（192.168.0.1），用于读取信号、流量与短信数据。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

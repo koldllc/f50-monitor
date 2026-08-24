@@ -123,6 +123,19 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(F50ResponseParser.parseUInt64(123.456), 123)
     }
 
+    func testParsesZTEV50MU3351HardwareMetrics() {
+        var status = F50Status()
+        status.mergeHardwareMetrics(from: [
+            "temperature": "48.296",
+            "cpu_utility": "4.2039827204720215",
+            "mem_utility": "71.86852960745176"
+        ])
+
+        XCTAssertEqual(status.temperature, 48.296, accuracy: 0.001)
+        XCTAssertEqual(status.cpuUsage, 4.2039827204720215, accuracy: 0.001)
+        XCTAssertEqual(status.memUsage, 71.86852960745176, accuracy: 0.001)
+    }
+
     // MARK: - UFI-TOOLS 签名（用真实设备抓包验证过的向量，防止回归）
 
     func testKanoSignMatchesRealDeviceCapturedVector() {
