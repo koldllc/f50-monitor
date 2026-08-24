@@ -79,6 +79,7 @@ class RuntimeState(private val context: Context) {
 
     fun start() {
         if (scheduler != null) return
+        agentKey // Persist before headless boot clients access the LAN API.
         lanServer.start()
         scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "f50-status-collector").apply { isDaemon = true }
