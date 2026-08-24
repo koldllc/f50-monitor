@@ -113,7 +113,7 @@ private struct InitialSetupView: View {
                         .foregroundColor(.secondary)
                 }
 
-                Section("连接设备") {
+                Section {
                     TextField("设备地址，例如 192.168.0.1", text: $address)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -143,6 +143,8 @@ private struct InitialSetupView: View {
                         }
                         .buttonStyle(.borderless)
                     }
+                } header: {
+                    Text("连接设备")
                 } footer: {
                     Text("该密码会同时用于中兴与 UFI 后台；如两者不同，可稍后在设置中分别调整。")
                 }
