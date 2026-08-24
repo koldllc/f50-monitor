@@ -152,4 +152,43 @@ final class DeviceDiagnosticProbeTests: XCTestCase {
         XCTAssertFalse(first.isEmpty)
         XCTAssertEqual(first, second)
     }
+
+    func testExtractsScriptCallSignatureWithoutValues() {
+        let script = #"axios({url:"/cgi-bin/http.cgi",method:"post",data:{cmd:"network_info",password:"do-not-store",page:1}})"#
+
+        let signatures = DiagnosticScriptAnalyzer.analyze(script, sourceScript: "/static/js/app.js")
+
+        XCTAssertEqual(signatures.count, 1)
+        XCTAssertEqual(signatures[0].endpoint, "/cgi-bin/http.cgi")
+        XCTAssertEqual(signatures[0].sourceScript, "/static/js/app.js")
+        XCTAssertEqual(signatures[0].methodCandidates, ["POST"])
+        XCTAssertTrue(signatures[0].nearbyFieldNames.contains("cmd"))
+        XCTAssertTrue(signatures[0].nearbyFieldNames.contains("password"))
+        XCTAssertFalse(String(describing: signatures).contains("do-not-store"))
+        XCTAssertFalse(String(describing: signatures).contains("network_info"))
+    }
+
+    func testReportSerializesStructuredScriptSignatures() throws {
+        let report = DeviceDiagnosticReport(
+            appVersion: "2.3.0",
+            osVersion: "iOS",
+            deviceModel: "ZLT M80",
+            userNotes: "新设备适配",
+            targetBaseURL: "192.168.0.1",
+            scriptCallSignatures: [
+                ScriptCallSignature(
+                    endpoint: "/cgi-bin/http.cgi",
+                    sourceScript: "/static/js/app.js",
+                    methodCandidates: ["POST"],
+                    nearbyFieldNames: ["cmd", "password"]
+                )
+            ]
+        )
+
+        let data = try XCTUnwrap(report.toJSONData())
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let signatures = try XCTUnwrap(json["scriptCallSignatures"] as? [[String: Any]])
+        XCTAssertEqual(signatures.first?["endpoint"] as? String, "/cgi-bin/http.cgi")
+        XCTAssertFalse(try XCTUnwrap(String(data: data, encoding: .utf8)).contains("do-not-store"))
+    }
 }

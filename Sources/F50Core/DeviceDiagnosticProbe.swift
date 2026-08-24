@@ -266,6 +266,7 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
     public let screenshotBase64: String?
     public let endpoints: [EndpointProbeResult]
     public let discoveredScriptAPIs: [String]?
+    public let scriptCallSignatures: [ScriptCallSignature]?
 
     public init(
         id: String = UUID().uuidString,
@@ -280,7 +281,8 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
         appState: AppStateSnapshot? = nil,
         screenshotBase64: String? = nil,
         endpoints: [EndpointProbeResult] = [],
-        discoveredScriptAPIs: [String]? = nil
+        discoveredScriptAPIs: [String]? = nil,
+        scriptCallSignatures: [ScriptCallSignature]? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -295,6 +297,7 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
         self.screenshotBase64 = screenshotBase64
         self.endpoints = endpoints
         self.discoveredScriptAPIs = discoveredScriptAPIs
+        self.scriptCallSignatures = scriptCallSignatures
     }
 
     public var successfulProbesCount: Int {
@@ -368,6 +371,16 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
             md += "\n"
         }
 
+        if let signatures = scriptCallSignatures, !signatures.isEmpty {
+            md += "## 🧩 前端 API 调用特征（仅字段名，不含值）\n\n"
+            for signature in signatures {
+                let methods = signature.methodCandidates.isEmpty ? "未知" : signature.methodCandidates.joined(separator: "/")
+                let fields = signature.nearbyFieldNames.isEmpty ? "未识别" : signature.nearbyFieldNames.joined(separator: ", ")
+                md += "- `\(signature.endpoint)` · `\(methods)` · 来源 `\(signature.sourceScript)` · 邻近字段：`\(fields)`\n"
+            }
+            md += "\n"
+        }
+
         if !endpoints.isEmpty {
             md += "## 📊 接口探测概览 (共 \(endpoints.count) 个接口，\(successfulProbesCount) 个有效响应)\n\n"
             md += "| 接口名称 | 厂商/分类 | 状态 | 耗时 | 鉴权模式 | 返回类型 |\n"
@@ -405,6 +418,81 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
         md += "---\n"
         md += "> 🔒 *注：本报告已在本地客户端完成隐私脱敏（已自动剔除/遮蔽密码、密钥、完整 IMEI/IMSI/MAC 及短信内容）。*\n"
         return md
+    }
+}
+
+public struct ScriptCallSignature: Codable, Equatable, Sendable {
+    public let endpoint: String
+    public let sourceScript: String
+    public let methodCandidates: [String]
+    public let nearbyFieldNames: [String]
+
+    public init(endpoint: String, sourceScript: String, methodCandidates: [String], nearbyFieldNames: [String]) {
+        self.endpoint = endpoint
+        self.sourceScript = sourceScript
+        self.methodCandidates = methodCandidates
+        self.nearbyFieldNames = nearbyFieldNames
+    }
+}
+
+public enum DiagnosticScriptAnalyzer {
+    public static func analyze(_ text: String, sourceScript: String) -> [ScriptCallSignature] {
+        let endpointPattern = #"/(?:api|goform|reqproc|cgi-bin|ajax)/[a-zA-Z0-9_\-\./]+"#
+        guard let endpointRegex = try? NSRegularExpression(pattern: endpointPattern) else { return [] }
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var collected: [String: (methods: Set<String>, fields: Set<String>)] = [:]
+
+        for match in endpointRegex.matches(in: text, range: fullRange) {
+            let endpoint = nsText.substring(with: match.range)
+            guard endpoint.count < 120 else { continue }
+            let contextStart = max(0, match.range.location - 900)
+            let contextEnd = min(nsText.length, NSMaxRange(match.range) + 900)
+            let context = nsText.substring(with: NSRange(location: contextStart, length: contextEnd - contextStart))
+            var entry = collected[endpoint] ?? ([], [])
+            entry.methods.formUnion(extractMethods(from: context))
+            entry.fields.formUnion(extractFieldNames(from: context))
+            collected[endpoint] = entry
+        }
+
+        return collected.keys.sorted().map { endpoint in
+            let entry = collected[endpoint] ?? ([], [])
+            return ScriptCallSignature(
+                endpoint: endpoint,
+                sourceScript: sourceScript,
+                methodCandidates: entry.methods.sorted(),
+                nearbyFieldNames: Array(entry.fields.sorted().prefix(40))
+            )
+        }
+    }
+
+    private static func extractMethods(from context: String) -> Set<String> {
+        let pattern = #"(?i)(?:method|type)\s*:\s*[\"'](GET|POST|PUT|DELETE|PATCH)[\"']|\.(get|post|put|delete|patch)\s*\("#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let nsContext = context as NSString
+        var methods = Set<String>()
+        for match in regex.matches(in: context, range: NSRange(location: 0, length: nsContext.length)) {
+            for index in 1..<match.numberOfRanges where match.range(at: index).location != NSNotFound {
+                methods.insert(nsContext.substring(with: match.range(at: index)).uppercased())
+            }
+        }
+        return methods
+    }
+
+    private static func extractFieldNames(from context: String) -> Set<String> {
+        let pattern = #"(?:[\"']([A-Za-z_][A-Za-z0-9_.-]{1,40})[\"']|([A-Za-z_][A-Za-z0-9_]{1,40}))\s*:"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let nsContext = context as NSString
+        let ignored: Set<String> = ["url", "method", "type", "headers", "data", "params", "timeout", "baseURL"]
+        var fields = Set<String>()
+        for match in regex.matches(in: context, range: NSRange(location: 0, length: nsContext.length)) {
+            for index in 1..<match.numberOfRanges where match.range(at: index).location != NSNotFound {
+                let field = nsContext.substring(with: match.range(at: index))
+                if !ignored.contains(field) { fields.insert(field) }
+                break
+            }
+        }
+        return fields
     }
 }
 
@@ -766,6 +854,7 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         let total = Double(probeDefs.count)
         var results: [EndpointProbeResult] = []
         var discoveredScriptAPIs: [String] = []
+        var scriptCallSignatures: [ScriptCallSignature] = []
         var scriptURLsToFetch: [URL] = []
 
         let concurrencyLimit = 6
@@ -819,10 +908,11 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         if !scriptURLsToFetch.isEmpty {
             onProgress?(0.95, "正在分析 \(scriptURLsToFetch.count) 个 JS 脚本中的隐藏 API...")
             for scriptURL in scriptURLsToFetch.prefix(3) {
-                let apis = await fetchScriptAndExtractAPIs(scriptURL: scriptURL)
-                for api in apis where !discoveredScriptAPIs.contains(api) {
+                let analysis = await fetchScriptAnalysis(scriptURL: scriptURL)
+                for api in analysis.apis where !discoveredScriptAPIs.contains(api) {
                     discoveredScriptAPIs.append(api)
                 }
+                mergeSignatures(analysis.signatures, into: &scriptCallSignatures)
             }
         }
 
@@ -840,7 +930,8 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
             appState: appState,
             screenshotBase64: screenshotBase64,
             endpoints: results,
-            discoveredScriptAPIs: discoveredScriptAPIs.isEmpty ? nil : discoveredScriptAPIs
+            discoveredScriptAPIs: discoveredScriptAPIs.isEmpty ? nil : discoveredScriptAPIs,
+            scriptCallSignatures: scriptCallSignatures.isEmpty ? nil : scriptCallSignatures
         )
     }
 
@@ -861,16 +952,36 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         return Array(scriptURLs.prefix(4))
     }
 
-    private func fetchScriptAndExtractAPIs(scriptURL: URL) async -> [String] {
+    private func fetchScriptAnalysis(scriptURL: URL) async -> (apis: [String], signatures: [ScriptCallSignature]) {
         var request = URLRequest(url: scriptURL)
-        request.timeoutInterval = 3.0
+        request.timeoutInterval = 5.0
         guard let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-              data.count <= 350 * 1024,
+              data.count <= 1_500 * 1024,
               let jsText = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
-            return []
+            return ([], [])
         }
-        return extractScriptAPIs(from: jsText)
+        return (
+            extractScriptAPIs(from: jsText),
+            DiagnosticScriptAnalyzer.analyze(jsText, sourceScript: scriptURL.path)
+        )
+    }
+
+    private func mergeSignatures(_ incoming: [ScriptCallSignature], into existing: inout [ScriptCallSignature]) {
+        for signature in incoming {
+            if let index = existing.firstIndex(where: {
+                $0.endpoint == signature.endpoint && $0.sourceScript == signature.sourceScript
+            }) {
+                existing[index] = ScriptCallSignature(
+                    endpoint: signature.endpoint,
+                    sourceScript: signature.sourceScript,
+                    methodCandidates: Array(Set(existing[index].methodCandidates + signature.methodCandidates)).sorted(),
+                    nearbyFieldNames: Array(Set(existing[index].nearbyFieldNames + signature.nearbyFieldNames)).sorted().prefix(40).map { $0 }
+                )
+            } else if existing.count < 30 {
+                existing.append(signature)
+            }
+        }
     }
 
     private func extractScriptAPIs(from htmlText: String) -> [String] {

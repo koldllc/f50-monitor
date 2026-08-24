@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::time::Duration;
 use tokio::task::JoinSet;
@@ -20,6 +21,15 @@ pub struct EndpointProbeResult {
     pub responseSnippet: String,
     pub isSuccess: bool,
     pub authUsed: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScriptCallSignature {
+    endpoint: String,
+    source_script: String,
+    method_candidates: Vec<String>,
+    nearby_field_names: Vec<String>,
 }
 
 async fn probe_one(
@@ -142,6 +152,7 @@ pub async fn execute_and_submit_feedback(
 
     let mut probe_results: Vec<EndpointProbeResult> = Vec::new();
     let mut discovered_apis: Vec<String> = Vec::new();
+    let mut script_call_signatures: Vec<ScriptCallSignature> = Vec::new();
 
     let host = base_url
         .replace("http://", "")
@@ -177,10 +188,19 @@ pub async fn execute_and_submit_feedback(
                     for script_url in extract_script_urls(&raw_text, &probe_result.url).into_iter().take(3) {
                         if let Ok(resp) = probe_client.get(&script_url).send().await {
                             if resp.status().is_success()
-                                && resp.content_length().unwrap_or(0) <= 350 * 1024 {
+                                && resp.content_length().unwrap_or(0) <= 1_500 * 1024 {
                                 let body = resp.text().await.unwrap_or_default();
-                                for api in extract_apis_from_html(&body) {
-                                    if !discovered_apis.contains(&api) { discovered_apis.push(api); }
+                                if body.len() <= 1_500 * 1024 {
+                                    for api in extract_apis_from_html(&body) {
+                                        if !discovered_apis.contains(&api) { discovered_apis.push(api); }
+                                    }
+                                    let source_script = reqwest::Url::parse(&script_url)
+                                        .map(|url| url.path().to_string())
+                                        .unwrap_or(script_url);
+                                    merge_call_signatures(
+                                        &mut script_call_signatures,
+                                        extract_call_signatures(&body, &source_script),
+                                    );
                                 }
                             }
                         }
@@ -220,7 +240,8 @@ pub async fn execute_and_submit_feedback(
             "firmwareVersion": extract_firmware_version(&probe_results)
         },
         "endpoints": probe_results,
-        "discoveredScriptAPIs": if discovered_apis.is_empty() { None } else { Some(discovered_apis) }
+        "discoveredScriptAPIs": if discovered_apis.is_empty() { None } else { Some(discovered_apis) },
+        "scriptCallSignatures": if script_call_signatures.is_empty() { None } else { Some(script_call_signatures) }
     });
     let payload_bytes = serde_json::to_vec(&payload).map_err(|e| format!("诊断数据序列化失败: {}", e))?;
     if payload_bytes.len() > 512 * 1024 {
@@ -267,6 +288,73 @@ fn extract_apis_from_html(html: &str) -> Vec<String> {
         }
     }
     found
+}
+
+fn extract_call_signatures(script: &str, source_script: &str) -> Vec<ScriptCallSignature> {
+    let Ok(endpoint_re) = regex::Regex::new(r"/(?:api|goform|reqproc|cgi-bin|ajax)/[a-zA-Z0-9_\-\./]+") else {
+        return Vec::new();
+    };
+    let method_re = regex::Regex::new(
+        r#"(?i)(?:method|type)\s*:\s*["'](GET|POST|PUT|DELETE|PATCH)["']|\.(get|post|put|delete|patch)\s*\("#,
+    ).ok();
+    let field_re = regex::Regex::new(
+        r#"(?:["']([A-Za-z_][A-Za-z0-9_.-]{1,40})["']|([A-Za-z_][A-Za-z0-9_]{1,40}))\s*:"#,
+    ).ok();
+    let ignored: BTreeSet<&str> = ["url", "method", "type", "headers", "data", "params", "timeout", "baseURL"]
+        .into_iter().collect();
+    let mut collected: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
+
+    for endpoint_match in endpoint_re.find_iter(script) {
+        let mut start = endpoint_match.start().saturating_sub(900);
+        let mut end = (endpoint_match.end() + 900).min(script.len());
+        while start < endpoint_match.start() && !script.is_char_boundary(start) { start += 1; }
+        while end > endpoint_match.end() && !script.is_char_boundary(end) { end -= 1; }
+        let context = &script[start..end];
+        let entry = collected.entry(endpoint_match.as_str().to_string()).or_default();
+
+        if let Some(re) = &method_re {
+            for captures in re.captures_iter(context) {
+                for index in 1..captures.len() {
+                    if let Some(value) = captures.get(index) {
+                        entry.0.insert(value.as_str().to_ascii_uppercase());
+                    }
+                }
+            }
+        }
+        if let Some(re) = &field_re {
+            for captures in re.captures_iter(context) {
+                let field = captures.get(1).or_else(|| captures.get(2)).map(|m| m.as_str());
+                if let Some(field) = field.filter(|field| !ignored.contains(*field)) {
+                    entry.1.insert(field.to_string());
+                }
+            }
+        }
+    }
+
+    collected.into_iter().take(30).map(|(endpoint, (methods, fields))| ScriptCallSignature {
+        endpoint,
+        source_script: source_script.to_string(),
+        method_candidates: methods.into_iter().collect(),
+        nearby_field_names: fields.into_iter().take(40).collect(),
+    }).collect()
+}
+
+fn merge_call_signatures(existing: &mut Vec<ScriptCallSignature>, incoming: Vec<ScriptCallSignature>) {
+    for signature in incoming {
+        if let Some(current) = existing.iter_mut().find(|current| {
+            current.endpoint == signature.endpoint && current.source_script == signature.source_script
+        }) {
+            current.method_candidates.extend(signature.method_candidates);
+            current.method_candidates.sort();
+            current.method_candidates.dedup();
+            current.nearby_field_names.extend(signature.nearby_field_names);
+            current.nearby_field_names.sort();
+            current.nearby_field_names.dedup();
+            current.nearby_field_names.truncate(40);
+        } else if existing.len() < 30 {
+            existing.push(signature);
+        }
+    }
 }
 
 fn active_channel_mode(results: &[EndpointProbeResult]) -> &'static str {

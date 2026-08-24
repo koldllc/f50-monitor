@@ -127,8 +127,11 @@ export default {
     if (rawPayload.endpoints !== undefined && (!Array.isArray(rawPayload.endpoints) || rawPayload.endpoints.some(item => !item || typeof item !== "object" || Array.isArray(item)))) {
       return jsonResponse({ success: false, error: "endpoints 必须是对象数组" }, 400, corsHeaders);
     }
-    if (rawPayload.discoveredScriptAPIs !== undefined && (!Array.isArray(rawPayload.discoveredScriptAPIs) || rawPayload.discoveredScriptAPIs.some(item => typeof item !== "string"))) {
+    if (rawPayload.discoveredScriptAPIs !== undefined && rawPayload.discoveredScriptAPIs !== null && (!Array.isArray(rawPayload.discoveredScriptAPIs) || rawPayload.discoveredScriptAPIs.some(item => typeof item !== "string"))) {
       return jsonResponse({ success: false, error: "discoveredScriptAPIs 必须是字符串数组" }, 400, corsHeaders);
+    }
+    if (rawPayload.scriptCallSignatures !== undefined && rawPayload.scriptCallSignatures !== null && !isValidScriptCallSignatures(rawPayload.scriptCallSignatures)) {
+      return jsonResponse({ success: false, error: "scriptCallSignatures 格式无效" }, 400, corsHeaders);
     }
     if (rawPayload.appState !== undefined && rawPayload.appState !== null && (typeof rawPayload.appState !== "object" || Array.isArray(rawPayload.appState))) {
       return jsonResponse({ success: false, error: "appState 必须是对象或 null" }, 400, corsHeaders);
@@ -151,7 +154,8 @@ export default {
       appState = null,
       screenshotBase64 = null,
       endpoints = [],
-      discoveredScriptAPIs = []
+      discoveredScriptAPIs = [],
+      scriptCallSignatures = []
     } = sanitizedPayload;
 
     // ID 只作为客户端幂等提示，不作为 KV 路径；服务端始终生成规范化 ID，避免覆盖任意记录。
@@ -234,6 +238,23 @@ ${appState.lastErrorMessage ? `- **最近连接错误**: \`${escapeMarkdown(mask
       issueBody += `
 ### 🌐 前端 JS 脚本中提取的 API 特征
 ${discoveredScriptAPIs.slice(0, 20).map(api => `- \`${escapeMarkdown(publicText(api, 160))}\``).join('\n')}
+`;
+    }
+
+    if (Array.isArray(scriptCallSignatures) && scriptCallSignatures.length > 0) {
+      issueBody += `
+### 🧩 前端 API 调用特征（仅字段名，不含值）
+${scriptCallSignatures.slice(0, 20).map(signature => {
+  const endpoint = escapeMarkdown(publicText(signature.endpoint, 160));
+  const source = escapeMarkdown(publicText(signature.sourceScript, 160));
+  const methods = Array.isArray(signature.methodCandidates)
+    ? signature.methodCandidates.slice(0, 5).map(item => escapeMarkdown(publicText(item, 12))).join("/")
+    : "未知";
+  const fields = Array.isArray(signature.nearbyFieldNames)
+    ? signature.nearbyFieldNames.slice(0, 40).map(item => escapeMarkdown(publicText(item, 50))).join(", ")
+    : "未识别";
+  return `- \`${endpoint}\` · \`${methods || "未知"}\` · 来源 \`${source}\` · 邻近字段：\`${fields || "未识别"}\``;
+}).join('\n')}
 `;
     }
 
@@ -379,6 +400,19 @@ function sanitizeServerSide(obj) {
     return res;
   }
   return obj;
+}
+
+function isValidScriptCallSignatures(value) {
+  if (!Array.isArray(value) || value.length > 30) return false;
+  return value.every(signature => {
+    if (!signature || typeof signature !== "object" || Array.isArray(signature)) return false;
+    if (typeof signature.endpoint !== "string" || signature.endpoint.length > 160) return false;
+    if (typeof signature.sourceScript !== "string" || signature.sourceScript.length > 160) return false;
+    const methods = signature.methodCandidates;
+    const fields = signature.nearbyFieldNames;
+    return Array.isArray(methods) && methods.length <= 5 && methods.every(item => typeof item === "string" && /^(GET|POST|PUT|DELETE|PATCH)$/i.test(item))
+      && Array.isArray(fields) && fields.length <= 40 && fields.every(item => typeof item === "string" && /^[A-Za-z_][A-Za-z0-9_.-]{1,40}$/.test(item));
+  });
 }
 
 function isSensitiveKey(key) {
