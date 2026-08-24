@@ -214,16 +214,19 @@ struct F50PanelView: View {
     @ObservedObject var updateManager: UpdateManager
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
     var onOpenSettings: () -> Void
+    var onOpenFileShare: () -> Void
     var onOpenSMS: () -> Void
     var onOpenFeedback: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
 
     init(
         fetcher: F50Fetcher,
         updateManager: UpdateManager,
         screenMirroringManager: ScreenMirroringManager,
         onOpenSettings: @escaping () -> Void,
+        onOpenFileShare: @escaping () -> Void,
         onOpenSMS: @escaping () -> Void,
         onOpenFeedback: @escaping () -> Void = {}
     ) {
@@ -231,6 +234,7 @@ struct F50PanelView: View {
         self.updateManager = updateManager
         self.screenMirroringManager = screenMirroringManager
         self.onOpenSettings = onOpenSettings
+        self.onOpenFileShare = onOpenFileShare
         self.onOpenSMS = onOpenSMS
         self.onOpenFeedback = onOpenFeedback
     }
@@ -898,6 +902,14 @@ struct F50PanelView: View {
             BackendMenuButton(
                 routerURLString: fetcher.routerURLString
             )
+
+            if isFileSharingEnabled {
+                PanelActionButton(action: onOpenFileShare, tooltip: "文件共享") {
+                    Image(systemName: "folder")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                }
+            }
 
             // Screen Mirroring Button
             if screenMirroringManager.isEnabled {

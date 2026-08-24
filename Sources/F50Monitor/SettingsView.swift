@@ -5,6 +5,7 @@ public struct SettingsView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
+    var onOpenFileShare: () -> Void = {}
     var onOpenFeedback: () -> Void = {}
     var onClose: () -> Void
     
@@ -16,17 +17,20 @@ public struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
+    @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
     
     init(
         fetcher: F50Fetcher,
         updateManager: UpdateManager,
         screenMirroringManager: ScreenMirroringManager,
+        onOpenFileShare: @escaping () -> Void = {},
         onOpenFeedback: @escaping () -> Void = {},
         onClose: @escaping () -> Void
     ) {
         self.fetcher = fetcher
         self.updateManager = updateManager
         self.screenMirroringManager = screenMirroringManager
+        self.onOpenFileShare = onOpenFileShare
         self.onOpenFeedback = onOpenFeedback
         self.onClose = onClose
     }
@@ -101,21 +105,40 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("访问 F50 共享文件")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("通过 Finder 打开已启用的 SMB 共享")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
+                    Text("启用文件共享功能")
+                        .font(.system(size: 12, weight: .semibold))
 
                     Spacer()
 
-                    Button("打开") {
-                        guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
-                        NSWorkspace.shared.open(url)
+                    Toggle("", isOn: $isFileSharingEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                if isFileSharingEnabled {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("访问 F50 共享文件")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("在 App 内浏览，支持拖拽上传和下载")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button("打开") {
+                            onOpenFileShare()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(F50Theme.blue)
+
+                        Button("Finder") {
+                            guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
+                            NSWorkspace.shared.open(url)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
             }
             .padding(12)

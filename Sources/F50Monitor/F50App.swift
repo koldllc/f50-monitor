@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var updateManager: UpdateManager!
     var screenMirroringManager: ScreenMirroringManager!
     private var initialSetupWindow: NSWindow?
+    private let fileShareWindowController = FileShareWindowController()
     private var cancellables = Set<AnyCancellable>()
     private let smsNotificationManager = SMSNotificationManager()
     
@@ -37,7 +38,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: F50PopoverView(
                 fetcher: fetcher,
                 updateManager: updateManager,
-                screenMirroringManager: screenMirroringManager
+                screenMirroringManager: screenMirroringManager,
+                onOpenFileShare: { [weak self] in
+                    self?.showFileShare()
+                }
             )
         )
         hostingController.sizingOptions = [.preferredContentSize]
@@ -106,6 +110,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         initialSetupWindow = window
+    }
+
+    private func showFileShare() {
+        popover.performClose(nil)
+        fileShareWindowController.show(baseURLString: fetcher.baseURLString)
     }
     
     @objc func togglePopover(_ sender: AnyObject?) {

@@ -5,6 +5,7 @@ struct F50PopoverView: View {
     @ObservedObject var fetcher: F50Fetcher
     @ObservedObject var updateManager: UpdateManager
     @ObservedObject var screenMirroringManager: ScreenMirroringManager
+    var onOpenFileShare: () -> Void
     @State private var isShowingSettings = false
     @State private var isShowingSMS = false
     @State private var isShowingFeedback = false
@@ -24,6 +25,7 @@ struct F50PopoverView: View {
                     fetcher: fetcher,
                     updateManager: updateManager,
                     screenMirroringManager: screenMirroringManager,
+                    onOpenFileShare: onOpenFileShare,
                     onOpenFeedback: {
                         isShowingSettings = false
                         isShowingFeedback = true
@@ -38,6 +40,7 @@ struct F50PopoverView: View {
                     updateManager: updateManager,
                     screenMirroringManager: screenMirroringManager,
                     onOpenSettings: { isShowingSettings = true },
+                    onOpenFileShare: onOpenFileShare,
                     onOpenSMS: { isShowingSMS = true },
                     onOpenFeedback: { isShowingFeedback = true }
                 )
