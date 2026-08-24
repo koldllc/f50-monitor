@@ -402,6 +402,10 @@ struct F50PanelView: View {
                     HStack(spacing: 5) {
                         carrierLogoView
                         Text(fetcher.status.carrier)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
+                            .layoutPriority(1)
                     }
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -516,60 +520,27 @@ struct F50PanelView: View {
 
     // MARK: - Subscription Banner
     private var subscriptionBanner: some View {
-        HStack(spacing: 8) {
-            Text("签约状态：")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+        let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
+        let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
+        let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
 
-            let qciVal = fetcher.status.qci.trimmingCharacters(in: .whitespaces)
-            let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
-            let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
-
-            if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
-                Text("无数据")
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("签约状态：")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
-            } else {
-                Text("QCI: \(qciVal.isEmpty ? "-" : qciVal)")
+                Text(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? "无数据" : "QCI: \(qciVal.isEmpty ? "-" : qciVal)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-
-                if !dlVal.isEmpty {
-                    HStack(spacing: 4) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(F50Theme.blue)
-                                .frame(width: 14, height: 14)
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 8, weight: .heavy))
-                                .foregroundColor(.white)
-                        }
-                        Text(dlVal)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.leading, 4)
-                }
-
-                if !ulVal.isEmpty {
-                    HStack(spacing: 4) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(F50Theme.blue)
-                                .frame(width: 14, height: 14)
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 8, weight: .heavy))
-                                .foregroundColor(.white)
-                        }
-                        Text(ulVal)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.leading, 2)
-                }
+                    .foregroundColor(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? .secondary : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            if !dlVal.isEmpty || !ulVal.isEmpty {
+                HStack(spacing: 10) {
+                    qosRate(dlVal, arrow: "arrow.down")
+                    qosRate(ulVal, arrow: "arrow.up")
+                }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -577,6 +548,26 @@ struct F50PanelView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.035))
         )
+    }
+
+    @ViewBuilder
+    private func qosRate(_ value: String, arrow: String) -> some View {
+        if !value.isEmpty {
+            HStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(F50Theme.blue)
+                        .frame(width: 14, height: 14)
+                    Image(systemName: arrow)
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundColor(.white)
+                }
+                Text(value)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
     }
 
     // MARK: - 2. Speeds Card with Waveform Sparkline
@@ -601,6 +592,9 @@ struct F50PanelView: View {
                         Text(F50Status.formatSpeed(fetcher.status.dlSpeed))
                             .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
                             .foregroundColor(F50Theme.green)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
                     }
                     Spacer()
                 }
@@ -636,6 +630,9 @@ struct F50PanelView: View {
                         Text(F50Status.formatSpeed(fetcher.status.ulSpeed))
                             .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
                             .foregroundColor(F50Theme.blue)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
                     }
                     Spacer()
                 }

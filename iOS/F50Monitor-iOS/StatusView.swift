@@ -284,6 +284,10 @@ struct StatusView: View {
                     HStack(spacing: 6) {
                         carrierLogoView
                         Text(status.carrier)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
+                            .layoutPriority(1)
                     }
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
@@ -421,60 +425,27 @@ struct StatusView: View {
     }
 
     private var subscriptionBanner: some View {
-        HStack(spacing: 8) {
-            Text("签约状态：")
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundColor(.secondary)
+        let qciVal = status.qci.trimmingCharacters(in: .whitespaces)
+        let dlVal = status.qosDl.trimmingCharacters(in: .whitespaces)
+        let ulVal = status.qosUl.trimmingCharacters(in: .whitespaces)
 
-            let qciVal = status.qci.trimmingCharacters(in: .whitespaces)
-            let dlVal = status.qosDl.trimmingCharacters(in: .whitespaces)
-            let ulVal = status.qosUl.trimmingCharacters(in: .whitespaces)
-
-            if qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty {
-                Text("无数据")
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("签约状态：")
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundColor(.secondary)
-            } else {
-                Text("QCI: \(qciVal.isEmpty ? "-" : qciVal)")
+                Text(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? "无数据" : "QCI: \(qciVal.isEmpty ? "-" : qciVal)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-
-                if !dlVal.isEmpty {
-                    HStack(spacing: 3.5) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .fill(F50Theme.blue)
-                                .frame(width: 15, height: 15)
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 8.5, weight: .heavy))
-                                .foregroundColor(.white)
-                        }
-                        Text(dlVal)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.leading, 2)
-                }
-
-                if !ulVal.isEmpty {
-                    HStack(spacing: 3.5) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .fill(F50Theme.blue)
-                                .frame(width: 15, height: 15)
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 8.5, weight: .heavy))
-                                .foregroundColor(.white)
-                        }
-                        Text(ulVal)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.leading, 1)
-                }
+                    .foregroundColor(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? .secondary : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            if !dlVal.isEmpty || !ulVal.isEmpty {
+                HStack(spacing: 12) {
+                    qosRate(dlVal, arrow: "arrow.down")
+                    qosRate(ulVal, arrow: "arrow.up")
+                }
+            }
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 6.5)
@@ -482,6 +453,26 @@ struct StatusView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.035))
         )
+    }
+
+    @ViewBuilder
+    private func qosRate(_ value: String, arrow: String) -> some View {
+        if !value.isEmpty {
+            HStack(spacing: 3.5) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 3.5)
+                        .fill(F50Theme.blue)
+                        .frame(width: 15, height: 15)
+                    Image(systemName: arrow)
+                        .font(.system(size: 8.5, weight: .heavy))
+                        .foregroundColor(.white)
+                }
+                Text(value)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
     }
 
     // MARK: - 2. 实时速率卡片
@@ -506,6 +497,9 @@ struct StatusView: View {
                         Text(F50Status.formatSpeed(status.dlSpeed))
                             .font(.system(size: 19.5, weight: .bold, design: .rounded).monospacedDigit())
                             .foregroundColor(F50Theme.green)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
                     }
                     Spacer()
                 }
@@ -543,6 +537,9 @@ struct StatusView: View {
                         Text(F50Status.formatSpeed(status.ulSpeed))
                             .font(.system(size: 19.5, weight: .bold, design: .rounded).monospacedDigit())
                             .foregroundColor(F50Theme.blue)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .allowsTightening(true)
                     }
                     Spacer()
                 }
