@@ -429,7 +429,7 @@ struct StatusView: View {
         let dlVal = status.qosDl.trimmingCharacters(in: .whitespaces)
         let ulVal = status.qosUl.trimmingCharacters(in: .whitespaces)
 
-        return VStack(alignment: .leading, spacing: 4) {
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("签约状态：")
                     .font(.system(size: 12.5, weight: .medium))
@@ -451,6 +451,7 @@ struct StatusView: View {
                 }
             }
         }
+        .lineLimit(1)
         .padding(.horizontal, 11)
         .padding(.vertical, 6.5)
         .background(
