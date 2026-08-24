@@ -2,6 +2,12 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  # The workflow is introduced on beta first. This narrow push trigger lets
+  # GitHub register and validate it before the Android code reaches main.
+  push:
+    branches: [beta]
+    paths:
+      - '.github/workflows/build-android.yml'
 
 permissions:
   contents: read
