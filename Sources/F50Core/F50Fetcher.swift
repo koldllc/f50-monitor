@@ -97,6 +97,11 @@ public class F50Fetcher: ObservableObject {
                     applyDemoData()
                 } else {
                     demoTick = 0
+                    // 退出演示模式后先清空模拟状态，避免真实设备连接失败时
+                    // 将残留的演示指标写入反馈或继续展示在 Widget 中。
+                    status = F50Status()
+                    updateEffectiveTrafficResetDay()
+                    F50WidgetDataStore.clear()
                     fetchData()
                     fetchSMSMessages()
                 }
