@@ -106,7 +106,14 @@ class MainActivity : Activity() {
             append("F50 Monitor\n\n")
             append("网络：").append(status.optString("networkType", "未知"))
                 .append(" / ").append(status.optString("carrier", "未知")).append('\n')
+            append("连接：").append(status.optString("pppStatus", "未知")).append('\n')
             append("信号：").append(status.optInt("signalBar", 0)).append("/5\n")
+            append("RSRP：").append(status.optString("rsrp", "N/A")).append('\n')
+            append("RSRQ：").append(status.optString("rsrq", "N/A")).append('\n')
+            append("SINR：").append(status.optString("snr", "N/A")).append('\n')
+            append("QCI：").append(status.optString("qci", "N/A").ifBlank { "N/A" }).append('\n')
+            append("QoS：↓ ").append(status.optString("qosDl", "N/A").ifBlank { "N/A" })
+                .append(" / ↑ ").append(status.optString("qosUl", "N/A").ifBlank { "N/A" }).append('\n')
             append("下载：").append(rate(status, "dlSpeed")).append('\n')
             append("上传：").append(rate(status, "ulSpeed")).append('\n')
             append("CPU：").append(percent(status, "cpuUsage")).append('\n')
@@ -114,7 +121,7 @@ class MainActivity : Activity() {
             append("温度：").append(status.optDouble("temperature", 0.0)).append(" °C\n")
             append("状态：").append(if (status.optBoolean("isOnline", false)) "在线" else "等待 Router 数据").append('\n')
             append("8787：").append(info.optString("host", "本机")).append(':').append(info.optInt("port", 8787)).append('\n')
-            append("\n提示：原生降级界面仅提供只读状态；完整界面需要系统 WebView。")
+            append("\n数据源：Android 本机只读遥测。频段、客户端数等仍需固件开放内部 Router 通道。")
         }
     }
 
