@@ -101,8 +101,8 @@ struct SMSListView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 8) {
-                            ForEach(fetcher.smsMessages) { message in
-                                messageRow(message)
+                            ForEach(groupedMessages, id: \.number) { group in
+                                messageGroup(group)
                             }
                         }
                     }
@@ -116,15 +116,30 @@ struct SMSListView: View {
         .onDisappear { fetcher.stopSMSAutoRefresh() }
     }
 
-    private func messageRow(_ message: F50SMSMessage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var groupedMessages: [(number: String, messages: [F50SMSMessage])] {
+        var groups: [(number: String, messages: [F50SMSMessage])] = []
+        for message in fetcher.smsMessages {
+            let number = message.number.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let index = groups.firstIndex(where: { $0.number == number }) {
+                groups[index].messages.append(message)
+            } else {
+                groups.append((number, [message]))
+            }
+        }
+        return groups
+    }
+
+    private func messageGroup(_ group: (number: String, messages: [F50SMSMessage])) -> some View {
+        let hasUnread = group.messages.contains(where: { $0.isUnread })
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
+                Image(systemName: "phone")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : F50Theme.green))
-                Text(message.number.isEmpty ? "未知号码" : message.number)
-                    .font(.system(size: 12, weight: message.isUnread ? .bold : .semibold, design: .rounded))
-                if message.isUnread {
+                    .foregroundColor(F50Theme.blue)
+                Text(group.number.isEmpty ? "未知号码" : group.number)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                if hasUnread {
                     Text("未读")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .padding(.horizontal, 5)
@@ -132,6 +147,30 @@ struct SMSListView: View {
                         .background(Capsule().fill(F50Theme.blue.opacity(0.15)))
                         .foregroundColor(F50Theme.blue)
                 }
+                Spacer()
+                Text("\(group.messages.count) 条")
+                    .font(.system(size: 9, design: .rounded).monospacedDigit())
+                    .foregroundColor(.secondary)
+            }
+
+            ForEach(group.messages) { message in
+                messageRow(message)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(hasUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04))
+        )
+    }
+
+    private func messageRow(_ message: F50SMSMessage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : F50Theme.green))
                 Spacer()
                 Text(message.dateText)
                     .font(.system(size: 9, design: .rounded).monospacedDigit())
@@ -165,11 +204,12 @@ struct SMSListView: View {
                 .padding(.top, 2)
             }
         }
-        .padding(10)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(message.isUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04))
+                .fill(message.isUnread ? F50Theme.blue.opacity(0.10) : Color.primary.opacity(0.03))
         )
         .contentShape(Rectangle())
         .onTapGesture {
