@@ -6,20 +6,15 @@
         <span class="card-title">套餐流量</span>
       </div>
 
-      <div class="title-right">
-        <span v-if="state.status.daysUntilReset !== null && state.status.daysUntilReset !== undefined" class="reset-badge">
-          {{ state.status.daysUntilReset === 0 ? '今天重置' : `${state.status.daysUntilReset}天后重置` }}
-        </span>
-      </div>
     </div>
 
-    <!-- Package Usage Line -->
+    <!-- Remaining & Usage Line -->
     <div class="traffic-header-line">
       <span class="usage-text">
-        已用流量：<strong>{{ formatBytes(computedTraffic.packageUsed) }}</strong>
+        剩余：<strong>{{ computedTraffic.limit > 0 ? formatBytes(Math.max(0, computedTraffic.limit - computedTraffic.packageUsed)) : '不限' }}</strong>
       </span>
       <span class="limit-text">
-        总流量：{{ computedTraffic.limit > 0 ? formatBytes(computedTraffic.limit) : '不限' }}
+        已用：{{ (computedTraffic.packageUsed / (1024 ** 3)).toFixed(2) }}/{{ computedTraffic.limit > 0 ? `${(computedTraffic.limit / (1024 ** 3)).toFixed(2)} GB` : '不限' }}
       </span>
     </div>
 
@@ -34,15 +29,15 @@
       ></div>
     </div>
 
-    <!-- Percentage badge & Reset day -->
-    <div class="traffic-sub-row" v-if="computedTraffic.limit > 0 || state.status.trafficResetDay > 0">
+    <!-- Usage percentage & Reset days -->
+    <div class="traffic-sub-row" v-if="computedTraffic.limit > 0 || state.status.daysUntilReset !== null && state.status.daysUntilReset !== undefined">
       <span v-if="computedTraffic.limit > 0" class="percent-badge" :style="{ color: computedTraffic.color, background: computedTraffic.color + '26' }">
-        {{ (computedTraffic.ratio * 100).toFixed(0) }}%
+        已用：{{ (computedTraffic.ratio * 100).toFixed(0) }}%
       </span>
       <span v-else></span>
 
-      <span v-if="state.status.trafficResetDay > 0" class="reset-day-hint">
-        每月 {{ state.status.trafficResetDay }} 日清零
+      <span v-if="state.status.daysUntilReset !== null && state.status.daysUntilReset !== undefined" class="reset-day-hint">
+        {{ state.status.daysUntilReset === 0 ? '今天重置' : `${state.status.daysUntilReset}天后重置` }}
       </span>
     </div>
 

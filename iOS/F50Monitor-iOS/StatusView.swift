@@ -582,24 +582,27 @@ struct StatusView: View {
                 Spacer()
             }
 
-            // Usage & Limit Line
+            // Remaining & Usage Line
             let packageUsed = status.packageTotal > 0
                 ? status.packageTotal
                 : status.monthlyTotal
+            let remaining = status.trafficLimit > packageUsed
+                ? status.trafficLimit - packageUsed
+                : 0
 
             HStack {
-                Text("已用流量：  \(F50Status.formatBytes(packageUsed))")
+                Text("剩余： \(status.trafficLimit > 0 ? F50Status.formatBytes(remaining) : "不限")")
                     .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundColor(.primary)
 
                 Spacer()
 
                 if status.trafficLimit > 0 {
-                    Text("总流量：  \(F50Status.formatBytes(status.trafficLimit))")
+                    Text(String(format: "已用：%.2f/%.2f GB", Double(packageUsed) / 1_073_741_824, Double(status.trafficLimit) / 1_073_741_824))
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundColor(.primary)
                 } else {
-                    Text("总流量：  不限")
+                    Text("已用： \(F50Status.formatBytes(packageUsed))/不限")
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundColor(.secondary)
                 }
@@ -612,10 +615,10 @@ struct StatusView: View {
                 height: 8
             )
 
-            // Percentage pill & Reset days
+            // Usage percentage & Reset days
             HStack(spacing: 6) {
                 if status.trafficLimit > 0 {
-                    Text(String(format: "%.0f%%", status.trafficUsageRatio * 100))
+                    Text(String(format: "已用：%.0f%%", status.trafficUsageRatio * 100))
                         .font(.system(size: 11.5, weight: .bold, design: .rounded))
                         .padding(.horizontal, 7.5)
                         .padding(.vertical, 2.5)

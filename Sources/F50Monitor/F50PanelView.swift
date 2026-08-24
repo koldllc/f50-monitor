@@ -676,24 +676,27 @@ struct F50PanelView: View {
                 Spacer()
             }
 
-            // Usage & Limit Line
+            // Remaining & Usage Line
             let packageUsed = fetcher.status.packageTotal > 0
                 ? fetcher.status.packageTotal
                 : fetcher.status.monthlyTotal
+            let remaining = fetcher.status.trafficLimit > packageUsed
+                ? fetcher.status.trafficLimit - packageUsed
+                : 0
 
             HStack {
-                Text("已用流量： \(F50Status.formatBytes(packageUsed))")
+                Text("剩余： \(fetcher.status.trafficLimit > 0 ? F50Status.formatBytes(remaining) : "不限")")
                     .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundColor(.primary)
 
                 Spacer()
 
                 if fetcher.status.trafficLimit > 0 {
-                    Text("总流量： \(F50Status.formatBytes(fetcher.status.trafficLimit))")
+                    Text(String(format: "已用：%.2f/%.2f GB", Double(packageUsed) / 1_073_741_824, Double(fetcher.status.trafficLimit) / 1_073_741_824))
                         .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundColor(.primary)
                 } else {
-                    Text("总流量： 不限")
+                    Text("已用： \(F50Status.formatBytes(packageUsed))/不限")
                         .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundColor(.secondary)
                 }
@@ -706,10 +709,10 @@ struct F50PanelView: View {
                 height: 6
             )
 
-            // Percentage pill & Reset days
+            // Usage percentage & Reset days
             HStack(spacing: 6) {
                 if fetcher.status.trafficLimit > 0 {
-                    Text(String(format: "%.0f%%", fetcher.status.trafficUsageRatio * 100))
+                    Text(String(format: "已用：%.0f%%", fetcher.status.trafficUsageRatio * 100))
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
