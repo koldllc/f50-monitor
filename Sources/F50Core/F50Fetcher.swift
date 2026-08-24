@@ -2593,17 +2593,27 @@ public class F50Fetcher: ObservableObject {
         // 避免设备把不适用的字段置 null 时真实值被短路掉（表现为三项全部 N/A）
         let rsrpKeys = ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp", "Nr_signal_strength"]
         let rsrqKeys = ["nr_rsrq", "Z5g_rsrq", "5g_rsrq", "lte_rsrq"]
-        let snrKeys = ["Nr_snr", "nr_snr", "Z5g_snr", "5g_snr", "lte_snr", "sinr", "nr_sinr", "5g_sinr", "lte_sinr"]
+        let snrKeys = ["nr_sinr", "5g_sinr", "lte_sinr", "sinr", "Nr_snr", "nr_snr", "Z5g_snr", "5g_snr", "lte_snr"]
 
-        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: rsrpKeys) {
-            newStatus.rsrp = "\(Int(num)) dBm"
+        if let reading = F50ResponseParser.firstValidSignalReading(in: dict, keys: rsrpKeys) {
+            newStatus.rsrp = "\(Int(reading.value)) dBm"
+            newStatus.rsrpSource = reading.sourceKey
         }
-        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: rsrqKeys) {
-            newStatus.rsrq = "\(Int(num)) dB"
+        if let reading = F50ResponseParser.firstValidSignalReading(in: dict, keys: rsrqKeys) {
+            newStatus.rsrq = "\(Int(reading.value)) dB"
+            newStatus.rsrqSource = reading.sourceKey
         }
-        if let num = F50ResponseParser.firstValidSignalValue(in: dict, keys: snrKeys) {
-            newStatus.snr = "\(Int(num)) dB"
+        if let reading = F50ResponseParser.firstValidSignalReading(in: dict, keys: snrKeys) {
+            newStatus.snr = "\(Int(reading.value)) dB"
+            newStatus.snrSource = reading.sourceKey
+            newStatus.snrMetricKind = reading.noiseKind ?? .unknown
         }
+
+        let identity = F50ResponseParser.parseServingCellIdentity(from: dict, networkType: parsedType)
+        newStatus.pci = identity.pci
+        newStatus.cellId = identity.cellId
+        newStatus.tac = identity.tac
+        newStatus.cellIdentitySource = identity.sourceSummary
 
         // QCI if returned by network
         if let val = dict["qci"] ?? dict["QCI"] ?? dict["5g_qci"] ?? dict["nr_qci"] {

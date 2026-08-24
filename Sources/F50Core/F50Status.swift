@@ -1,6 +1,12 @@
 import Foundation
 import SwiftUI
 
+public enum SignalNoiseMetricKind: String, Codable, Sendable {
+    case sinr = "SINR"
+    case snr = "SNR"
+    case unknown = "SINR / SNR"
+}
+
 public enum MenuBarDisplayMode: String, CaseIterable, Identifiable, Codable {
     case iconOnly = "仅图标"
     case speeds = "图标 + 速率"
@@ -22,8 +28,17 @@ public struct F50Status: Equatable, Codable {
     public var rsrp: String = "N/A"         // e.g. "-85 dBm"
     public var rsrq: String = "N/A"         // e.g. "-7 dB"
     public var snr: String = "N/A"          // e.g. "8 dB"
+    // 可选字段保证旧版 App Group JSON 仍可解码；来源键用于区分真实 SINR 与 SNR。
+    public var rsrpSource: String? = nil
+    public var rsrqSource: String? = nil
+    public var snrSource: String? = nil
+    public var snrMetricKind: SignalNoiseMetricKind? = nil
     public var carrier: String = "未知"     // e.g. "中国移动"
     public var currentBands: String = ""   // e.g. "B3 + n78"
+    public var pci: String? = nil
+    public var cellId: String? = nil
+    public var tac: String? = nil
+    public var cellIdentitySource: String? = nil
     public var pppStatus: String = "未连接"
 
     // QCI & Subscription Rates (Empty if not fetched from modem)
@@ -340,8 +355,16 @@ public struct F50Status: Equatable, Codable {
         s.rsrp = "-82 dBm"
         s.rsrq = "-7 dB"
         s.snr = "19 dB"
+        s.rsrpSource = "nr_rsrp"
+        s.rsrqSource = "nr_rsrq"
+        s.snrSource = "nr_sinr"
+        s.snrMetricKind = .sinr
         s.carrier = "中国移动"
         s.currentBands = "B3 + n78"
+        s.pci = "321"
+        s.cellId = "0x01A2B3C4"
+        s.tac = "1024"
+        s.cellIdentitySource = "Demo"
         s.pppStatus = "已连接"
 
         s.qci = "9 (默认互联网承载)"

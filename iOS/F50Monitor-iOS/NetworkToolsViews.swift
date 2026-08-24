@@ -24,7 +24,15 @@ private extension TelemetrySample {
             band: status.currentBands.isEmpty ? nil : status.currentBands,
             temperature: status.temperature > 0 ? status.temperature : nil,
             downloadBytesPerSecond: status.dlSpeed,
-            uploadBytesPerSecond: status.ulSpeed
+            uploadBytesPerSecond: status.ulSpeed,
+            pci: status.pci,
+            cellId: status.cellId,
+            tac: status.tac,
+            rsrpSource: status.rsrpSource,
+            rsrqSource: status.rsrqSource,
+            snrSource: status.snrSource,
+            snrKind: status.snrMetricKind ?? .unknown,
+            dataAgeSeconds: max(0, timestamp.timeIntervalSince(status.lastUpdated))
         )
     }
 }
@@ -155,10 +163,16 @@ struct SignalLabView: View {
                     ProgressView(value: Double(session.insight.score.value), total: 100)
                         .tint(scoreColor)
 
+                    HStack(spacing: 8) {
+                        scoreChip("信号强度", session.insight.score.strengthScore)
+                        scoreChip("干扰质量", session.insight.score.interferenceScore)
+                        scoreChip("稳定性", session.insight.sampleCount >= 4 ? session.insight.stabilityScore : nil)
+                    }
+
                     HStack {
                         metric("RSRP", fetcher.status.rsrp)
                         Divider()
-                        metric("SINR / SNR", fetcher.status.snr)
+                        metric(session.insight.noiseMetricKind.rawValue, fetcher.status.snr)
                         Divider()
                         metric("RSRQ", fetcher.status.rsrq)
                     }
@@ -168,14 +182,36 @@ struct SignalLabView: View {
                         if !fetcher.status.currentBands.isEmpty {
                             Text(fetcher.status.currentBands)
                         }
+                        if let pci = fetcher.status.pci {
+                            Text("PCI \(pci)")
+                        }
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+
+                    if fetcher.status.cellId != nil || fetcher.status.tac != nil {
+                        HStack(spacing: 10) {
+                            if let cellId = fetcher.status.cellId { Text("Cell ID \(cellId)") }
+                            if let tac = fetcher.status.tac { Text("TAC \(tac)") }
+                        }
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    }
+
+                    if let source = fetcher.status.cellIdentitySource {
+                        Text("小区来源：\(source)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(dataQualityText)
+                        .font(.caption2)
+                        .foregroundStyle(session.insight.score.isStale ? .orange : .secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             } footer: {
-                Text("评分依据最近采集的 RSRP、SINR/SNR 与 RSRQ；指标缺失时会降低可信度。当前固件未提供 PCI 时不会推测该值。")
+                Text("评分依据最近采集的 RSRP、SINR/SNR 与 RSRQ；指标缺失或数据陈旧时会降低可信度。固件未提供 PCI、Cell ID 或 TAC 时不会推测。")
             }
 
             Section {
@@ -210,7 +246,7 @@ struct SignalLabView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(session.insight.score.confidence == 0)
+                    .disabled(session.insight.score.confidence < 0.5)
                 }
             } header: {
                 Text("找信号最佳位置")
@@ -284,6 +320,27 @@ struct SignalLabView: View {
             Text(value).font(.caption.weight(.bold).monospacedDigit()).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func scoreChip(_ title: String, _ value: Int?) -> some View {
+        VStack(spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value.map { String($0) } ?? "--")
+                .font(.subheadline.bold().monospacedDigit())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var dataQualityText: String {
+        let confidence = Int((session.insight.score.confidence * 100).rounded())
+        let sources = Int((session.insight.score.sourceCoverage * 100).rounded())
+        let sourceNames = [fetcher.status.rsrpSource, fetcher.status.snrSource, fetcher.status.rsrqSource]
+            .compactMap { $0 }
+            .joined(separator: " / ")
+        let suffix = sourceNames.isEmpty ? "来源未标记" : sourceNames
+        return "可信度 \(confidence)% · 来源完整度 \(sources)% · \(suffix)"
     }
 }
 
@@ -422,6 +479,7 @@ struct NetworkDoctorView: View {
                     DoctorSummaryRow(title: "采样", value: "\(session.report.sampleCount) 次")
                     DoctorSummaryRow(title: "5G 在线率", value: "\(Int((session.report.fiveGOnlineRate * 100).rounded()))%")
                     DoctorSummaryRow(title: "网络切换", value: "\(session.report.switchSummary.total) 次")
+                    DoctorSummaryRow(title: "频段/小区变化", value: "\(session.report.cellularChanges?.count ?? 0) 次")
                     DoctorSummaryRow(title: "5G → LTE", value: "\(session.report.switchSummary.fiveGToLTE) 次")
                     DoctorSummaryRow(title: "LTE → 5G", value: "\(session.report.switchSummary.lteToFiveG) 次")
                 }
@@ -463,6 +521,19 @@ struct NetworkDoctorView: View {
                         }
                     }
                 }
+                if let changes = session.report.cellularChanges, !changes.isEmpty {
+                    Section("频段与小区时间线") {
+                        ForEach(Array(changes.reversed().enumerated()), id: \.offset) { _, event in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(changeKindText(event.kind))：\(event.from) → \(event.to)")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(event.timestamp.formatted(date: .omitted, time: .standard))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Network Doctor")
@@ -476,6 +547,15 @@ struct NetworkDoctorView: View {
         case 0.75...: return "可信度较高"
         case 0.5...: return "可信度中等"
         default: return "仅供参考"
+        }
+    }
+
+    private func changeKindText(_ kind: CellularChangeKind) -> String {
+        switch kind {
+        case .band: return "频段"
+        case .pci: return "PCI"
+        case .cellId: return "Cell ID"
+        case .tac: return "TAC"
         }
     }
 }

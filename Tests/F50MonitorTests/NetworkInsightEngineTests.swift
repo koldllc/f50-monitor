@@ -12,7 +12,13 @@ final class NetworkInsightEngineTests: XCTestCase {
         temperature: Double? = 40,
         latency: Double? = 30,
         loss: Double? = 0,
-        download: Double = 100
+        download: Double = 100,
+        band: String? = "n78",
+        pci: String? = nil,
+        cellId: String? = nil,
+        tac: String? = nil,
+        withSources: Bool = false,
+        dataAge: Double? = nil
     ) -> TelemetrySample {
         TelemetrySample(
             timestamp: Date(timeIntervalSince1970: second),
@@ -21,11 +27,19 @@ final class NetworkInsightEngineTests: XCTestCase {
             rsrp: rsrp,
             rsrq: rsrq,
             snr: snr,
-            band: "n78",
+            band: band,
             temperature: temperature,
             downloadBytesPerSecond: download,
             latencyMilliseconds: latency,
-            packetLossPercent: loss
+            packetLossPercent: loss,
+            pci: pci,
+            cellId: cellId,
+            tac: tac,
+            rsrpSource: withSources ? "nr_rsrp" : nil,
+            rsrqSource: withSources ? "nr_rsrq" : nil,
+            snrSource: withSources ? "nr_sinr" : nil,
+            snrKind: withSources ? .sinr : .unknown,
+            dataAgeSeconds: dataAge
         )
     }
 
@@ -49,6 +63,19 @@ final class NetworkInsightEngineTests: XCTestCase {
             return sample(Double($0), rsrp: -92 + Double(offset), snr: 13 + Double(offset))
         })
         XCTAssertEqual(improving.liveInsight.trend, .up)
+    }
+
+    func testScoreExposesSubscoresSourcesAndStaleConfidence() {
+        let engine = NetworkInsightEngine()
+        let fresh = engine.signalScore(for: sample(0, withSources: true))
+        XCTAssertNotNil(fresh.strengthScore)
+        XCTAssertNotNil(fresh.interferenceScore)
+        XCTAssertEqual(fresh.sourceCoverage, 1, accuracy: 0.001)
+        XCTAssertFalse(fresh.isStale)
+
+        let stale = engine.signalScore(for: sample(0, withSources: true, dataAge: 45))
+        XCTAssertTrue(stale.isStale)
+        XCTAssertEqual(stale.confidence, 0.2, accuracy: 0.001)
     }
 
     func testLocationComparisonRanksByScoreAndReportsDownloadImprovement() {
@@ -91,6 +118,21 @@ final class NetworkInsightEngineTests: XCTestCase {
         ]
         let report = NetworkInsightEngine(samples: samples).diagnose()
         XCTAssertEqual(report.switchSummary.total, 0)
+    }
+
+    func testDoctorConfirmsBandAndCellChangesAfterThreeSamples() {
+        let samples = [
+            sample(0, band: "n78", pci: "100", cellId: "A"),
+            sample(2, band: "n78", pci: "100", cellId: "A"),
+            sample(4, band: "n78", pci: "100", cellId: "A"),
+            sample(6, band: "n41", pci: "200", cellId: "B"),
+            sample(8, band: "n41", pci: "200", cellId: "B"),
+            sample(10, band: "n41", pci: "200", cellId: "B")
+        ]
+        let report = NetworkInsightEngine(samples: samples).diagnose()
+        XCTAssertEqual(report.cellularChanges?.filter { $0.kind == .band }.count, 1)
+        XCTAssertEqual(report.cellularChanges?.filter { $0.kind == .pci }.count, 1)
+        XCTAssertEqual(report.cellularChanges?.filter { $0.kind == .cellId }.count, 1)
     }
 
     func testDoctorSeparatesPossibleOverheatingFromRadioQuality() {

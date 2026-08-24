@@ -17,6 +17,12 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
     public let packetLossPercent: Double?
     public let pci: String?
     public let cellId: String?
+    public let tac: String?
+    public let rsrpSource: String?
+    public let rsrqSource: String?
+    public let snrSource: String?
+    public let snrKind: SignalNoiseMetricKind
+    public let dataAgeSeconds: Double?
 
     public init(
         timestamp: Date = Date(),
@@ -32,7 +38,13 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         latencyMilliseconds: Double? = nil,
         packetLossPercent: Double? = nil,
         pci: String? = nil,
-        cellId: String? = nil
+        cellId: String? = nil,
+        tac: String? = nil,
+        rsrpSource: String? = nil,
+        rsrqSource: String? = nil,
+        snrSource: String? = nil,
+        snrKind: SignalNoiseMetricKind = .unknown,
+        dataAgeSeconds: Double? = nil
     ) {
         self.timestamp = timestamp
         self.online = online
@@ -48,6 +60,12 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         self.packetLossPercent = packetLossPercent.map { min(100, max(0, $0)) }
         self.pci = pci
         self.cellId = cellId
+        self.tac = tac
+        self.rsrpSource = rsrpSource
+        self.rsrqSource = rsrqSource
+        self.snrSource = snrSource
+        self.snrKind = snrKind
+        self.dataAgeSeconds = dataAgeSeconds.map { max(0, $0) }
     }
 
     public var is5G: Bool {
@@ -69,17 +87,32 @@ public struct SignalScore: Codable, Equatable, Sendable {
     public let rsrpComponent: Double?
     public let snrComponent: Double?
     public let rsrqComponent: Double?
+    public let sourceCoverage: Double
+    public let isStale: Bool
 
-    public init(value: Int, confidence: Double, rsrpComponent: Double?, snrComponent: Double?, rsrqComponent: Double?) {
+    public init(value: Int, confidence: Double, rsrpComponent: Double?, snrComponent: Double?, rsrqComponent: Double?, sourceCoverage: Double = 0, isStale: Bool = false) {
         self.value = min(100, max(0, value))
         self.confidence = min(1, max(0, confidence))
         self.rsrpComponent = rsrpComponent
         self.snrComponent = snrComponent
         self.rsrqComponent = rsrqComponent
+        self.sourceCoverage = min(1, max(0, sourceCoverage))
+        self.isStale = isStale
     }
 
     /// Alias for callers that present the value as “信号评分”.
     public var score: Int { value }
+
+    public var strengthScore: Int? { rsrpComponent.map { Int($0.rounded()) } }
+
+    public var interferenceScore: Int? {
+        let values = [(snrComponent, 2.0), (rsrqComponent, 1.0)].compactMap { item in
+            item.0.map { ($0, item.1) }
+        }
+        guard !values.isEmpty else { return nil }
+        let totalWeight = values.reduce(0) { $0 + $1.1 }
+        return Int((values.reduce(0) { $0 + $1.0 * $1.1 } / totalWeight).rounded())
+    }
 }
 
 public struct LiveSignalInsight: Codable, Equatable, Sendable {
@@ -88,13 +121,17 @@ public struct LiveSignalInsight: Codable, Equatable, Sendable {
     public let fiveGOnlineRate: Double
     public let recommendation: String
     public let sampleCount: Int
+    public let stabilityScore: Int
+    public let noiseMetricKind: SignalNoiseMetricKind
 
-    public init(score: SignalScore, trend: SignalTrend, fiveGOnlineRate: Double, recommendation: String, sampleCount: Int) {
+    public init(score: SignalScore, trend: SignalTrend, fiveGOnlineRate: Double, recommendation: String, sampleCount: Int, stabilityScore: Int, noiseMetricKind: SignalNoiseMetricKind) {
         self.score = score
         self.trend = trend
         self.fiveGOnlineRate = fiveGOnlineRate
         self.recommendation = recommendation
         self.sampleCount = sampleCount
+        self.stabilityScore = min(100, max(0, stabilityScore))
+        self.noiseMetricKind = noiseMetricKind
     }
 }
 
@@ -123,6 +160,27 @@ public struct NetworkSwitchSummary: Codable, Equatable, Sendable {
         self.lteToFiveG = lteToFiveG
         self.other = other
         self.events = events
+    }
+}
+
+public enum CellularChangeKind: String, Codable, Equatable, Sendable {
+    case band
+    case pci
+    case cellId
+    case tac
+}
+
+public struct CellularChangeEvent: Codable, Equatable, Sendable {
+    public let timestamp: Date
+    public let kind: CellularChangeKind
+    public let from: String
+    public let to: String
+
+    public init(timestamp: Date, kind: CellularChangeKind, from: String, to: String) {
+        self.timestamp = timestamp
+        self.kind = kind
+        self.from = from
+        self.to = to
     }
 }
 
@@ -194,14 +252,17 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     public let fiveGOnlineRate: Double
     public let switchSummary: NetworkSwitchSummary
     public let findings: [DoctorFinding]
+    // 可选以兼容第一阶段已保存的本地报告。
+    public let cellularChanges: [CellularChangeEvent]?
 
-    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding]) {
+    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]? = nil) {
         self.start = start
         self.end = end
         self.sampleCount = sampleCount
         self.fiveGOnlineRate = fiveGOnlineRate
         self.switchSummary = switchSummary
         self.findings = findings
+        self.cellularChanges = cellularChanges
     }
 
     public var primaryFinding: DoctorFinding? { findings.first }
@@ -230,9 +291,12 @@ public final class NetworkInsightEngine: @unchecked Sendable {
     public var liveInsight: LiveSignalInsight {
         let score = signalScore(for: smoothedSample(from: samples))
         let currentTrend = trend(for: samples)
+        let stability = stabilityScore(in: samples)
         let recommendationText: String
         if samples.last?.online == false {
             recommendationText = "设备当前未在线，请先检查连接"
+        } else if score.isStale {
+            recommendationText = "数据已陈旧，请等待设备刷新"
         } else {
             recommendationText = recommendation(for: score, trend: currentTrend)
         }
@@ -241,7 +305,9 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             trend: currentTrend,
             fiveGOnlineRate: fiveGRate(in: samples),
             recommendation: recommendationText,
-            sampleCount: samples.count
+            sampleCount: samples.count,
+            stabilityScore: stability,
+            noiseMetricKind: samples.last?.snrKind ?? .unknown
         )
     }
 
@@ -261,24 +327,34 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         }
         let totalWeight = available.reduce(0) { $0 + $1.1 }
         let value = available.reduce(0) { $0 + $1.0 * $1.1 } / totalWeight
+        let availableSources = [
+            sample.rsrp == nil ? nil : sample.rsrpSource,
+            sample.snr == nil ? nil : sample.snrSource,
+            sample.rsrq == nil ? nil : sample.rsrqSource
+        ]
+        let sourceCoverage = Double(availableSources.compactMap { $0 }.count) / Double(available.count)
+        let age = sample.dataAgeSeconds ?? 0
+        let freshnessFactor = age <= 10 ? 1.0 : (age <= 30 ? 0.5 : 0.2)
         return SignalScore(
             value: Int(value.rounded()),
-            confidence: totalWeight / 100,
+            confidence: totalWeight / 100 * freshnessFactor,
             rsrpComponent: components[0].0,
             snrComponent: components[1].0,
-            rsrqComponent: components[2].0
+            rsrqComponent: components[2].0,
+            sourceCoverage: sourceCoverage,
+            isStale: age > 10
         )
     }
 
     public func makeLocationReport(name: String, samples: [TelemetrySample]) -> LocationReport {
         let ordered = samples.sorted { $0.timestamp < $1.timestamp }
-        let onlineSamples = ordered.filter(\.online)
+        let onlineSamples = ordered.filter { $0.online && ($0.dataAgeSeconds ?? 0) <= 10 }
         let scores = onlineSamples.map { signalScore(for: $0) }
         let avgScore = weightedAverage(scores.map { Double($0.value) }) ?? 0
         let latency = average(ordered.compactMap(\.latencyMilliseconds))
         let loss = average(ordered.compactMap(\.packetLossPercent))
         let fiveGRate = fiveGRate(in: ordered)
-        let switches = switchSummary(in: ordered).total
+        let switches = switchSummary(in: ordered).total + cellularChangeEvents(in: ordered).count
         let stabilityScore = max(0, 100 - Double(switches) * 25)
         let compositeScore = avgScore * 0.7 + fiveGRate * 100 * 0.2 + stabilityScore * 0.1
         return LocationReport(
@@ -315,15 +391,22 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         } else {
             selected = []
         }
-        let summary = switchSummary(in: selected)
+        let freshSamples = selected.filter { ($0.dataAgeSeconds ?? 0) <= 10 }
+        let summary = switchSummary(in: freshSamples)
+        let cellChanges = cellularChangeEvents(in: freshSamples)
         var findings: [DoctorFinding] = []
         guard !selected.isEmpty else {
             findings.append(DoctorFinding(category: .insufficientData, title: "数据不足", summary: "还没有可用于分析的网络采样。", evidence: [], confidence: 0))
             return DoctorReport(start: nil, end: nil, sampleCount: 0, fiveGOnlineRate: 0, switchSummary: summary, findings: findings)
         }
 
-        let rsrp = selected.compactMap(\.rsrp)
-        let snr = selected.compactMap(\.snr)
+        guard !freshSamples.isEmpty else {
+            findings.append(DoctorFinding(category: .insufficientData, title: "数据已陈旧", summary: "现有采样已经过期，暂时不能可靠判断网络原因。", evidence: ["请保持工具页在前台等待新数据"], confidence: 0))
+            return DoctorReport(start: selected.first?.timestamp, end: selected.last?.timestamp, sampleCount: selected.count, fiveGOnlineRate: 0, switchSummary: summary, findings: findings, cellularChanges: cellChanges)
+        }
+
+        let rsrp = freshSamples.compactMap(\.rsrp)
+        let snr = freshSamples.compactMap(\.snr)
         let avgRSRP = average(rsrp)
         let snrDeviation = standardDeviation(snr)
         if let avgRSRP, avgRSRP < -105 {
@@ -336,16 +419,19 @@ public final class NetworkInsightEngine: @unchecked Sendable {
                 findings.append(DoctorFinding(category: .interference, title: "可能存在无线干扰", summary: "RSRP 相对稳定，但 SINR/SNR 波动较大，更可能是无线干扰。", evidence: ["平均 RSRP：\(format(avgRSRP)) dBm", "SINR/SNR 波动：\(format(snrDeviation)) dB"], confidence: min(0.9, 0.55 + snrDeviation / 20)))
             }
         }
-        if summary.total >= 3 {
-            findings.append(DoctorFinding(category: .frequentSwitching, title: "网络切换频繁", summary: "最近采样期间发生多次制式切换，可能造成短时不稳定。", evidence: ["网络切换：\(summary.total) 次", "5G → LTE：\(summary.fiveGToLTE) 次", "LTE → 5G：\(summary.lteToFiveG) 次"], confidence: min(0.95, 0.5 + Double(summary.total) / 20)))
+        let totalChanges = summary.total + cellChanges.count
+        if totalChanges >= 3 {
+            let bandChanges = cellChanges.filter { $0.kind == .band }.count
+            let identityChanges = cellChanges.filter { $0.kind == .pci || $0.kind == .cellId }.count
+            findings.append(DoctorFinding(category: .frequentSwitching, title: "小区或制式切换频繁", summary: "最近采样期间发生多次可确认切换，可能造成短时不稳定。", evidence: ["制式切换：\(summary.total) 次", "频段切换：\(bandChanges) 次", "小区标识切换：\(identityChanges) 次", "5G → LTE：\(summary.fiveGToLTE) 次", "LTE → 5G：\(summary.lteToFiveG) 次"], confidence: min(0.95, 0.5 + Double(totalChanges) / 20)))
         }
-        let temperatures = selected.compactMap(\.temperature)
+        let temperatures = freshSamples.compactMap(\.temperature)
         if let maxTemperature = temperatures.max(), maxTemperature >= 65 {
             findings.append(DoctorFinding(category: .possibleOverheating, title: "可能过热", summary: "设备温度偏高，可能与性能下降同时出现；仅凭采样不能证明因果关系。", evidence: ["最高温度：\(format(maxTemperature)) ℃"], confidence: min(0.95, 0.55 + (maxTemperature - 65) / 40)))
         }
         if let avgRSRP, avgRSRP >= -100 {
-            let latency = average(selected.compactMap(\.latencyMilliseconds))
-            let loss = average(selected.compactMap(\.packetLossPercent))
+            let latency = average(freshSamples.compactMap(\.latencyMilliseconds))
+            let loss = average(freshSamples.compactMap(\.packetLossPercent))
             if (latency ?? 0) >= 120 || (loss ?? 0) >= 5 {
                 var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm"]
                 if let latency { evidence.append("平均延迟：\(format(latency)) ms") }
@@ -353,13 +439,13 @@ public final class NetworkInsightEngine: @unchecked Sendable {
                 findings.append(DoctorFinding(category: .networkQuality, title: "无线信号尚可但网络质量较差", summary: "无线指标不差，但延迟或丢包偏高，更可能是拥塞、回程或上层网络问题。", evidence: evidence, confidence: 0.65))
             }
         }
-        return makeDoctorReport(selected: selected, summary: summary, findings: findings)
+        return makeDoctorReport(selected: freshSamples, summary: summary, findings: findings, cellularChanges: cellChanges)
     }
 
-    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding]) -> DoctorReport {
+    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]) -> DoctorReport {
         let sortedFindings = findings.sorted { $0.confidence > $1.confidence }
         let dates = selected.map(\.timestamp)
-        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings)
+        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings, cellularChanges: cellularChanges)
     }
 
     private func trend(for values: [TelemetrySample]) -> SignalTrend {
@@ -387,6 +473,76 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         let online = values.filter(\.online)
         guard !online.isEmpty else { return 0 }
         return Double(online.filter(\.is5G).count) / Double(online.count)
+    }
+
+    private func stabilityScore(in values: [TelemetrySample]) -> Int {
+        let window = Array(values.suffix(12)).filter { ($0.dataAgeSeconds ?? 0) <= 10 }
+        guard window.count >= 4 else { return 0 }
+        let scores = window.map { Double(signalScore(for: $0).value) }
+        let deviationPenalty = min(55, (standardDeviation(scores) ?? 0) * 5)
+        let changeCount = switchSummary(in: window).total + cellularChangeEvents(in: window).count
+        let changePenalty = min(45, Double(changeCount) * 15)
+        return Int(max(0, 100 - deviationPenalty - changePenalty).rounded())
+    }
+
+    private func cellularChangeEvents(in values: [TelemetrySample]) -> [CellularChangeEvent] {
+        let ordered = values.sorted { $0.timestamp < $1.timestamp }.filter(\.online)
+        return (
+            confirmedChangeEvents(kind: .band, samples: ordered, value: { $0.band })
+            + confirmedChangeEvents(kind: .pci, samples: ordered, value: { $0.pci })
+            + confirmedChangeEvents(kind: .cellId, samples: ordered, value: { $0.cellId })
+            + confirmedChangeEvents(kind: .tac, samples: ordered, value: { $0.tac })
+        ).sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private func confirmedChangeEvents(
+        kind: CellularChangeKind,
+        samples: [TelemetrySample],
+        value: (TelemetrySample) -> String?
+    ) -> [CellularChangeEvent] {
+        var confirmed: String?
+        var candidate: String?
+        var candidateStartedAt: Date?
+        var candidateCount = 0
+        var events: [CellularChangeEvent] = []
+
+        for sample in samples {
+            guard let current = value(sample)?.trimmingCharacters(in: .whitespacesAndNewlines), !current.isEmpty else {
+                candidate = nil
+                candidateStartedAt = nil
+                candidateCount = 0
+                continue
+            }
+            guard let confirmedValue = confirmed else {
+                confirmed = current
+                continue
+            }
+            if current == confirmedValue {
+                candidate = nil
+                candidateStartedAt = nil
+                candidateCount = 0
+                continue
+            }
+            if candidate == current {
+                candidateCount += 1
+            } else {
+                candidate = current
+                candidateStartedAt = sample.timestamp
+                candidateCount = 1
+            }
+            guard candidateCount >= 3 else { continue }
+            events.append(CellularChangeEvent(
+                timestamp: candidateStartedAt ?? sample.timestamp,
+                kind: kind,
+                from: confirmedValue,
+                to: current
+            ))
+            confirmed = current
+            candidate = nil
+            candidateStartedAt = nil
+            candidateCount = 0
+        }
+        return events
     }
 
     private func switchSummary(in values: [TelemetrySample]) -> NetworkSwitchSummary {
@@ -454,7 +610,13 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             latencyMilliseconds: latest.latencyMilliseconds,
             packetLossPercent: latest.packetLossPercent,
             pci: latest.pci,
-            cellId: latest.cellId
+            cellId: latest.cellId,
+            tac: latest.tac,
+            rsrpSource: latest.rsrpSource,
+            rsrqSource: latest.rsrqSource,
+            snrSource: latest.snrSource,
+            snrKind: latest.snrKind,
+            dataAgeSeconds: latest.dataAgeSeconds
         )
     }
 

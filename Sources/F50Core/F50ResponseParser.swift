@@ -7,6 +7,19 @@ struct ParsedQos: Equatable {
     let uplink: String
 }
 
+struct SignalMetricReading: Equatable {
+    let value: Double
+    let sourceKey: String
+    let noiseKind: SignalNoiseMetricKind?
+}
+
+struct ParsedServingCellIdentity: Equatable {
+    let pci: String?
+    let cellId: String?
+    let tac: String?
+    let sourceSummary: String?
+}
+
 enum F50ResponseParser {
     static func requiresUFISupplement(_ payload: [String: Any]) -> Bool {
         let hasRSRP = firstValidSignalValue(
@@ -309,14 +322,81 @@ enum F50ResponseParser {
     /// - 跳过 null / "0" / 无效值：设备在 NSA/4G 等状态下会把不适用的字段置为
     ///   null 或 0，若用 `??` 链会因首键命中无效值而短路，真实值永远读不到。
     static func firstValidSignalValue(in dict: [String: Any], keys: [String]) -> Double? {
-        var lowercased: [String: Any] = [:]
+        firstValidSignalReading(in: dict, keys: keys)?.value
+    }
+
+    static func firstValidSignalReading(in dict: [String: Any], keys: [String]) -> SignalMetricReading? {
+        var lowercased: [String: (key: String, value: Any)] = [:]
         for (key, value) in dict {
-            lowercased[key.lowercased()] = value
+            lowercased[key.lowercased()] = (key, value)
         }
         for key in keys {
-            guard let value = lowercased[key.lowercased()] else { continue }
-            let num = parseDouble(value)
-            if num != 0 { return num }
+            guard let match = lowercased[key.lowercased()] else { continue }
+            let num = parseDouble(match.value)
+            guard num != 0 else { continue }
+            let lowerKey = match.key.lowercased()
+            let noiseKind: SignalNoiseMetricKind?
+            if lowerKey.contains("sinr") {
+                noiseKind = .sinr
+            } else if lowerKey.contains("snr") {
+                noiseKind = .snr
+            } else {
+                noiseKind = nil
+            }
+            return SignalMetricReading(value: num, sourceKey: match.key, noiseKind: noiseKind)
+        }
+        return nil
+    }
+
+    static func parseServingCellIdentity(
+        from dict: [String: Any],
+        networkType: String
+    ) -> ParsedServingCellIdentity {
+        let nrPCI = ["nr_pci", "nr5g_pci", "5g_pci", "Z5g_CELLINFO_pci", "ZCELLINFO_pci"]
+        let ltePCI = ["lte_pci", "lte_ca_pcell_pci", "lte_pcell_pci"]
+        let nrCell = ["nr_cell_id", "nr_cellid", "nr_nci", "nci", "5g_cell_id", "Z5g_CELLINFO_cell_id", "ZCELLINFO_cell_id"]
+        let lteCell = ["lte_cell_id", "lte_cellid", "lte_eci", "ecgi", "eci"]
+        let nrTAC = ["nr_tac", "nr5g_tac", "5g_tac", "Z5g_CELLINFO_tac", "ZCELLINFO_tac"]
+        let lteTAC = ["lte_tac", "lte_tracking_area_code"]
+        let isLTE = networkType.lowercased().contains("4g") || networkType.lowercased().contains("lte")
+
+        let pci = firstIdentityValue(
+            in: dict,
+            keys: (isLTE ? ltePCI + nrPCI : nrPCI + ltePCI) + ["pci", "physical_cell_id"]
+        )
+        let cellId = firstIdentityValue(
+            in: dict,
+            keys: (isLTE ? lteCell + nrCell : nrCell + lteCell) + ["cell_id", "cellid"]
+        )
+        let tac = firstIdentityValue(
+            in: dict,
+            keys: (isLTE ? lteTAC + nrTAC : nrTAC + lteTAC) + ["tac", "tracking_area_code"]
+        )
+        let sources = [pci.map { "PCI: \($0.key)" }, cellId.map { "Cell: \($0.key)" }, tac.map { "TAC: \($0.key)" }]
+            .compactMap { $0 }
+
+        return ParsedServingCellIdentity(
+            pci: pci?.value,
+            cellId: cellId?.value,
+            tac: tac?.value,
+            sourceSummary: sources.isEmpty ? nil : sources.joined(separator: " · ")
+        )
+    }
+
+    private static func firstIdentityValue(
+        in dict: [String: Any],
+        keys: [String]
+    ) -> (key: String, value: String)? {
+        var lowercased: [String: (key: String, value: Any)] = [:]
+        for (key, value) in dict {
+            lowercased[key.lowercased()] = (key, value)
+        }
+        for key in keys {
+            guard let match = lowercased[key.lowercased()], !(match.value is NSNull) else { continue }
+            let value = String(describing: match.value).trimmingCharacters(in: .whitespacesAndNewlines)
+            let invalid = ["", "-1", "null", "nil", "n/a", "unknown"]
+            guard !invalid.contains(value.lowercased()) else { continue }
+            return (match.key, value)
         }
         return nil
     }

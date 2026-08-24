@@ -807,4 +807,52 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(status.qosDl, "500Mbps")
         XCTAssertEqual(status.qosUl, "100Mbps")
     }
+
+    func testSignalReadingPreservesSourceAndNoiseKind() {
+        let sinr = F50ResponseParser.firstValidSignalReading(
+            in: ["NR_SINR": "18 dB", "nr_snr": "12 dB"],
+            keys: ["nr_sinr", "nr_snr"]
+        )
+        XCTAssertEqual(sinr?.value, 18)
+        XCTAssertEqual(sinr?.sourceKey, "NR_SINR")
+        XCTAssertEqual(sinr?.noiseKind, .sinr)
+
+        let snr = F50ResponseParser.firstValidSignalReading(
+            in: ["Nr_snr": "13 dB"],
+            keys: ["nr_snr"]
+        )
+        XCTAssertEqual(snr?.noiseKind, .snr)
+    }
+
+    func testParsesServingCellIdentityByCurrentRadioType() {
+        let payload: [String: Any] = [
+            "NR_PCI": 321,
+            "nr_cell_id": "0x01A2B3C4",
+            "nr_tac": 1024,
+            "lte_pci": 88,
+            "lte_cell_id": "998877"
+        ]
+        let nr = F50ResponseParser.parseServingCellIdentity(from: payload, networkType: "5G SA")
+        XCTAssertEqual(nr.pci, "321")
+        XCTAssertEqual(nr.cellId, "0x01A2B3C4")
+        XCTAssertEqual(nr.tac, "1024")
+        XCTAssertTrue(nr.sourceSummary?.contains("NR_PCI") == true)
+
+        let lte = F50ResponseParser.parseServingCellIdentity(from: payload, networkType: "4G LTE")
+        XCTAssertEqual(lte.pci, "88")
+        XCTAssertEqual(lte.cellId, "998877")
+    }
+
+    func testF50StatusDecodesLegacyPayloadWithoutNewTrustFields() throws {
+        let encoded = try JSONEncoder().encode(F50Status.mock)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in ["rsrpSource", "rsrqSource", "snrSource", "snrMetricKind", "pci", "cellId", "tac", "cellIdentitySource"] {
+            json.removeValue(forKey: key)
+        }
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(F50Status.self, from: legacyData)
+        XCTAssertNil(decoded.rsrpSource)
+        XCTAssertNil(decoded.pci)
+        XCTAssertEqual(decoded.rsrp, "-82 dBm")
+    }
 }
