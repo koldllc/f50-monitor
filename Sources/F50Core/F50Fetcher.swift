@@ -139,6 +139,8 @@ public class F50Fetcher: ObservableObject {
     private var prevTotalCpu: Double = 0
     private var prevIdleCpu: Double = 0
     private var routerDetectedTrafficResetDay: Int = 0
+    private var huaweiAdapter: HuaweiHiLinkAdapter?
+    private var hasProbedHuawei = false
 
     // Ring Log Buffer (脱敏诊断日志)
     private var ringLogBuffer: [String] = []
@@ -327,6 +329,34 @@ public class F50Fetcher: ObservableObject {
         let shouldRefreshTraffic = Date().timeIntervalSince(lastTrafficRefreshDate)
             >= F50Configuration.trafficRefreshInterval
 
+        if let huaweiAdapter {
+            fetchHuaweiStatus(huaweiAdapter, generation: generation, refreshTraffic: shouldRefreshTraffic)
+            return
+        }
+
+        if !hasProbedHuawei, let adapter = HuaweiHiLinkAdapter(baseURLString: cleanBase) {
+            hasProbedHuawei = true
+            Task { [weak self] in
+                guard let self else { return }
+                if await adapter.probe() {
+                    guard generation == self.requestGeneration else { return }
+                    self.huaweiAdapter = adapter
+                    self.fetchHuaweiStatus(adapter, generation: generation, refreshTraffic: shouldRefreshTraffic)
+                } else {
+                    guard generation == self.requestGeneration else { return }
+                    self.executeFetch(
+                        cleanBase: cleanBase,
+                        hostOnly: endpoints.routerBaseURL,
+                        ufiBaseURL: endpoints.ufiBaseURL,
+                        generation: generation,
+                        refreshTraffic: shouldRefreshTraffic,
+                        allowsUFIFallback: true
+                    )
+                }
+            }
+            return
+        }
+
         // 所有连接统一从 Router/Goform 开始；缺失项再依次尝试 ADB 与 UFI。
         executeFetch(
             cleanBase: cleanBase,
@@ -336,6 +366,24 @@ public class F50Fetcher: ObservableObject {
             refreshTraffic: shouldRefreshTraffic,
             allowsUFIFallback: true
         )
+    }
+
+    private func fetchHuaweiStatus(_ adapter: HuaweiHiLinkAdapter, generation: UInt, refreshTraffic: Bool) {
+        Task { [weak self] in
+            do {
+                let payload = try await adapter.fetchStatus(password: self?.password ?? "", includeTraffic: refreshTraffic)
+                guard let self, generation == self.requestGeneration else { return }
+                self.parseStatusDict(payload, preserveQos: true, refreshTraffic: refreshTraffic)
+                self.diagnosticChannelMode = "Huawei HiLink"
+                self.appendLog("连接", "Huawei HiLink CPE 状态读取成功")
+                if refreshTraffic { self.lastTrafficRefreshDate = Date() }
+                self.isFetching = false
+                F50WidgetDataStore.saveStatus(self.status)
+            } catch {
+                guard let self, generation == self.requestGeneration else { return }
+                self.updateStatusFailed("华为 HiLink: \(error.localizedDescription)", generation: generation)
+            }
+        }
     }
 
     public func fetchDataAsync() async {
@@ -372,6 +420,28 @@ public class F50Fetcher: ObservableObject {
 
         let generation = requestGeneration
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        if let huaweiAdapter {
+            isFetchingSMS = true
+            smsErrorMessage = nil
+            Task { [weak self] in
+                do {
+                    let messages = try await huaweiAdapter.fetchMessages(password: self?.password ?? "")
+                    guard let self, generation == self.requestGeneration else { return }
+                    let readIDs = self.locallyReadSMSIds
+                    self.smsMessages = messages.map { message in
+                        var copy = message
+                        copy.isLocallyRead = readIDs.contains(message.id)
+                        return copy
+                    }
+                    self.status.smsUnreadCount = self.smsMessages.filter(\.isUnread).count
+                    self.isFetchingSMS = false
+                } catch {
+                    guard let self, generation == self.requestGeneration else { return }
+                    self.finishSMSFetch(message: "华为 HiLink: \(error.localizedDescription)", generation: generation)
+                }
+            }
+            return
+        }
         let endpoints = connectionEndpoints(from: cleanBase)
         let tokens = candidateTokens()
 
@@ -650,6 +720,23 @@ public class F50Fetcher: ObservableObject {
 
         let generation = requestGeneration
         let cleanBase = baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        if let huaweiAdapter {
+            isSendingSMS = true
+            smsSendErrorMessage = nil
+            smsSendSuccess = false
+            Task { [weak self] in
+                do {
+                    try await huaweiAdapter.sendMessage(to: cleanNumber, content: cleanContent, password: self?.password ?? "")
+                    guard let self, generation == self.requestGeneration else { return }
+                    self.finishSMSSent()
+                } catch {
+                    guard let self, generation == self.requestGeneration else { return }
+                    self.isSendingSMS = false
+                    self.smsSendErrorMessage = "华为 HiLink: \(error.localizedDescription)"
+                }
+            }
+            return
+        }
         let endpoints = connectionEndpoints(from: cleanBase)
         let tokens = candidateTokens()
 
@@ -1697,6 +1784,8 @@ public class F50Fetcher: ObservableObject {
         smsMessages = []
         smsErrorMessage = nil
         sessionCookie = nil
+        huaweiAdapter = nil
+        hasProbedHuawei = false
         cachedCandidateTokens = nil
         cachedTokenSource = ""
         diagnosticFirmwareVersion = ""
