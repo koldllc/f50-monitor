@@ -130,6 +130,34 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        SignalLabView(fetcher: fetcher)
+                    } label: {
+                        networkToolLabel(
+                            title: "Signal Lab",
+                            subtitle: "测试并比较 F50 的最佳摆放位置",
+                            systemImage: "wave.3.right.circle.fill",
+                            color: .blue
+                        )
+                    }
+
+                    NavigationLink {
+                        NetworkDoctorView(fetcher: fetcher)
+                    } label: {
+                        networkToolLabel(
+                            title: "Network Doctor",
+                            subtitle: "分析掉 5G、网络切换和信号异常",
+                            systemImage: "stethoscope.circle.fill",
+                            color: .green
+                        )
+                    }
+                } header: {
+                    Text("网络工具")
+                } footer: {
+                    Text("实验功能仅在打开工具页面时采样，所有分析和测试记录均保留在本机。")
+                }
+
+                Section {
                     Toggle("启用文件共享功能", isOn: $isFileSharingEnabled)
 
                     if isFileSharingEnabled {
@@ -219,6 +247,38 @@ struct SettingsView: View {
         UIApplication.shared.open(url) { supported in
             if !supported { isShowingFileShareHelp = true }
         }
+    }
+
+    private func networkToolLabel(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24))
+                .foregroundColor(color)
+                .frame(width: 30)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.body.weight(.semibold))
+                    Text("实验")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(color)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(color.opacity(0.12), in: Capsule())
+                }
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

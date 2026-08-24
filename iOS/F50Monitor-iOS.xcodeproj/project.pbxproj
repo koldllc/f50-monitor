@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		0C2E0D9C7B835A94415EAC44 /* SMSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E537BE8C7321F883183A0 /* SMSView.swift */; };
 		0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */; };
+		11A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */; };
+		11B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */; };
 		16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */; };
 		1AE5F77524F74BC03CF6B072 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200C7CBFDFAD1274C4C1834A /* Assets.xcassets */; };
 		285817CABF530E542DBF18DE /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1096D2D8034A8D422EADEA /* StatusView.swift */; };
@@ -88,6 +90,8 @@
 		1118F60CAA519BD93D0FB79D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		200C7CBFDFAD1274C4C1834A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Fetcher.swift; sourceTree = "<group>"; };
+		22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkInsightEngine.swift; sourceTree = "<group>"; };
+		22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkToolsViews.swift; sourceTree = "<group>"; };
 		2F0B9727BB928D70319933F7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Configuration.swift; sourceTree = "<group>"; };
 		56EF02DAC980BCBC4A16C254 /* F50Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = F50Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -140,6 +144,7 @@
 				CACBC8FF3BE2D3C40D80CF3B /* Info.plist */,
 				B9CAAAC3B51EA52BF43833C9 /* PrivacyInfo.xcprivacy */,
 				ECE426A585E5ACC39D46A60F /* SettingsView.swift */,
+				22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */,
 				8A6E537BE8C7321F883183A0 /* SMSView.swift */,
 				8F1096D2D8034A8D422EADEA /* StatusView.swift */,
 			);
@@ -163,6 +168,7 @@
 				BD5ACAA691B7B55EEA53D514 /* DeviceFeedbackView.swift */,
 				37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */,
 				20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */,
+				22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */,
 				A98379B8BC17A9858D569301 /* F50ResponseParser.swift */,
 				66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */,
 				89766F43C86001C45B5E81B1 /* F50Status.swift */,
@@ -346,6 +352,7 @@
 				71B4CF8DDA7F6BD4C52F131D /* DeviceFeedbackView.swift in Sources */,
 				0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */,
 				D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */,
+				11A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift in Sources */,
 				8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */,
 				893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */,
 				4F5342D65D640BFA9C074A64 /* F50Status.swift in Sources */,
@@ -370,6 +377,7 @@
 				48EDD3951E186CF1D1D2BF17 /* F50iOSApp.swift in Sources */,
 				0C2E0D9C7B835A94415EAC44 /* SMSView.swift in Sources */,
 				4B3D6E7AF0C693A3DBA13587 /* SettingsView.swift in Sources */,
+				11B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift in Sources */,
 				285817CABF530E542DBF18DE /* StatusView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
