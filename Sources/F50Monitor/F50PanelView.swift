@@ -524,15 +524,19 @@ struct F50PanelView: View {
         let dlVal = fetcher.status.qosDl.trimmingCharacters(in: .whitespaces)
         let ulVal = fetcher.status.qosUl.trimmingCharacters(in: .whitespaces)
 
-        return VStack(alignment: .leading, spacing: 3) {
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("签约状态：")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
                 Text(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? "无数据" : "QCI: \(qciVal.isEmpty ? "-" : qciVal)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundColor(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? .secondary : .primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
             }
 
             if !dlVal.isEmpty || !ulVal.isEmpty {
@@ -542,6 +546,7 @@ struct F50PanelView: View {
                 }
             }
         }
+        .lineLimit(1)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
