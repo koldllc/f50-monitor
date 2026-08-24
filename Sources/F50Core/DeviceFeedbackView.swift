@@ -45,7 +45,14 @@ private struct RouterLoginDiagnosticSheet: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
-                    ContentUnavailableView("后台地址无效", systemImage: "exclamationmark.triangle")
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                        Text("后台地址无效")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
