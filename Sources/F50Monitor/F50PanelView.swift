@@ -173,15 +173,17 @@ private struct PanelActionButton<Content: View>: View {
     }
 }
 
-// MARK: - Backend Menu Button
+// MARK: - Backend Button
 private struct BackendMenuButton: View {
-    let ufiURLString: String
     let routerURLString: String
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: showMenu) {
+        Button {
+            guard let url = URL(string: routerURLString) else { return }
+            NSWorkspace.shared.open(url)
+        } label: {
             HStack(spacing: 6) {
                 Image(systemName: "safari")
                     .font(.system(size: 13, weight: .semibold))
@@ -190,9 +192,6 @@ private struct BackendMenuButton: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.primary)
                 Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.secondary)
             }
             .padding(.horizontal, 10)
             .frame(height: 36)
@@ -205,71 +204,7 @@ private struct BackendMenuButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help("选择打开设备后台网页")
-        .contextMenu {
-            Button {
-                if let url = URL(string: ufiURLString) {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                Label("UFI后台（2333端口）", systemImage: "wifi.router")
-            }
-
-            Button {
-                if let url = URL(string: routerURLString) {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                Label("中兴后台（80端口）", systemImage: "network")
-            }
-        }
-    }
-
-    private func showMenu() {
-        let menu = NSMenu()
-
-        let ufiItem = NSMenuItem(
-            title: "UFI后台（2333端口）",
-            action: #selector(BackendMenuActionTarget.openURLFromMenuItem(_:)),
-            keyEquivalent: ""
-        )
-        ufiItem.image = NSImage(systemSymbolName: "wifi.router", accessibilityDescription: nil)
-        ufiItem.representedObject = ufiURLString
-        ufiItem.target = BackendMenuActionTarget.shared
-
-        let routerItem = NSMenuItem(
-            title: "中兴后台（80端口）",
-            action: #selector(BackendMenuActionTarget.openURLFromMenuItem(_:)),
-            keyEquivalent: ""
-        )
-        routerItem.image = NSImage(systemSymbolName: "network", accessibilityDescription: nil)
-        routerItem.representedObject = routerURLString
-        routerItem.target = BackendMenuActionTarget.shared
-
-        menu.addItem(ufiItem)
-        menu.addItem(routerItem)
-
-        if let event = NSApp.currentEvent,
-           let window = NSApp.keyWindow,
-           let contentView = window.contentView {
-            NSMenu.popUpContextMenu(menu, with: event, for: contentView)
-        } else if let window = NSApp.keyWindow,
-                  let contentView = window.contentView {
-            menu.popUp(positioning: nil, at: NSPoint(x: 14, y: 14), in: contentView)
-        } else if let url = URL(string: ufiURLString) {
-            NSWorkspace.shared.open(url)
-        }
-    }
-}
-
-@MainActor
-private final class BackendMenuActionTarget: NSObject {
-    static let shared = BackendMenuActionTarget()
-
-    @objc func openURLFromMenuItem(_ sender: NSMenuItem) {
-        guard let urlString = sender.representedObject as? String,
-              let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
+        .help("打开中兴后台（80端口）")
     }
 }
 
@@ -959,7 +894,6 @@ struct F50PanelView: View {
         HStack(spacing: 8) {
             // Open Web Dashboard Menu Button
             BackendMenuButton(
-                ufiURLString: fetcher.ufiURLString,
                 routerURLString: fetcher.routerURLString
             )
 

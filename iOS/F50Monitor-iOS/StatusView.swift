@@ -184,21 +184,9 @@ struct StatusView: View {
                             Label("立即刷新", systemImage: "arrow.clockwise")
                         }
 
-                        Menu {
-                            Button {
-                                if let url = URL(string: fetcher.ufiURLString) {
-                                    webURLToOpen = IdentifiableURL(url: url)
-                                }
-                            } label: {
-                                Label("UFI后台（2333端口）", systemImage: "wifi.router")
-                            }
-
-                            Button {
-                                if let url = URL(string: fetcher.routerURLString) {
-                                    webURLToOpen = IdentifiableURL(url: url)
-                                }
-                            } label: {
-                                Label("中兴后台（80端口）", systemImage: "network")
+                        Button {
+                            if let url = URL(string: fetcher.routerURLString) {
+                                webURLToOpen = IdentifiableURL(url: url)
                             }
                         } label: {
                             Label("打开后台", systemImage: "safari")
