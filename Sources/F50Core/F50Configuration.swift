@@ -34,6 +34,54 @@ public enum F50Configuration {
             && defaults.object(forKey: baseURLDefaultsKey) == nil
     }
 
+    /// 探测常见 F50 网关地址；仅请求设备公开的只读状态接口，不会发送或修改任何配置。
+    public static func discoverDeviceAddress() async -> String? {
+        let candidates = [
+            "192.168.0.1", "192.168.1.1", "192.168.8.1",
+            "192.168.10.1", "192.168.31.1", "192.168.100.1"
+        ]
+
+        return await withTaskGroup(of: String?.self, returning: String?.self) { group in
+            for host in candidates {
+                group.addTask {
+                    await probeF50(at: host) ? host : nil
+                }
+            }
+
+            for await result in group {
+                if let result {
+                    group.cancelAll()
+                    return result
+                }
+            }
+            return nil
+        }
+    }
+
+    private static func probeF50(at host: String) async -> Bool {
+        let paths = [
+            "http://\(host)/goform/goform_get_cmd_process?isTest=false&cmd=imei",
+            "http://\(host):2333/api/baseDeviceInfo"
+        ]
+
+        for path in paths {
+            guard let url = URL(string: path) else { continue }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 1.5
+
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode),
+                  let body = String(data: data, encoding: .utf8)?.lowercased()
+            else { continue }
+
+            if body.contains("imei") || body.contains("imsi") || body.contains("network_type") || body.contains("basedeviceinfo") {
+                return true
+            }
+        }
+        return false
+    }
+
     /// 判断指定主机名是否为 IP 地址（IPv4 或包含冒号/方括号的 IPv6）
     public static func isIPAddress(_ host: String) -> Bool {
         let parts = host.split(separator: ".")

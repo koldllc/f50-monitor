@@ -98,6 +98,8 @@ private struct InitialSetupView: View {
     @State private var address = ""
     @State private var password = ""
     @State private var isPasswordVisible = false
+    @State private var isDiscovering = true
+    @State private var discoveryMessage = "正在查找局域网中的 F50…"
 
     private var isAddressValid: Bool {
         F50Configuration.isValidAddress(address)
@@ -118,6 +120,15 @@ private struct InitialSetupView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+
+                    HStack(spacing: 6) {
+                        if isDiscovering {
+                            ProgressView()
+                        }
+                        Text(discoveryMessage)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
                     if !address.isEmpty && !isAddressValid {
                         Text("请输入正确的 IP 地址或域名")
@@ -166,6 +177,15 @@ private struct InitialSetupView: View {
                     .disabled(!isAddressValid || password.isEmpty)
                 }
             }
+        }
+        .task {
+            if let detectedAddress = await F50Configuration.discoverDeviceAddress() {
+                address = detectedAddress
+                discoveryMessage = "已发现 F50：\(detectedAddress)"
+            } else {
+                discoveryMessage = "未发现 F50，请确认已连接设备 Wi-Fi 后手动输入地址"
+            }
+            isDiscovering = false
         }
     }
 }

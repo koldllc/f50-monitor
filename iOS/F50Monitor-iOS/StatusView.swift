@@ -273,27 +273,12 @@ struct StatusView: View {
                     Text(status.errorMessage ?? "无法连接到 F50 随身 WiFi")
                         .font(.footnote.weight(.semibold))
                         .foregroundColor(.primary)
-                    Text("请检查是否已连接设备 Wi-Fi，或直接开启演示模式体验全量功能")
+                    Text("请检查是否已连接设备 Wi-Fi，并确认设置中的设备地址正确")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
             }
-            Button {
-                fetcher.isDemoMode = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "play.circle.fill")
-                    Text("进入演示模式（无需物理硬件）")
-                }
-                .font(.caption.weight(.medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.blue)
-                .cornerRadius(8)
-            }
-            .buttonStyle(.borderless)
         }
         .padding(10)
         .background(
