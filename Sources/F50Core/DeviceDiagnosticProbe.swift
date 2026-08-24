@@ -908,7 +908,7 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         if !scriptURLsToFetch.isEmpty {
             onProgress?(0.95, "正在分析 \(scriptURLsToFetch.count) 个 JS 脚本中的隐藏 API...")
             for scriptURL in scriptURLsToFetch.prefix(3) {
-                let analysis = await fetchScriptAnalysis(scriptURL: scriptURL)
+                let analysis = await fetchScriptAnalysis(scriptURL: scriptURL, sessionCookie: sessionCookie)
                 for api in analysis.apis where !discoveredScriptAPIs.contains(api) {
                     discoveredScriptAPIs.append(api)
                 }
@@ -952,9 +952,15 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
         return Array(scriptURLs.prefix(4))
     }
 
-    private func fetchScriptAnalysis(scriptURL: URL) async -> (apis: [String], signatures: [ScriptCallSignature]) {
+    private func fetchScriptAnalysis(
+        scriptURL: URL,
+        sessionCookie: String?
+    ) async -> (apis: [String], signatures: [ScriptCallSignature]) {
         var request = URLRequest(url: scriptURL)
         request.timeoutInterval = 5.0
+        if let sessionCookie, !sessionCookie.isEmpty {
+            request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+        }
         guard let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
               data.count <= 1_500 * 1024,

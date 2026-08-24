@@ -8,6 +8,7 @@ public typealias PlatformImage = UIImage
 #endif
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 
 // MARK: - Category Color Helper
 
@@ -22,6 +23,124 @@ extension FeedbackCategory {
         case .screenMirroringIssue: return Color.indigo
         case .featureSuggestion: return Color.yellow
         case .appBug: return F50Theme.red
+        }
+    }
+}
+
+// MARK: - Router Login Diagnostic
+
+private struct RouterLoginDiagnosticSheet: View {
+    let routerURL: URL?
+    let onSessionReady: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sessionCookie: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                if let routerURL {
+                    RouterLoginWebView(url: routerURL) { cookie in
+                        sessionCookie = cookie
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else {
+                    ContentUnavailableView("后台地址无效", systemImage: "exclamationmark.triangle")
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("请在上方完成原厂后台登录，再继续诊断。")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("登录密码与 Cookie 仅暂存于本次诊断会话，不会写入反馈报告或上传。")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("已完成登录，继续诊断") {
+                    if let sessionCookie {
+                        onSessionReady(sessionCookie)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(sessionCookie == nil)
+            }
+            .padding()
+            .navigationTitle("原厂后台登录")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            #else
+            .frame(minWidth: 560, minHeight: 620)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            #endif
+        }
+    }
+}
+
+#if os(iOS)
+private struct RouterLoginWebView: UIViewRepresentable {
+    let url: URL
+    let onCookieChanged: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onCookieChanged: onCookieChanged) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#elseif os(macOS)
+private struct RouterLoginWebView: NSViewRepresentable {
+    let url: URL
+    let onCookieChanged: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onCookieChanged: onCookieChanged) }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+#endif
+
+private final class Coordinator: NSObject, WKNavigationDelegate {
+    private let onCookieChanged: (String) -> Void
+
+    init(onCookieChanged: @escaping (String) -> Void) {
+        self.onCookieChanged = onCookieChanged
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let host = webView.url?.host else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            let matchingCookies = cookies.filter { $0.domain == host || $0.domain == ".\(host)" }
+            guard !matchingCookies.isEmpty else { return }
+            let header = matchingCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            DispatchQueue.main.async {
+                self.onCookieChanged(header)
+            }
         }
     }
 }
@@ -57,6 +176,8 @@ public struct DeviceFeedbackView: View {
     @State private var statusFeedbackMessage: String? = nil
     @State private var createdIssueURL: String? = nil
     @State private var showCopiedToast: Bool = false
+    @State private var showRouterLoginDiagnostic = false
+    @State private var routerLoginSessionCookie: String? = nil
 
     private let webhookURL = URL(string: "https://feedback-api.koldllc.com")!
 
@@ -66,11 +187,27 @@ public struct DeviceFeedbackView: View {
     }
 
     public var body: some View {
+        Group {
         #if os(iOS)
-        iOSBody
+            iOSBody
         #else
-        macOSBody
+            macOSBody
         #endif
+        }
+        .sheet(isPresented: $showRouterLoginDiagnostic) {
+            RouterLoginDiagnosticSheet(
+                routerURL: routerLoginURL,
+                onSessionReady: { cookie in
+                    routerLoginSessionCookie = cookie
+                    statusFeedbackMessage = "已获取网页登录会话；提交时将用该会话探测接口。"
+                }
+            )
+        }
+    }
+
+    private var routerLoginURL: URL? {
+        let (routerBaseURL, _) = F50Configuration.resolveEndpoints(from: fetcher.baseURLString)
+        return URL(string: routerBaseURL)
     }
 
     // MARK: - iOS Layout (Native HIG Compliant)
@@ -697,6 +834,8 @@ public struct DeviceFeedbackView: View {
                 }
 
                 // 主发送按钮
+                routerLoginDiagnosticButton
+
                 Button {
                     startProbeAndSubmit()
                 } label: {
@@ -747,6 +886,22 @@ public struct DeviceFeedbackView: View {
                 }
             }
         }
+    }
+
+    private var routerLoginDiagnosticButton: some View {
+        Button {
+            showRouterLoginDiagnostic = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: routerLoginSessionCookie == nil ? "lock.open" : "checkmark.shield.fill")
+                Text(routerLoginSessionCookie == nil ? "登录原厂后台后增强诊断（可选）" : "已获取网页登录会话，将用于增强诊断")
+            }
+            .font(.system(size: 12.5, weight: .semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.bordered)
+        .disabled(isProcessing || routerLoginURL == nil)
     }
 
     private var diagnosticPreviewCard: some View {
@@ -1070,6 +1225,18 @@ public struct DeviceFeedbackView: View {
                         .background(RoundedRectangle(cornerRadius: 10).fill(F50Theme.green.opacity(0.08)))
                     } else {
                         Button {
+                            showRouterLoginDiagnostic = true
+                        } label: {
+                            Label(
+                                routerLoginSessionCookie == nil ? "登录原厂后台后增强诊断（可选）" : "已获取网页登录会话，将用于增强诊断",
+                                systemImage: routerLoginSessionCookie == nil ? "lock.open" : "checkmark.shield.fill"
+                            )
+                            .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isProcessing || routerLoginURL == nil)
+
+                        Button {
                             startProbeAndSubmit()
                         } label: {
                             HStack(spacing: 6) {
@@ -1288,7 +1455,7 @@ public struct DeviceFeedbackView: View {
                 appState: stateSnapshot,
                 screenshotBase64: attachedImageBase64,
                 candidateTokens: fetcher.getCandidateTokensPublic(),
-                sessionCookie: fetcher.currentSessionCookie,
+                sessionCookie: routerLoginSessionCookie ?? fetcher.currentSessionCookie,
                 appVersion: appVer
             ) { progress, status in
                 Task { @MainActor in
