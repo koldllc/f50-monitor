@@ -21,6 +21,18 @@ struct ParsedServingCellIdentity: Equatable {
 }
 
 enum F50ResponseParser {
+    /// Goform 有时会在会话被其它后台挤掉后返回 HTTP 200 的空壳 JSON。
+    /// 这种响应不能当作真实状态解析，否则会把面板字段重置为空。
+    static func isRouterStatusPayload(_ payload: [String: Any]) -> Bool {
+        let statusKeys: Set<String> = [
+            "network_information", "network_type", "network_provider", "ppp_status",
+            "signalbar", "network_signalbar", "rssi", "z5g_rsrp", "lte_rsrp",
+            "wifi_access_sta_num", "realtime_rx_thrpt", "realtime_tx_thrpt",
+            "battery_value", "cr_version"
+        ]
+        return !Set(payload.keys.map { $0.lowercased() }).isDisjoint(with: statusKeys)
+    }
+
     static func requiresUFISupplement(_ payload: [String: Any]) -> Bool {
         let hasRSRP = firstValidSignalValue(
             in: payload,

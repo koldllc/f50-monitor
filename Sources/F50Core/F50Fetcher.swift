@@ -1559,29 +1559,16 @@ public class F50Fetcher: ObservableObject {
                     return
                 }
 
-                if httpRes.statusCode == 401 && !isRetryAfterLogin {
-                    self.performZTELogin(hostOnly: hostOnly) { [weak self] success in
-                        guard let self, generation == self.requestGeneration else { return }
-                        if success {
-                            self.executeFetch(
-                                cleanBase: cleanBase,
-                                hostOnly: hostOnly,
-                                ufiBaseURL: ufiBaseURL,
-                                generation: generation,
-                                refreshTraffic: refreshTraffic,
-                                isRetryAfterLogin: true,
-                                allowsUFIFallback: allowsUFIFallback
-                            )
-                        } else {
-                            self.handleRouterFailure(
-                                "口令/密码错误(401)",
-                                ufiBaseURL: ufiBaseURL,
-                                generation: generation,
-                                refreshTraffic: refreshTraffic,
-                                allowsUFIFallback: allowsUFIFallback
-                            )
-                        }
-                    }
+                if (httpRes.statusCode == 401 || httpRes.statusCode == 403) && !isRetryAfterLogin {
+                    self.retryRouterAfterLogin(
+                        reason: "HTTP \(httpRes.statusCode)",
+                        cleanBase: cleanBase,
+                        hostOnly: hostOnly,
+                        ufiBaseURL: ufiBaseURL,
+                        generation: generation,
+                        refreshTraffic: refreshTraffic,
+                        allowsUFIFallback: allowsUFIFallback
+                    )
                     return
                 }
 
@@ -1601,31 +1588,41 @@ public class F50Fetcher: ObservableObject {
                         // 设备可能返回 {"Error":"none secure connection"} 等未认证/异常响应（HTTP 仍为 200）
                         if let errorText = dict["Error"] as? String, !errorText.isEmpty {
                             if !isRetryAfterLogin {
-                                self.performZTELogin(hostOnly: hostOnly) { [weak self] success in
-                                    guard let self, generation == self.requestGeneration else { return }
-                                    if success {
-                                        self.executeFetch(
-                                            cleanBase: cleanBase,
-                                            hostOnly: hostOnly,
-                                            ufiBaseURL: ufiBaseURL,
-                                            generation: generation,
-                                            refreshTraffic: refreshTraffic,
-                                            isRetryAfterLogin: true,
-                                            allowsUFIFallback: allowsUFIFallback
-                                        )
-                                    } else {
-                                        self.handleRouterFailure(
-                                            "设备登录失败: \(errorText)",
-                                            ufiBaseURL: ufiBaseURL,
-                                            generation: generation,
-                                            refreshTraffic: refreshTraffic,
-                                            allowsUFIFallback: allowsUFIFallback
-                                        )
-                                    }
-                                }
+                                self.retryRouterAfterLogin(
+                                    reason: errorText,
+                                    cleanBase: cleanBase,
+                                    hostOnly: hostOnly,
+                                    ufiBaseURL: ufiBaseURL,
+                                    generation: generation,
+                                    refreshTraffic: refreshTraffic,
+                                    allowsUFIFallback: allowsUFIFallback
+                                )
                             } else {
                                 self.handleRouterFailure(
                                     "设备返回错误: \(errorText)",
+                                    ufiBaseURL: ufiBaseURL,
+                                    generation: generation,
+                                    refreshTraffic: refreshTraffic,
+                                    allowsUFIFallback: allowsUFIFallback
+                                )
+                            }
+                            return
+                        }
+
+                        guard F50ResponseParser.isRouterStatusPayload(dict) else {
+                            if !isRetryAfterLogin {
+                                self.retryRouterAfterLogin(
+                                    reason: "未返回状态字段",
+                                    cleanBase: cleanBase,
+                                    hostOnly: hostOnly,
+                                    ufiBaseURL: ufiBaseURL,
+                                    generation: generation,
+                                    refreshTraffic: refreshTraffic,
+                                    allowsUFIFallback: allowsUFIFallback
+                                )
+                            } else {
+                                self.handleRouterFailure(
+                                    "设备未返回有效状态字段",
                                     ufiBaseURL: ufiBaseURL,
                                     generation: generation,
                                     refreshTraffic: refreshTraffic,
@@ -1686,6 +1683,47 @@ public class F50Fetcher: ObservableObject {
             }
         }
         baseTask?.resume()
+    }
+
+    private func retryRouterAfterLogin(
+        reason: String,
+        cleanBase: String,
+        hostOnly: String,
+        ufiBaseURL: String,
+        generation: UInt,
+        refreshTraffic: Bool,
+        allowsUFIFallback: Bool
+    ) {
+        clearRouterSession(hostOnly: hostOnly)
+        performZTELogin(hostOnly: hostOnly) { [weak self] success in
+            guard let self, generation == self.requestGeneration else { return }
+            if success {
+                self.executeFetch(
+                    cleanBase: cleanBase,
+                    hostOnly: hostOnly,
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    isRetryAfterLogin: true,
+                    allowsUFIFallback: allowsUFIFallback
+                )
+            } else {
+                self.handleRouterFailure(
+                    "设备登录失败: \(reason)",
+                    ufiBaseURL: ufiBaseURL,
+                    generation: generation,
+                    refreshTraffic: refreshTraffic,
+                    allowsUFIFallback: allowsUFIFallback
+                )
+            }
+        }
+    }
+
+    private func clearRouterSession(hostOnly: String) {
+        sessionCookie = nil
+        guard let url = URL(string: hostOnly) else { return }
+        let storage = session.configuration.httpCookieStorage ?? HTTPCookieStorage.shared
+        storage.cookies(for: url)?.forEach(storage.deleteCookie)
     }
 
     private func fetchUFISupplement(

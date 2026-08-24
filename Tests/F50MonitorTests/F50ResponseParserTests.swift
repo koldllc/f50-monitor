@@ -3,6 +3,12 @@ import CryptoKit
 @testable import F50Core
 
 final class F50ResponseParserTests: XCTestCase {
+    func testRejectsRouter200ShellWithoutStatusFields() {
+        XCTAssertFalse(F50ResponseParser.isRouterStatusPayload([:]))
+        XCTAssertFalse(F50ResponseParser.isRouterStatusPayload(["result": "success"]))
+        XCTAssertTrue(F50ResponseParser.isRouterStatusPayload(["network_type": "5G SA"]))
+    }
+
     func testIncompleteRouterStatusRequiresUFISupplement() {
         let payload: [String: Any] = [
             "Language": "zh-cn",
