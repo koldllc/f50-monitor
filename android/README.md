@@ -49,7 +49,7 @@ adb shell run-as com.kold.f50.monitor.android cat shared_prefs/f50_agent.xml
 
 ## 当前限制
 
-- 只读取本机 `127.0.0.1` Router goform；字段缺失时保留缓存并降级到 `/proc` CPU、内存和 thermal 温度。
+- 只读取本机 `192.168.0.1` Router goform；旧版 `127.0.0.1` 配置会自动迁移，字段缺失时保留缓存并降级到 `/proc` CPU、内存和 thermal 温度。
 - 展锐 `vendor.sprd.hardware.tool.IToolControl/default`（API >33）或 `vendor.sprd.hardware.log.ILogControl/default`（旧版）发送 `AT+CGEQOSRDP=1` 的只读探测可能受固件/SELinux 权限限制，失败时 QCI/速率字段为空。
 - Android 端界面隐藏短信、scrcpy 投屏、在线反馈和 Windows 专属设置；这些能力不会通过 Android bridge 或 LAN API 暴露。
 - 当前是调试 APK，未包含签名、应用商店发布和跨固件实机验收。

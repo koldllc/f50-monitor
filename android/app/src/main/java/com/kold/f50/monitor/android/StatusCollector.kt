@@ -45,7 +45,7 @@ class StatusCollector(
             next.put("errorMessage", JSONObject.NULL)
         } else {
             next.put("isOnline", false)
-            next.put("errorMessage", "无法连接本机 Router 127.0.0.1")
+            next.put("errorMessage", "无法连接 Router $router")
         }
 
         val metrics = ProcMetrics.read(previousCpu)
@@ -257,7 +257,7 @@ class StatusCollector(
         if (value.contains("dB", true) || value.contains("dBm", true)) value else "$value $unit"
 
     private fun routerBase(baseURL: String): String {
-        val clean = baseURL.trim().trimEnd('/').let { if (it.contains("://")) it else "http://$it" }
+        val clean = RouterEndpoint.normalize(baseURL)
         return if (clean.endsWith(":2333")) clean.removeSuffix(":2333") else clean
     }
 

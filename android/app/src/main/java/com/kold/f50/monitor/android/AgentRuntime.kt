@@ -34,7 +34,7 @@ object AgentRuntime {
 }
 
 data class F50Config(
-    val baseURL: String = "http://127.0.0.1",
+    val baseURL: String = RouterEndpoint.DEFAULT_BASE_URL,
     val password: String = "admin",
     val ufiToken: String = "admin",
     val refreshInterval: Double = 2.0,
@@ -54,13 +54,28 @@ data class F50Config(
 
     companion object {
         fun fromJson(json: JSONObject, fallback: F50Config): F50Config = F50Config(
-            baseURL = json.optString("baseURL", fallback.baseURL),
+            baseURL = RouterEndpoint.normalize(json.optString("baseURL", fallback.baseURL)),
             password = json.optString("password", fallback.password),
             ufiToken = json.optString("ufiToken", fallback.ufiToken),
             refreshInterval = json.optDouble("refreshInterval", fallback.refreshInterval).coerceIn(1.0, 60.0),
             displayMode = json.optString("displayMode", fallback.displayMode),
             screenMirroringPort = json.optInt("screenMirroringPort", fallback.screenMirroringPort),
             launchAtLogin = json.optBoolean("launchAtLogin", true)
+        )
+    }
+}
+
+/** Router is exposed on the F50 LAN address; older builds incorrectly used loopback. */
+internal object RouterEndpoint {
+    const val DEFAULT_BASE_URL = "http://192.168.0.1"
+
+    /** Pure normalization seam: safe to exercise without Android or a running device. */
+    fun normalize(value: String): String {
+        val candidate = value.trim().trimEnd('/').ifBlank { DEFAULT_BASE_URL }
+        val withScheme = if (candidate.contains("://")) candidate else "http://$candidate"
+        return withScheme.replace(
+            Regex("^(https?://)(localhost|127\\.0\\.0\\.1)(?=[:/]|$)", RegexOption.IGNORE_CASE),
+            "$1${DEFAULT_BASE_URL.removePrefix("http://")}"
         )
     }
 }
@@ -182,7 +197,12 @@ class RuntimeState(private val context: Context) {
 
     private fun loadConfig(): F50Config {
         val raw = preferences.getString("config", null) ?: return F50Config()
-        return runCatching { F50Config.fromJson(JSONObject(raw), F50Config()) }.getOrDefault(F50Config())
+        val rawJson = runCatching { JSONObject(raw) }.getOrNull() ?: return F50Config()
+        val loaded = F50Config.fromJson(rawJson, F50Config())
+        if (loaded.baseURL != rawJson.optString("baseURL", "")) {
+            preferences.edit().putString("config", loaded.toJson().toString()).apply()
+        }
+        return loaded
     }
 
     private fun createAgentKey(): String {
