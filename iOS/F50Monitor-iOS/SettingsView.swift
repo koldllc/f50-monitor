@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 import F50Core
+import UniformTypeIdentifiers
+
+enum IOSFileSharingPreferences {
+    static let enabledDefaultsKey = "F50_iOS_FileSharingEnabled"
+}
 
 /// iOS 设置：连接参数、刷新频率、关于信息
 struct SettingsView: View {
@@ -14,6 +19,8 @@ struct SettingsView: View {
     @State private var isInitialized = false
     @State private var isShowingFeedback = false
     @State private var isShowingFileShareHelp = false
+    @State private var isShowingFileShare = false
+    @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
 
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
@@ -131,18 +138,25 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button {
-                        guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
-                        UIApplication.shared.open(url) { supported in
-                            if !supported { isShowingFileShareHelp = true }
+                    Toggle("启用文件共享功能", isOn: $isFileSharingEnabled)
+
+                    if isFileSharingEnabled {
+                        Button {
+                            isShowingFileShare = true
+                        } label: {
+                            Label("打开文件传输", systemImage: "folder")
                         }
-                    } label: {
-                        Label("打开 F50 共享文件", systemImage: "folder")
+
+                        Button {
+                            openFileShareInFilesApp()
+                        } label: {
+                            Label("在“文件”App 中打开", systemImage: "folder.badge.gearshape")
+                        }
                     }
                 } header: {
                     Text("文件共享")
                 } footer: {
-                    Text("通过 F50 已开启的 SMB 文件共享访问设备存储。若系统未直接打开，请在“文件”App 的“连接服务器”中输入设备地址。")
+                    Text("通过系统文件选择器在本机与 F50 SMB 共享之间传输文件；此开关不会修改设备端 SMB 设置。")
                 }
 
                 Section("帮助与反馈") {
@@ -184,6 +198,9 @@ struct SettingsView: View {
                     isShowingFeedback = false
                 }
             }
+            .sheet(isPresented: $isShowingFileShare) {
+                IOSFileShareView(fetcher: fetcher)
+            }
             .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
                 Button("知道了", role: .cancel) {}
             } message: {
@@ -202,6 +219,171 @@ struct SettingsView: View {
             .onChange(of: tempPassword) { _ in autoSave() }
             .onChange(of: tempUFIToken) { _ in autoSave() }
             .onChange(of: tempInterval) { _ in autoSave() }
+        }
+    }
+
+    private func openFileShareInFilesApp() {
+        guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
+        UIApplication.shared.open(url) { supported in
+            if !supported { isShowingFileShareHelp = true }
+        }
+    }
+}
+
+private struct IOSFilePickerRequest: Identifiable {
+    enum Kind: Equatable {
+        case uploadSource
+        case downloadSource
+        case uploadDestination
+        case downloadDestination
+    }
+
+    let id = UUID()
+    let kind: Kind
+    var urls: [URL] = []
+}
+
+struct IOSFileShareView: View {
+    @ObservedObject var fetcher: F50Fetcher
+    @Environment(\.dismiss) private var dismiss
+    @State private var pickerRequest: IOSFilePickerRequest?
+    @State private var statusMessage: String?
+
+    private var shareURL: URL? {
+        F50Configuration.fileShareURL(from: fetcher.baseURLString)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        pickerRequest = IOSFilePickerRequest(kind: .uploadSource)
+                    } label: {
+                        Label("上传到 F50", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        pickerRequest = IOSFilePickerRequest(kind: .downloadSource)
+                    } label: {
+                        Label("从 F50 下载", systemImage: "square.and.arrow.down")
+                    }
+                } header: {
+                    Text("文件传输")
+                } footer: {
+                    Text("上传时先选择本机文件，再选择 F50 共享目录；下载时先从 F50 选择文件，再选择本机保存位置。")
+                }
+
+                Section {
+                    Button {
+                        guard let shareURL else { return }
+                        UIApplication.shared.open(shareURL)
+                    } label: {
+                        Label("前往“文件”App 连接服务器", systemImage: "folder.badge.gearshape")
+                    }
+                } footer: {
+                    Text("若选择器中没有显示 F50，请先在“文件”App 中通过“连接服务器”添加 \(shareURL?.absoluteString ?? "smb://192.168.0.1")。")
+                }
+
+                if let statusMessage {
+                    Section {
+                        Label(statusMessage, systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+            .navigationTitle("F50 文件共享")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            .sheet(item: $pickerRequest) { request in
+                IOSDocumentPicker(
+                    request: request,
+                    shareURL: shareURL,
+                    onPick: { urls in
+                        pickerRequest = nil
+                        handleSelection(urls, for: request.kind)
+                    },
+                    onCancel: {
+                        pickerRequest = nil
+                    }
+                )
+            }
+        }
+    }
+
+    private func handleSelection(_ urls: [URL], for kind: IOSFilePickerRequest.Kind) {
+        guard !urls.isEmpty else { return }
+        switch kind {
+        case .uploadSource:
+            presentNext(IOSFilePickerRequest(kind: .uploadDestination, urls: urls))
+        case .downloadSource:
+            presentNext(IOSFilePickerRequest(kind: .downloadDestination, urls: urls))
+        case .uploadDestination:
+            statusMessage = "文件已上传"
+        case .downloadDestination:
+            statusMessage = "文件已保存"
+        }
+    }
+
+    private func presentNext(_ request: IOSFilePickerRequest) {
+        pickerRequest = nil
+        DispatchQueue.main.async {
+            pickerRequest = request
+        }
+    }
+}
+
+private struct IOSDocumentPicker: UIViewControllerRepresentable {
+    let request: IOSFilePickerRequest
+    let shareURL: URL?
+    let onPick: ([URL]) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker: UIDocumentPickerViewController
+        switch request.kind {
+        case .uploadSource, .downloadSource:
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+            picker.allowsMultipleSelection = true
+            if request.kind == .downloadSource {
+                picker.directoryURL = shareURL
+            }
+        case .uploadDestination, .downloadDestination:
+            picker = UIDocumentPickerViewController(forExporting: request.urls, asCopy: true)
+            if request.kind == .uploadDestination {
+                picker.directoryURL = shareURL
+            }
+        }
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: ([URL]) -> Void
+        let onCancel: () -> Void
+
+        init(onPick: @escaping ([URL]) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onPick(urls)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
         }
     }
 }

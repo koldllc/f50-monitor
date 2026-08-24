@@ -138,6 +138,8 @@ private struct SpeedWaveView: View {
 struct StatusView: View {
     @ObservedObject var fetcher: F50Fetcher
     @State private var webURLToOpen: IdentifiableURL?
+    @State private var isShowingFileShare = false
+    @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
     @Environment(\.colorScheme) private var colorScheme
 
     private var status: F50Status { fetcher.status }
@@ -162,6 +164,18 @@ struct StatusView: View {
                         speedCard
                         trafficCard
                         hardwareCard
+
+                        if isFileSharingEnabled {
+                            Button {
+                                isShowingFileShare = true
+                            } label: {
+                                Label("文件共享", systemImage: "folder")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 42)
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
                     .padding(.horizontal, isCompact ? 12 : 16)
                     .padding(.vertical, verticalPadding)
@@ -197,6 +211,9 @@ struct StatusView: View {
             .sheet(item: $webURLToOpen) { item in
                 SafariView(url: item.url)
                     .ignoresSafeArea()
+            }
+            .sheet(isPresented: $isShowingFileShare) {
+                IOSFileShareView(fetcher: fetcher)
             }
         }
     }
