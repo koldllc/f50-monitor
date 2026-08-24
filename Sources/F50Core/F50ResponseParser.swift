@@ -8,6 +8,31 @@ struct ParsedQos: Equatable {
 }
 
 enum F50ResponseParser {
+    static func requiresUFISupplement(_ payload: [String: Any]) -> Bool {
+        let hasRSRP = firstValidSignalValue(
+            in: payload,
+            keys: ["nr_rsrp", "Z5g_rsrp", "5g_rsrp", "lte_rsrp", "Nr_signal_strength"]
+        ) != nil
+        let hasRSRQ = firstValidSignalValue(
+            in: payload,
+            keys: ["nr_rsrq", "Z5g_rsrq", "5g_rsrq", "lte_rsrq"]
+        ) != nil
+        let hasSNR = firstValidSignalValue(
+            in: payload,
+            keys: ["Nr_snr", "nr_snr", "Z5g_snr", "5g_snr", "lte_snr", "sinr", "nr_sinr", "5g_sinr", "lte_sinr"]
+        ) != nil
+        let lowercasedKeys = Set(payload.keys.map { $0.lowercased() })
+        let clientCountKeys: Set<String> = [
+            "wifi_access_sta_num", "station_num", "client_count",
+            "connected_devices", "sta_num", "access_sta_num"
+        ]
+
+        return !hasRSRP
+            || !hasRSRQ
+            || !hasSNR
+            || lowercasedKeys.isDisjoint(with: clientCountKeys)
+    }
+
     static func parseSMSMessages(_ json: [String: Any]) -> [F50SMSMessage]? {
         guard let rows = json["messages"] as? [[String: Any]] else { return nil }
 

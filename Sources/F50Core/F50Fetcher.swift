@@ -116,6 +116,7 @@ public class F50Fetcher: ObservableObject {
     private var packageTask: URLSessionDataTask?
     private var smsTask: URLSessionDataTask?
     private var isFetchingExtensions = false
+    private var isFetchingUFISupplement = false
     private var pendingExtensionRequests = 0
     private var isApplyingConfiguration = false
     private var lastTrafficRefreshDate = Date.distantPast
@@ -1561,6 +1562,15 @@ public class F50Fetcher: ObservableObject {
                             skipADB: false,
                             routerAvailable: true
                         )
+                        if F50ResponseParser.requiresUFISupplement(dict) {
+                            self.fetchUFISupplement(
+                                ufiBaseURL: ufiBaseURL,
+                                routerPayload: dict,
+                                candidateTokens: self.candidateTokens(),
+                                generation: generation,
+                                refreshTraffic: refreshTraffic
+                            )
+                        }
                     } else {
                         self.handleRouterFailure(
                             "解析 JSON 失败",
@@ -1584,6 +1594,81 @@ public class F50Fetcher: ObservableObject {
         baseTask?.resume()
     }
 
+    private func fetchUFISupplement(
+        ufiBaseURL: String,
+        routerPayload: [String: Any],
+        candidateTokens: [String],
+        generation: UInt,
+        refreshTraffic: Bool
+    ) {
+        guard generation == requestGeneration,
+              !isFetchingUFISupplement,
+              !candidateTokens.isEmpty else { return }
+        isFetchingUFISupplement = true
+        fetchUFISupplementAttempt(
+            ufiBaseURL: ufiBaseURL,
+            routerPayload: routerPayload,
+            candidateTokens: candidateTokens,
+            generation: generation,
+            refreshTraffic: refreshTraffic
+        )
+    }
+
+    private func fetchUFISupplementAttempt(
+        ufiBaseURL: String,
+        routerPayload: [String: Any],
+        candidateTokens: [String],
+        generation: UInt,
+        refreshTraffic: Bool
+    ) {
+        guard generation == requestGeneration, let token = candidateTokens.first else {
+            isFetchingUFISupplement = false
+            return
+        }
+
+        fetchUFISignalPayload(
+            ufiBaseURL: ufiBaseURL,
+            token: token,
+            generation: generation
+        ) { [weak self] signalPayload in
+            guard let self, generation == self.requestGeneration else { return }
+            guard let signalPayload else {
+                self.fetchUFISupplementAttempt(
+                    ufiBaseURL: ufiBaseURL,
+                    routerPayload: routerPayload,
+                    candidateTokens: Array(candidateTokens.dropFirst()),
+                    generation: generation,
+                    refreshTraffic: refreshTraffic
+                )
+                return
+            }
+
+            var merged = routerPayload
+            if let data = signalPayload["data"] as? [String: Any] {
+                data.forEach { merged[$0.key] = $0.value }
+            }
+            if let result = signalPayload["result"] as? [String: Any] {
+                result.forEach { merged[$0.key] = $0.value }
+            }
+            signalPayload.forEach {
+                if $0.key != "data" && $0.key != "result" {
+                    merged[$0.key] = $0.value
+                }
+            }
+
+            self.parseStatusDict(
+                F50ResponseParser.normalizeUFIPayload(merged),
+                preserveQos: true,
+                refreshTraffic: refreshTraffic
+            )
+            if !self.diagnosticChannelMode.contains("2333 UFI") {
+                self.diagnosticChannelMode += " + 2333 UFI"
+            }
+            self.appendLog("补充", "2333 UFI 补齐 Router 缺失状态")
+            self.isFetchingUFISupplement = false
+        }
+    }
+
     private func configurationDidChange() {
         requestGeneration &+= 1
         baseTask?.cancel()
@@ -1600,6 +1685,7 @@ public class F50Fetcher: ObservableObject {
         smsTask = nil
         isFetching = false
         isFetchingExtensions = false
+        isFetchingUFISupplement = false
         isFetchingSMS = false
         smsMessages = []
         smsErrorMessage = nil

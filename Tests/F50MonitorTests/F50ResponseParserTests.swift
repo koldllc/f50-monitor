@@ -3,6 +3,31 @@ import CryptoKit
 @testable import F50Core
 
 final class F50ResponseParserTests: XCTestCase {
+    func testIncompleteRouterStatusRequiresUFISupplement() {
+        let payload: [String: Any] = [
+            "Language": "zh-cn",
+            "cr_version": "MU300_ZYV1.0.0B13",
+            "network_provider": "中国联通",
+            "wa_inner_version": "F50_FLYMODEM_ZYV1.0.0B13"
+        ]
+
+        XCTAssertTrue(F50ResponseParser.requiresUFISupplement(payload))
+    }
+
+    func testRouterStatusWithSignalAndClientCountDoesNotRequireUFISupplement() {
+        let payload: [String: Any] = [
+            "network_type": "5G",
+            "network_provider": "中国联通",
+            "signalbar": "4",
+            "Z5g_rsrp": "-85",
+            "Z5g_rsrq": "-9",
+            "Z5g_snr": "16",
+            "wifi_access_sta_num": "0"
+        ]
+
+        XCTAssertFalse(F50ResponseParser.requiresUFISupplement(payload))
+    }
+
     func testQosRefreshesWhenConnectionContextChanges() {
         var previous = F50Status()
         var current = previous
