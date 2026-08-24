@@ -157,7 +157,7 @@ private struct InitialSetupView: View {
                 } header: {
                     Text("连接设备")
                 } footer: {
-                    Text("该密码会同时用于中兴与 UFI 后台；如两者不同，可稍后在设置中分别调整。")
+                    Text("UFI 后台口令为可选项，可稍后在设置中单独填写。")
                 }
             }
             .navigationTitle("初始设置")
@@ -167,7 +167,7 @@ private struct InitialSetupView: View {
                         fetcher.applyConfiguration(
                             baseURL: F50Configuration.normalizeBaseURL(address),
                             password: password,
-                            ufiToken: password,
+                            ufiToken: "",
                             refreshInterval: fetcher.refreshInterval,
                             displayMode: fetcher.displayMode
                         )

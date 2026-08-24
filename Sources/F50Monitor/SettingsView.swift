@@ -150,20 +150,20 @@ public struct SettingsView: View {
                     .frame(width: 170)
                 }
 
-                // 3. UFI后台口令
+                // 3. UFI后台口令（可选）
                 HStack {
-                    Text("UFI后台口令")
+                    Text("UFI后台口令（可选）")
                         .font(.system(size: 12, weight: .semibold))
                         .fixedSize()
                     Spacer(minLength: 12)
                     HStack(spacing: 4) {
                         if isUFITokenVisible {
-                            TextField("例如 admin", text: $tempUFIToken)
+                            TextField("留空即可", text: $tempUFIToken)
                                 .textFieldStyle(.roundedBorder)
                                 .multilineTextAlignment(.trailing)
                                 .font(.system(size: 12))
                         } else {
-                            SecureField("例如 admin", text: $tempUFIToken)
+                            SecureField("留空即可", text: $tempUFIToken)
                                 .textFieldStyle(.roundedBorder)
                                 .multilineTextAlignment(.trailing)
                                 .font(.system(size: 12))
@@ -425,5 +425,4 @@ public struct SettingsView: View {
         }
     }
 }
-
 
