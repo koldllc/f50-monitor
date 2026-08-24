@@ -1,0 +1,53 @@
+{
+  "replays": [
+    {
+      "name": "弱覆盖窗口",
+      "expectedCategories": ["coverage"],
+      "samples": [
+        {"second": 0, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -113, "snr": 4, "temperature": 44},
+        {"second": 5, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -111, "snr": 3, "temperature": 45},
+        {"second": 10, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -114, "snr": 5, "temperature": 45},
+        {"second": 15, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -112, "snr": 4, "temperature": 46}
+      ]
+    },
+    {
+      "name": "小区切换伴随丢包",
+      "expectedCategories": ["baseStationSwitching", "interference"],
+      "samples": [
+        {"second": 0, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -92, "snr": 19, "temperature": 47, "loss": 0, "cellId": "A"},
+        {"second": 5, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -93, "snr": 2, "temperature": 47, "loss": 18, "cellId": "A"},
+        {"second": 10, "online": true, "cellularConnected": true, "network": "4G LTE", "rsrp": -91, "snr": 18, "temperature": 48, "loss": 15, "cellId": "B"},
+        {"second": 15, "online": true, "cellularConnected": true, "network": "4G LTE", "rsrp": -92, "snr": 3, "temperature": 48, "loss": 0, "cellId": "B"},
+        {"second": 20, "online": true, "cellularConnected": true, "network": "4G LTE", "rsrp": -92, "snr": 19, "temperature": 48, "loss": 0, "cellId": "B"}
+      ]
+    },
+    {
+      "name": "信号正常但拥塞",
+      "expectedCategories": ["congestion"],
+      "samples": [
+        {"second": 0, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -89, "snr": 16, "temperature": 45, "latency": 175, "loss": 10},
+        {"second": 5, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -90, "snr": 15, "temperature": 45, "latency": 190, "loss": 12},
+        {"second": 10, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -91, "snr": 15, "temperature": 46, "latency": 165, "loss": 8},
+        {"second": 15, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -90, "snr": 16, "temperature": 46, "latency": 180, "loss": 10}
+      ]
+    },
+    {
+      "name": "设备高温伴随高延迟",
+      "expectedCategories": ["deviceOverheating"],
+      "samples": [
+        {"second": 0, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -93, "snr": 14, "temperature": 63, "latency": 40, "loss": 0},
+        {"second": 5, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -93, "snr": 14, "temperature": 67, "latency": 160, "loss": 8},
+        {"second": 10, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -92, "snr": 13, "temperature": 70, "latency": 185, "loss": 10}
+      ]
+    },
+    {
+      "name": "设备后台本地连接中断",
+      "expectedCategories": ["localConnection"],
+      "samples": [
+        {"second": 0, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -91, "snr": 15, "temperature": 43},
+        {"second": 5, "online": false, "cellularConnected": true, "network": "5G SA", "rsrp": -91, "snr": 15, "temperature": 43, "localConnectionError": "请求设备后台超时"},
+        {"second": 10, "online": true, "cellularConnected": true, "network": "5G SA", "rsrp": -92, "snr": 14, "temperature": 44}
+      ]
+    }
+  ]
+}

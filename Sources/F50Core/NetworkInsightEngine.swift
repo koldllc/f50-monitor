@@ -5,6 +5,7 @@ import Foundation
 public struct TelemetrySample: Codable, Equatable, Sendable {
     public let timestamp: Date
     public let online: Bool
+    public let cellularConnected: Bool?
     public let networkType: String
     public let rsrp: Double?
     public let rsrq: Double?
@@ -23,10 +24,15 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
     public let snrSource: String?
     public let snrKind: SignalNoiseMetricKind
     public let dataAgeSeconds: Double?
+    /// Fetcher-level connection failure. This is intentionally kept separate
+    /// from cellular radio state so Network Doctor does not blame the tower
+    /// when the app simply cannot reach the device.
+    public let localConnectionError: String?
 
     public init(
         timestamp: Date = Date(),
         online: Bool,
+        cellularConnected: Bool? = nil,
         networkType: String,
         rsrp: Double? = nil,
         rsrq: Double? = nil,
@@ -44,10 +50,12 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         rsrqSource: String? = nil,
         snrSource: String? = nil,
         snrKind: SignalNoiseMetricKind = .unknown,
-        dataAgeSeconds: Double? = nil
+        dataAgeSeconds: Double? = nil,
+        localConnectionError: String? = nil
     ) {
         self.timestamp = timestamp
         self.online = online
+        self.cellularConnected = cellularConnected
         self.networkType = networkType
         self.rsrp = rsrp
         self.rsrq = rsrq
@@ -66,6 +74,7 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         self.snrSource = snrSource
         self.snrKind = snrKind
         self.dataAgeSeconds = dataAgeSeconds.map { max(0, $0) }
+        self.localConnectionError = localConnectionError
     }
 
     public var is5G: Bool {
@@ -224,9 +233,37 @@ public enum DoctorFindingCategory: String, Codable, CaseIterable, Sendable {
     case insufficientData
     case coverage
     case interference
+    case baseStationSwitching
+    case congestion
+    case deviceOverheating
+    case localConnection
+    // Legacy values retained so reports saved by earlier releases still decode.
     case frequentSwitching
     case possibleOverheating
     case networkQuality
+}
+
+public enum DoctorTimelineEventKind: String, Codable, Equatable, Sendable {
+    case disconnection
+    case networkSwitch
+    case cellularChange
+    case sinrFluctuation
+    case packetLoss
+    case highLatency
+    case highTemperature
+    case localConnectionFailure
+}
+
+public struct DoctorTimelineEvent: Codable, Equatable, Sendable {
+    public let timestamp: Date
+    public let kind: DoctorTimelineEventKind
+    public let summary: String
+
+    public init(timestamp: Date, kind: DoctorTimelineEventKind, summary: String) {
+        self.timestamp = timestamp
+        self.kind = kind
+        self.summary = summary
+    }
 }
 
 public struct DoctorFinding: Codable, Equatable, Sendable {
@@ -234,13 +271,17 @@ public struct DoctorFinding: Codable, Equatable, Sendable {
     public let title: String
     public let summary: String
     public let evidence: [String]
+    /// Evidence that lowers the probability of this cause. Optional for
+    /// backwards-compatible decoding of reports saved by earlier releases.
+    public let counterEvidence: [String]?
     public let confidence: Double
 
-    public init(category: DoctorFindingCategory, title: String, summary: String, evidence: [String], confidence: Double) {
+    public init(category: DoctorFindingCategory, title: String, summary: String, evidence: [String], counterEvidence: [String] = [], confidence: Double) {
         self.category = category
         self.title = title
         self.summary = summary
         self.evidence = evidence
+        self.counterEvidence = counterEvidence
         self.confidence = min(1, max(0, confidence))
     }
 }
@@ -254,8 +295,10 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     public let findings: [DoctorFinding]
     // 可选以兼容第一阶段已保存的本地报告。
     public let cellularChanges: [CellularChangeEvent]?
+    public let timeline: [DoctorTimelineEvent]?
+    public let counterEvidence: [String]?
 
-    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]? = nil) {
+    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]? = nil, timeline: [DoctorTimelineEvent]? = nil, counterEvidence: [String]? = nil) {
         self.start = start
         self.end = end
         self.sampleCount = sampleCount
@@ -263,9 +306,67 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         self.switchSummary = switchSummary
         self.findings = findings
         self.cellularChanges = cellularChanges
+        self.timeline = timeline
+        self.counterEvidence = counterEvidence
     }
 
     public var primaryFinding: DoctorFinding? { findings.first }
+
+    public func exportMarkdown(deviceAddress: String? = nil, includeSensitiveData: Bool = false) -> String {
+        let formatter = ISO8601DateFormatter()
+        var lines = ["# F50 Network Doctor 诊断报告", ""]
+        if let start { lines.append("- 开始：\(formatter.string(from: start))") }
+        if let end { lines.append("- 结束：\(formatter.string(from: end))") }
+        lines.append("- 采样：\(sampleCount) 次")
+        lines.append("- 5G 在线率：\(Int((fiveGOnlineRate * 100).rounded()))%")
+        lines.append("- 制式切换：\(switchSummary.total) 次")
+        if includeSensitiveData, let deviceAddress, !deviceAddress.isEmpty {
+            lines.append("- 设备地址：\(deviceAddress)")
+        } else {
+            lines.append("- 隐私：设备地址、Cell ID、PCI、TAC 默认隐藏")
+        }
+        lines.append(contentsOf: ["", "## 诊断结论", ""])
+        if findings.isEmpty { lines.append("当前采样未发现明显异常。") }
+        for finding in findings {
+            lines.append("### \(finding.title)（可信度 \(Int((finding.confidence * 100).rounded()))%）")
+            lines.append(finding.summary)
+            for item in finding.evidence { lines.append("- 证据：\(item)") }
+            for item in finding.counterEvidence ?? [] { lines.append("- 反证：\(item)") }
+            lines.append("")
+        }
+        if let counterEvidence, !counterEvidence.isEmpty {
+            lines.append(contentsOf: ["## 反证与较低可能性", ""])
+            for item in counterEvidence { lines.append("- \(item)") }
+            lines.append("")
+        }
+        if let timeline, !timeline.isEmpty {
+            lines.append(contentsOf: ["## 关联时间线", ""])
+            for event in timeline {
+                let summary = includeSensitiveData ? event.summary : Self.redactSensitiveIdentity(in: event.summary)
+                lines.append("- \(formatter.string(from: event.timestamp)) · \(summary)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func redactSensitiveIdentity(in value: String) -> String {
+        var redacted = value
+        if let separator = value.firstIndex(of: "：") {
+            let label = String(value[..<separator])
+            if ["Cell ID", "PCI", "TAC"].contains(label) {
+                return "\(label)：[已隐藏]"
+            }
+        }
+        let patterns = [
+            #"https?://[^\s，。]+"#,
+            #"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            redacted = regex.stringByReplacingMatches(in: redacted, range: NSRange(redacted.startIndex..., in: redacted), withTemplate: "[设备地址已隐藏]")
+        }
+        return redacted
+    }
 }
 
 /// Pure local analysis for Signal Lab and Network Doctor.
@@ -394,6 +495,7 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         let freshSamples = selected.filter { ($0.dataAgeSeconds ?? 0) <= 10 }
         let summary = switchSummary(in: freshSamples)
         let cellChanges = cellularChangeEvents(in: freshSamples)
+        let timeline = diagnosticTimeline(in: freshSamples, switchSummary: summary, cellularChanges: cellChanges)
         var findings: [DoctorFinding] = []
         guard !selected.isEmpty else {
             findings.append(DoctorFinding(category: .insufficientData, title: "数据不足", summary: "还没有可用于分析的网络采样。", evidence: [], confidence: 0))
@@ -402,50 +504,157 @@ public final class NetworkInsightEngine: @unchecked Sendable {
 
         guard !freshSamples.isEmpty else {
             findings.append(DoctorFinding(category: .insufficientData, title: "数据已陈旧", summary: "现有采样已经过期，暂时不能可靠判断网络原因。", evidence: ["请保持工具页在前台等待新数据"], confidence: 0))
-            return DoctorReport(start: selected.first?.timestamp, end: selected.last?.timestamp, sampleCount: selected.count, fiveGOnlineRate: 0, switchSummary: summary, findings: findings, cellularChanges: cellChanges)
+            return DoctorReport(start: selected.first?.timestamp, end: selected.last?.timestamp, sampleCount: selected.count, fiveGOnlineRate: 0, switchSummary: summary, findings: findings, cellularChanges: cellChanges, timeline: timeline)
         }
 
         let rsrp = freshSamples.compactMap(\.rsrp)
         let snr = freshSamples.compactMap(\.snr)
         let avgRSRP = average(rsrp)
+        let avgSNR = average(snr)
         let snrDeviation = standardDeviation(snr)
-        if let avgRSRP, avgRSRP < -105 {
-            let confidence = min(0.95, 0.55 + Double(rsrp.filter { $0 < -105 }.count) / Double(max(1, rsrp.count)) * 0.4)
-            findings.append(DoctorFinding(category: .coverage, title: "覆盖可能不足", summary: "信号强度持续偏低，更可能是覆盖或摆放位置问题。", evidence: ["平均 RSRP：\(format(avgRSRP)) dBm"], confidence: confidence))
-        }
-        if let avgRSRP, let snrDeviation, rsrp.count >= 2, snrDeviation >= 5 {
-            let stableRSRP = (standardDeviation(rsrp) ?? 100) < 5
-            if stableRSRP {
-                findings.append(DoctorFinding(category: .interference, title: "可能存在无线干扰", summary: "RSRP 相对稳定，但 SINR/SNR 波动较大，更可能是无线干扰。", evidence: ["平均 RSRP：\(format(avgRSRP)) dBm", "SINR/SNR 波动：\(format(snrDeviation)) dB"], confidence: min(0.9, 0.55 + snrDeviation / 20)))
-            }
-        }
-        let totalChanges = summary.total + cellChanges.count
-        if totalChanges >= 3 {
-            let bandChanges = cellChanges.filter { $0.kind == .band }.count
-            let identityChanges = cellChanges.filter { $0.kind == .pci || $0.kind == .cellId }.count
-            findings.append(DoctorFinding(category: .frequentSwitching, title: "小区或制式切换频繁", summary: "最近采样期间发生多次可确认切换，可能造成短时不稳定。", evidence: ["制式切换：\(summary.total) 次", "频段切换：\(bandChanges) 次", "小区标识切换：\(identityChanges) 次", "5G → LTE：\(summary.fiveGToLTE) 次", "LTE → 5G：\(summary.lteToFiveG) 次"], confidence: min(0.95, 0.5 + Double(totalChanges) / 20)))
-        }
-        let temperatures = freshSamples.compactMap(\.temperature)
-        if let maxTemperature = temperatures.max(), maxTemperature >= 65 {
-            findings.append(DoctorFinding(category: .possibleOverheating, title: "可能过热", summary: "设备温度偏高，可能与性能下降同时出现；仅凭采样不能证明因果关系。", evidence: ["最高温度：\(format(maxTemperature)) ℃"], confidence: min(0.95, 0.55 + (maxTemperature - 65) / 40)))
+        let maxTemperature = freshSamples.compactMap(\.temperature).max()
+        let loss = average(freshSamples.compactMap(\.packetLossPercent))
+        let latency = average(freshSamples.compactMap(\.latencyMilliseconds))
+        let packetLossEventCount = timeline.filter { $0.kind == .packetLoss }.count
+        var reportCounterEvidence: [String] = []
+        if let maxTemperature, maxTemperature < 60 {
+            reportCounterEvidence.append("最高温度仅 \(format(maxTemperature)) ℃，因此设备过热可能性较低")
         }
         if let avgRSRP, avgRSRP >= -100 {
-            let latency = average(freshSamples.compactMap(\.latencyMilliseconds))
-            let loss = average(freshSamples.compactMap(\.packetLossPercent))
-            if (latency ?? 0) >= 120 || (loss ?? 0) >= 5 {
-                var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm"]
-                if let latency { evidence.append("平均延迟：\(format(latency)) ms") }
-                if let loss { evidence.append("平均丢包：\(format(loss))%") }
-                findings.append(DoctorFinding(category: .networkQuality, title: "无线信号尚可但网络质量较差", summary: "无线指标不差，但延迟或丢包偏高，更可能是拥塞、回程或上层网络问题。", evidence: evidence, confidence: 0.65))
+            reportCounterEvidence.append("平均 RSRP 为 \(format(avgRSRP)) dBm，因此覆盖不足可能性较低")
+        }
+        if summary.total + cellChanges.count == 0 {
+            reportCounterEvidence.append("未确认制式、频段或小区切换，因此基站切换可能性较低")
+        }
+
+        if let avgRSRP, rsrp.count >= 3, avgRSRP < -105 {
+            let weakRatio = Double(rsrp.filter { $0 < -105 }.count) / Double(rsrp.count)
+            let confidence = min(0.95, 0.5 + weakRatio * 0.4)
+            findings.append(DoctorFinding(
+                category: .coverage,
+                title: "覆盖不足",
+                summary: "信号强度持续偏低，更可能是覆盖或摆放位置问题。",
+                evidence: ["平均 RSRP：\(format(avgRSRP)) dBm", "弱信号占比：\(format(weakRatio * 100))%"],
+                counterEvidence: normalTemperatureEvidence(maxTemperature),
+                confidence: confidence
+            ))
+        }
+        if let avgRSRP, let snrDeviation, rsrp.count >= 3, snr.count >= 4, snrDeviation >= 5 {
+            let stableRSRP = (standardDeviation(rsrp) ?? 100) < 5
+            if stableRSRP {
+                var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm", "SINR/SNR 标准差：\(format(snrDeviation)) dB"]
+                let lossNearSINR = correlatedCount(primary: timeline.filter { $0.kind == .sinrFluctuation }, secondary: timeline.filter { $0.kind == .packetLoss }, within: 30)
+                if lossNearSINR > 0 { evidence.append("SINR 波动前后 30 秒出现丢包：\(lossNearSINR) 次") }
+                findings.append(DoctorFinding(category: .interference, title: "无线干扰", summary: "RSRP 相对稳定，但 SINR/SNR 波动较大，更可能是无线干扰。", evidence: evidence, counterEvidence: normalTemperatureEvidence(maxTemperature), confidence: min(0.9, 0.5 + snrDeviation / 20 + Double(lossNearSINR) * 0.05)))
             }
         }
-        return makeDoctorReport(selected: freshSamples, summary: summary, findings: findings, cellularChanges: cellChanges)
+
+        let totalChanges = summary.total + cellChanges.count
+        let changes = timeline.filter { $0.kind == .networkSwitch || $0.kind == .cellularChange }
+        let disruptions = timeline.filter { [.disconnection, .packetLoss, .highLatency].contains($0.kind) }
+        let disruptionsNearChanges = correlatedCount(primary: changes, secondary: disruptions, within: 30)
+        if totalChanges >= 2 || (totalChanges >= 1 && disruptionsNearChanges > 0) {
+            let bandChanges = cellChanges.filter { $0.kind == .band }.count
+            let identityChanges = cellChanges.filter { $0.kind == .pci || $0.kind == .cellId }.count
+            var evidence = ["制式切换：\(summary.total) 次", "频段切换：\(bandChanges) 次", "小区标识切换：\(identityChanges) 次"]
+            if disruptionsNearChanges > 0 { evidence.append("切换前后 30 秒伴随掉线、丢包或高延迟：\(disruptionsNearChanges) 次") }
+            findings.append(DoctorFinding(category: .baseStationSwitching, title: "基站切换", summary: "已确认制式、频段或小区变化；与网络异常同时出现时，更可能影响稳定性。", evidence: evidence, counterEvidence: disruptionsNearChanges == 0 ? ["切换前后未观察到掉线、丢包或高延迟，切换未必是故障原因"] : [], confidence: min(0.95, 0.45 + Double(totalChanges) * 0.08 + Double(disruptionsNearChanges) * 0.1)))
+        }
+
+        if let maxTemperature, maxTemperature >= 65 {
+            let thermalEvents = timeline.filter { $0.kind == .highTemperature }
+            let thermalDisruptions = correlatedCount(primary: thermalEvents, secondary: disruptions, within: 60)
+            var evidence = ["最高温度：\(format(maxTemperature)) ℃"]
+            if thermalDisruptions > 0 { evidence.append("高温前后 60 秒伴随丢包、掉线或高延迟：\(thermalDisruptions) 次") }
+            findings.append(DoctorFinding(category: .deviceOverheating, title: "设备过热", summary: "设备温度偏高；只有与性能异常在时间上重合时，过热原因才更可信。", evidence: evidence, counterEvidence: thermalDisruptions == 0 ? ["高温时段未观察到网络性能异常，暂不能证明因果关系"] : [], confidence: min(0.9, 0.45 + (maxTemperature - 65) / 50 + Double(thermalDisruptions) * 0.1)))
+        }
+
+        if let avgRSRP, avgRSRP >= -100, (avgSNR ?? 8) >= 5, ((latency ?? 0) >= 120 || ((loss ?? 0) >= 10 && packetLossEventCount >= 2)) {
+            var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm"]
+            if let avgSNR { evidence.append("平均 SINR/SNR：\(format(avgSNR)) dB") }
+            if let latency { evidence.append("平均延迟：\(format(latency)) ms") }
+            if let loss { evidence.append("平均丢包：\(format(loss))%") }
+            let qualityEvents = timeline.filter { $0.kind == .packetLoss || $0.kind == .highLatency }
+            let qualityNearSwitches = correlatedCount(primary: qualityEvents, secondary: changes, within: 30)
+            findings.append(DoctorFinding(category: .congestion, title: "网络拥塞", summary: "无线信号尚可，但延迟或丢包偏高；若异常不紧邻切换，更可能是拥塞、回程或上层网络问题。", evidence: evidence, counterEvidence: qualityNearSwitches > 0 ? ["部分质量异常紧邻基站切换，拥塞并非唯一解释"] : normalTemperatureEvidence(maxTemperature), confidence: qualityNearSwitches > 0 ? 0.55 : 0.72))
+        }
+
+        let localFailures = timeline.filter { $0.kind == .localConnectionFailure }
+        if !localFailures.isEmpty {
+            let nearbyRadioChanges = correlatedCount(primary: localFailures, secondary: changes, within: 30)
+            var evidence = ["本地连接中断：\(localFailures.count) 次"]
+            if freshSamples.contains(where: { $0.localConnectionError != nil }) { evidence.append("设备抓取器返回了本地连接错误") }
+            findings.append(DoctorFinding(category: .localConnection, title: "本地连接异常", summary: "App 在诊断时段无法稳定连接 F50；这与蜂窝侧掉线是不同问题。", evidence: evidence, counterEvidence: nearbyRadioChanges > 0 ? ["中断附近也发生了基站切换，可能同时存在蜂窝侧波动"] : [], confidence: freshSamples.contains(where: { $0.localConnectionError != nil }) ? 0.88 : 0.65))
+        }
+        return makeDoctorReport(selected: freshSamples, summary: summary, findings: findings, cellularChanges: cellChanges, timeline: timeline, counterEvidence: reportCounterEvidence)
     }
 
-    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]) -> DoctorReport {
+    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent], timeline: [DoctorTimelineEvent], counterEvidence: [String]) -> DoctorReport {
         let sortedFindings = findings.sorted { $0.confidence > $1.confidence }
         let dates = selected.map(\.timestamp)
-        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings, cellularChanges: cellularChanges)
+        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings, cellularChanges: cellularChanges, timeline: timeline, counterEvidence: counterEvidence)
+    }
+
+    private func diagnosticTimeline(
+        in values: [TelemetrySample],
+        switchSummary: NetworkSwitchSummary,
+        cellularChanges: [CellularChangeEvent]
+    ) -> [DoctorTimelineEvent] {
+        let ordered = values.sorted { $0.timestamp < $1.timestamp }
+        var events = switchSummary.events.map {
+            DoctorTimelineEvent(timestamp: $0.timestamp, kind: .networkSwitch, summary: "制式切换：\($0.from) → \($0.to)")
+        }
+        events += cellularChanges.map {
+            let label: String
+            switch $0.kind {
+            case .band: label = "频段"
+            case .pci: label = "PCI"
+            case .cellId: label = "Cell ID"
+            case .tac: label = "TAC"
+            }
+            return DoctorTimelineEvent(timestamp: $0.timestamp, kind: .cellularChange, summary: "\(label)：\($0.from) → \($0.to)")
+        }
+
+        var previous: TelemetrySample?
+        var highTemperatureActive = false
+        for sample in ordered {
+            if let previous {
+                if previous.cellularConnected == true, sample.cellularConnected == false {
+                    events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .disconnection, summary: "蜂窝数据连接掉线"))
+                }
+                if previous.online, !sample.online {
+                    let message = sample.localConnectionError?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .localConnectionFailure, summary: message.map { "本地连接失败：\($0)" } ?? "App 无法连接 F50"))
+                }
+                if let old = previous.snr, let current = sample.snr, abs(current - old) >= 6 {
+                    events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .sinrFluctuation, summary: "SINR/SNR 突变 \(format(old)) → \(format(current)) dB"))
+                }
+            }
+            if let loss = sample.packetLossPercent, loss >= 3 {
+                events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .packetLoss, summary: "丢包 \(format(loss))%"))
+            }
+            if let latency = sample.latencyMilliseconds, latency >= 120 {
+                events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .highLatency, summary: "延迟 \(format(latency)) ms"))
+            }
+            let isHighTemperature = (sample.temperature ?? 0) >= 65
+            if isHighTemperature, !highTemperatureActive, let temperature = sample.temperature {
+                events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .highTemperature, summary: "设备温度升至 \(format(temperature)) ℃"))
+            }
+            highTemperatureActive = isHighTemperature
+            previous = sample
+        }
+        return events.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private func correlatedCount(primary: [DoctorTimelineEvent], secondary: [DoctorTimelineEvent], within seconds: TimeInterval) -> Int {
+        primary.reduce(0) { count, event in
+            count + (secondary.contains { abs($0.timestamp.timeIntervalSince(event.timestamp)) <= seconds } ? 1 : 0)
+        }
+    }
+
+    private func normalTemperatureEvidence(_ maxTemperature: Double?) -> [String] {
+        guard let maxTemperature, maxTemperature < 60 else { return [] }
+        return ["最高温度仅 \(format(maxTemperature)) ℃，过热可能性较低"]
     }
 
     private func trend(for values: [TelemetrySample]) -> SignalTrend {
@@ -599,6 +808,7 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         return TelemetrySample(
             timestamp: latest.timestamp,
             online: latest.online,
+            cellularConnected: latest.cellularConnected,
             networkType: latest.networkType,
             rsrp: median(window.compactMap(\.rsrp)),
             rsrq: median(window.compactMap(\.rsrq)),
@@ -616,7 +826,8 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             rsrqSource: latest.rsrqSource,
             snrSource: latest.snrSource,
             snrKind: latest.snrKind,
-            dataAgeSeconds: latest.dataAgeSeconds
+            dataAgeSeconds: latest.dataAgeSeconds,
+            localConnectionError: latest.localConnectionError
         )
     }
 

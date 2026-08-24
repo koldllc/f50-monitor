@@ -13,10 +13,17 @@ private extension String {
 }
 
 private extension TelemetrySample {
-    init(status: F50Status, timestamp: Date = Date()) {
+    init(status: F50Status, timestamp: Date = Date(), latencyMilliseconds: Double? = nil, packetLossPercent: Double? = nil) {
+        let cellularConnected: Bool?
+        switch status.pppStatus {
+        case "已连接": cellularConnected = true
+        case "未连接": cellularConnected = false
+        default: cellularConnected = nil
+        }
         self.init(
             timestamp: timestamp,
             online: status.isOnline,
+            cellularConnected: cellularConnected,
             networkType: status.networkType,
             rsrp: status.rsrp.f50NumericValue,
             rsrq: status.rsrq.f50NumericValue,
@@ -25,6 +32,8 @@ private extension TelemetrySample {
             temperature: status.temperature > 0 ? status.temperature : nil,
             downloadBytesPerSecond: status.dlSpeed,
             uploadBytesPerSecond: status.ulSpeed,
+            latencyMilliseconds: latencyMilliseconds,
+            packetLossPercent: packetLossPercent,
             pci: status.pci,
             cellId: status.cellId,
             tac: status.tac,
@@ -32,7 +41,8 @@ private extension TelemetrySample {
             rsrqSource: status.rsrqSource,
             snrSource: status.snrSource,
             snrKind: status.snrMetricKind ?? .unknown,
-            dataAgeSeconds: max(0, timestamp.timeIntervalSince(status.lastUpdated))
+            dataAgeSeconds: max(0, timestamp.timeIntervalSince(status.lastUpdated)),
+            localConnectionError: status.isOnline ? nil : status.errorMessage
         )
     }
 }
@@ -385,6 +395,8 @@ private final class NetworkDoctorSession: ObservableObject {
     private let engine = NetworkInsightEngine()
     private let reportDefaultsKey = "F50_iOS_NetworkDoctorLatestReport_v1"
     private var startedAt: Date?
+    private var lastProbeAt = Date.distantPast
+    private var probeInFlight = false
     let duration: TimeInterval = 600
 
     init() {
@@ -416,6 +428,29 @@ private final class NetworkDoctorSession: ObservableObject {
         update(at: now)
     }
 
+    func probeConnectivity(with status: F50Status, at now: Date = Date()) async {
+        guard isRunning, !probeInFlight, now.timeIntervalSince(lastProbeAt) >= 5 else { return }
+        probeInFlight = true
+        lastProbeAt = now
+        defer { probeInFlight = false }
+
+        var measuredLatency: Double?
+        for address in ["https://cp.cloudflare.com/generate_204", "https://captive.apple.com/hotspot-detect.html"] {
+            guard let url = URL(string: address) else { continue }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 4
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let started = Date()
+            guard let (_, response) = try? await URLSession.shared.data(for: request),
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200...399).contains(httpResponse.statusCode)
+            else { continue }
+            measuredLatency = Date().timeIntervalSince(started) * 1_000
+            break
+        }
+        receive(status, at: Date(), latencyMilliseconds: measuredLatency, packetLossPercent: measuredLatency == nil ? 100 : 0)
+    }
+
     func finish() {
         guard isRunning else { return }
         isRunning = false
@@ -424,6 +459,13 @@ private final class NetworkDoctorSession: ObservableObject {
             UserDefaults.standard.set(data, forKey: reportDefaultsKey)
         }
         startedAt = nil
+    }
+
+    private func receive(_ status: F50Status, at now: Date, latencyMilliseconds: Double?, packetLossPercent: Double?) {
+        guard isRunning else { return }
+        _ = engine.append(TelemetrySample(status: status, timestamp: now, latencyMilliseconds: latencyMilliseconds, packetLossPercent: packetLossPercent))
+        report = engine.diagnose()
+        update(at: now)
     }
 
     private func update(at now: Date) {
@@ -436,6 +478,8 @@ private final class NetworkDoctorSession: ObservableObject {
 struct NetworkDoctorView: View {
     @ObservedObject var fetcher: F50Fetcher
     @StateObject private var session = NetworkDoctorSession()
+    @State private var exportReport: String?
+    @State private var includeSensitiveData = false
     private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -449,7 +493,7 @@ struct NetworkDoctorView: View {
                     Text(session.isRunning ? "正在记录网络状态" : "10 分钟主动诊断")
                         .font(.title3.bold())
 
-                    Text(session.isRunning ? "请保持 F50 Monitor 在前台，完成后会自动分析。" : "记录信号、5G/LTE 切换、温度和活动速率，分析掉 5G 的可能原因。")
+                    Text(session.isRunning ? "请保持 F50 Monitor 在前台，完成后会自动分析。" : "按时间关联掉线、切换、温度、SINR 波动与丢包，分析网络异常的可能原因。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -471,7 +515,7 @@ struct NetworkDoctorView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             } footer: {
-                Text("iOS 第一版仅保证前台主动诊断，不会声称读取 App 未运行期间的历史数据。")
+                Text("仅在前台采样。每 5 秒发送一次极小的公网连通性请求以估算延迟与丢包，不下载测速文件。")
             }
 
             if session.report.sampleCount > 0 {
@@ -504,16 +548,31 @@ struct NetworkDoctorView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            ForEach(finding.counterEvidence ?? [], id: \.self) { evidence in
+                                Label(evidence, systemImage: "minus.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
                         }
                         .padding(.vertical, 3)
                     }
                 }
 
-                if !session.report.switchSummary.events.isEmpty {
-                    Section("切换时间线") {
-                        ForEach(Array(session.report.switchSummary.events.reversed().enumerated()), id: \.offset) { _, event in
+                if let counterEvidence = session.report.counterEvidence, !counterEvidence.isEmpty {
+                    Section("反证与较低可能性") {
+                        ForEach(counterEvidence, id: \.self) { evidence in
+                            Label(evidence, systemImage: "checkmark.shield")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let timeline = session.report.timeline, !timeline.isEmpty {
+                    Section("关联时间线") {
+                        ForEach(Array(timeline.reversed().enumerated()), id: \.offset) { _, event in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(event.from) → \(event.to)").font(.subheadline.weight(.semibold))
+                                Text(event.summary).font(.subheadline.weight(.semibold))
                                 Text(event.timestamp.formatted(date: .omitted, time: .standard))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
@@ -521,17 +580,25 @@ struct NetworkDoctorView: View {
                         }
                     }
                 }
-                if let changes = session.report.cellularChanges, !changes.isEmpty {
-                    Section("频段与小区时间线") {
-                        ForEach(Array(changes.reversed().enumerated()), id: \.offset) { _, event in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(changeKindText(event.kind))：\(event.from) → \(event.to)")
-                                    .font(.subheadline.weight(.semibold))
-                                Text(event.timestamp.formatted(date: .omitted, time: .standard))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+
+                Section {
+                    Toggle("包含 Cell ID、PCI、TAC 与设备地址", isOn: $includeSensitiveData)
+                    Button {
+                        exportReport = session.report.exportMarkdown(
+                            deviceAddress: F50Configuration.displayAddress(from: fetcher.baseURLString),
+                            includeSensitiveData: includeSensitiveData
+                        )
+                    } label: {
+                        Label("导出并分享", systemImage: "square.and.arrow.up")
+                    }
+                } header: {
+                    Text("导出诊断报告")
+                } footer: {
+                    if includeSensitiveData {
+                        Text("当前导出会包含敏感设备标识，请确认分享对象。")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("默认隐藏 Cell ID、PCI、TAC 和设备地址。")
                     }
                 }
             }
@@ -539,7 +606,16 @@ struct NetworkDoctorView: View {
         .navigationTitle("Network Doctor")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(fetcher.$status) { session.receive($0) }
-        .onReceive(clock) { session.tick(at: $0) }
+        .onReceive(clock) {
+            session.tick(at: $0)
+            Task { await session.probeConnectivity(with: fetcher.status, at: $0) }
+        }
+        .sheet(isPresented: Binding(
+            get: { exportReport != nil },
+            set: { if !$0 { exportReport = nil } }
+        )) {
+            if let exportReport { ActivityViewController(items: [exportReport]) }
+        }
     }
 
     private func confidenceText(_ value: Double) -> String {
@@ -550,14 +626,6 @@ struct NetworkDoctorView: View {
         }
     }
 
-    private func changeKindText(_ kind: CellularChangeKind) -> String {
-        switch kind {
-        case .band: return "频段"
-        case .pci: return "PCI"
-        case .cellId: return "Cell ID"
-        case .tac: return "TAC"
-        }
-    }
 }
 
 private struct DoctorSummaryRow: View {

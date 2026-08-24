@@ -33,7 +33,8 @@ let package = Package(
         .testTarget(
             name: "F50MonitorTests",
             dependencies: ["F50Core"],
-            path: "Tests/F50MonitorTests"
+            path: "Tests/F50MonitorTests",
+            resources: [.process("Fixtures")]
         )
     ]
 )
