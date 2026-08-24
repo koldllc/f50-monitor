@@ -79,19 +79,19 @@ struct SettingsView: View {
                         .buttonStyle(.borderless)
                     }
 
-                    // UFI后台口令（可选）
+                    // UFI后台口令
                     HStack {
-                        Text("UFI后台口令（可选）")
+                        Text("UFI后台口令")
                             .foregroundColor(.primary)
                             .fixedSize()
                         Spacer(minLength: 12)
                         if isUFITokenVisible {
-                            TextField("留空即可", text: $tempUFIToken)
+                            TextField("可选", text: $tempUFIToken)
                                 .multilineTextAlignment(.trailing)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                         } else {
-                            SecureField("留空即可", text: $tempUFIToken)
+                            SecureField("可选", text: $tempUFIToken)
                                 .multilineTextAlignment(.trailing)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
