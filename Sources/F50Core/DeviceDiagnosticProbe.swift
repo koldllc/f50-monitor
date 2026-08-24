@@ -1205,7 +1205,7 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
     public func submitReportRemote(
         report: DeviceDiagnosticReport,
         webhookURL: URL
-    ) async throws -> (success: Bool, message: String) {
+    ) async throws -> (success: Bool, message: String, issueURL: String?) {
         guard let jsonData = report.toJSONData() else {
             throw NSError(domain: "F50Diagnostic", code: -1, userInfo: [NSLocalizedDescriptionKey: "序列化诊断报告失败"])
         }
@@ -1232,15 +1232,15 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let msg = json["message"] as? String {
                 if let issueUrl = json["issueUrl"] as? String, !issueUrl.isEmpty {
-                    return (true, "\(msg) (Issue: \(issueUrl))")
+                    return (true, msg, issueUrl)
                 }
-                return (true, msg)
+                return (true, msg, nil)
             }
             let respStr = String(data: data, encoding: .utf8) ?? "提交成功"
-            return (true, respStr)
+            return (true, respStr, nil)
         } else {
             let errStr = String(data: data, encoding: .utf8) ?? "HTTP 错误: \(http.statusCode)"
-            return (false, errStr)
+            return (false, errStr, nil)
         }
     }
 }

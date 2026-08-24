@@ -25,7 +25,7 @@ async fn submit_feedback(
     user_notes: String,
     contact: String,
     fetcher: State<'_, Arc<F50Fetcher>>,
-) -> Result<String, String> {
+) -> Result<feedback_diagnostic::FeedbackSubmissionResult, String> {
     feedback_diagnostic::execute_and_submit_feedback(
         fetcher.inner().clone(),
         category,

@@ -618,7 +618,7 @@ public struct DeviceFeedbackView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "link")
                                     .font(.system(size: 12))
-                                Text("查看公开 GitHub Issue")
+                                Text("查看反馈处理进度")
                                     .font(.system(size: 12, weight: .semibold))
                                 Spacer()
                                 Image(systemName: "arrow.up.right")
@@ -1042,15 +1042,15 @@ public struct DeviceFeedbackView: View {
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
 
-                            if let issueUrl = createdIssueURL {
-                                HStack(spacing: 4) {
-                                    Text("GitHub Issue:")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                    Text(issueUrl)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(F50Theme.blue)
-                                        .lineLimit(1)
+                            if let issueUrl = createdIssueURL, let url = URL(string: issueUrl) {
+                                Link(destination: url) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "link")
+                                        Text("查看反馈处理进度")
+                                        Image(systemName: "arrow.up.right")
+                                    }
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(F50Theme.blue)
                                 }
                             }
 
@@ -1305,7 +1305,7 @@ public struct DeviceFeedbackView: View {
 
             // 2. 自动直传 Cloudflare Worker
             do {
-                let (success, msg) = try await DeviceDiagnosticProbe.shared.submitReportRemote(
+                let (success, msg, issueURL) = try await DeviceDiagnosticProbe.shared.submitReportRemote(
                     report: reportResult,
                     webhookURL: webhookURL
                 )
@@ -1316,9 +1316,7 @@ public struct DeviceFeedbackView: View {
                         #if os(iOS)
                         UINotificationFeedbackGenerator().notificationOccurred(.success)
                         #endif
-                        if msg.contains("Issue: "), let urlPart = msg.components(separatedBy: "Issue: ").last {
-                            self.createdIssueURL = urlPart.trimmingCharacters(in: CharacterSet(charactersIn: " ()"))
-                        }
+                        self.createdIssueURL = issueURL
                     } else {
                         self.statusFeedbackMessage = "提交失败: \(msg)"
                         #if os(iOS)

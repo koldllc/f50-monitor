@@ -2,10 +2,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use tokio::time::Duration;
 use tokio::task::JoinSet;
-use crate::fetcher::F50Fetcher;
+use tokio::time::Duration;
+
 use crate::crypto::{kano_sign, KANO_SIGN_KEY};
+use crate::fetcher::F50Fetcher;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackSubmissionResult {
+    message: String,
+    issue_url: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointProbeResult {
@@ -127,7 +135,7 @@ pub async fn execute_and_submit_feedback(
     device_model: String,
     user_notes: String,
     contact: String,
-) -> Result<String, String> {
+) -> Result<FeedbackSubmissionResult, String> {
     if user_notes.trim().len() < 4 {
         return Err("请在「详细问题描述」中至少输入 4 个字符以提供复现说明。".to_string());
     }
@@ -265,7 +273,11 @@ pub async fn execute_and_submit_feedback(
     if post_resp.status().is_success() {
         let resp_json: serde_json::Value = post_resp.json().await.unwrap_or(json!({}));
         let msg = resp_json.get("message").and_then(|v| v.as_str()).unwrap_or("提交成功");
-        Ok(msg.to_string())
+        let issue_url = resp_json.get("issueUrl").and_then(|v| v.as_str()).map(str::to_string);
+        Ok(FeedbackSubmissionResult {
+            message: msg.to_string(),
+            issue_url,
+        })
     } else {
         let err_text = post_resp.text().await.unwrap_or_default();
         Err(format!("服务端退回: {}", err_text))

@@ -57,6 +57,9 @@
 
         <div class="status-box success" v-if="successMessage">
           ✅ {{ successMessage }}
+          <a v-if="issueUrl" :href="issueUrl" target="_blank" rel="noopener noreferrer" class="feedback-link">
+            查看反馈处理进度 ↗
+          </a>
         </div>
       </div>
 
@@ -87,10 +90,12 @@ const userNotes = ref('');
 const isSubmitting = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const issueUrl = ref('');
 
 function handleClose() {
   errorMessage.value = '';
   successMessage.value = '';
+  issueUrl.value = '';
   emit('close');
 }
 
@@ -103,6 +108,7 @@ async function handleSubmit() {
   isSubmitting.value = true;
   errorMessage.value = '';
   successMessage.value = '';
+  issueUrl.value = '';
 
   try {
     const res = await invoke('submit_feedback', {
@@ -111,7 +117,8 @@ async function handleSubmit() {
       userNotes: userNotes.value,
       contact: contact.value
     });
-    successMessage.value = res || '反馈提交成功！开发者将尽快跟进处理。';
+    successMessage.value = res?.message || '反馈提交成功！开发者将尽快跟进处理。';
+    issueUrl.value = res?.issueUrl || '';
   } catch (err) {
     errorMessage.value = String(err);
   } finally {
@@ -208,6 +215,19 @@ input[type="text"], select, textarea {
 .status-box.success {
   background: rgba(52, 199, 89, 0.1);
   color: #15803d;
+}
+
+.feedback-link {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  color: #007aff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.feedback-link:hover {
+  text-decoration: underline;
 }
 
 .modal-footer {
