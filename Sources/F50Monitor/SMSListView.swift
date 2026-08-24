@@ -244,51 +244,58 @@ struct SMSListView: View {
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : F50Theme.green))
-                Spacer()
-                Text(message.dateText)
-                    .font(.system(size: 9, design: .rounded).monospacedDigit())
-                    .foregroundColor(.secondary)
-            }
+        HStack {
+            if message.isOutgoing { Spacer(minLength: 44) }
 
-            Text(message.content.isEmpty ? "（空短信）" : message.content)
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message.content.isEmpty ? "（空短信）" : message.content)
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .foregroundColor(message.isOutgoing ? .white : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            if let code = extractVerificationCode(from: message.content) {
-                Button(action: {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(code, forType: .string)
-                    fetcher.markSMSAsRead(ids: [message.id])
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "doc.on.doc.fill")
-                            .font(.system(size: 10))
-                        Text("复制验证码: \(code)")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                if let code = extractVerificationCode(from: message.content) {
+                    Button(action: {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(code, forType: .string)
+                        fetcher.markSMSAsRead(ids: [message.id])
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc.fill")
+                                .font(.system(size: 10))
+                            Text("复制验证码: \(code)")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                        }
+                        .foregroundColor(message.isOutgoing ? .white : F50Theme.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(message.isOutgoing ? Color.white.opacity(0.2) : F50Theme.blue.opacity(0.10)))
                     }
-                    .foregroundColor(F50Theme.blue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(F50Theme.blue.opacity(0.10)))
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
+
+                HStack(spacing: 4) {
+                    if message.didFailToSend {
+                        Image(systemName: "exclamationmark.circle.fill")
+                    }
+                    Text(message.dateText)
+                        .font(.system(size: 9, design: .rounded).monospacedDigit())
+                }
+                .foregroundColor(message.isOutgoing ? Color.white.opacity(0.75) : .secondary)
             }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: 270, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : Color.primary.opacity(message.isUnread ? 0.08 : 0.04)))
+            )
+
+            if !message.isOutgoing { Spacer(minLength: 44) }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(message.isUnread ? F50Theme.blue.opacity(0.10) : Color.primary.opacity(0.03))
-        )
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
             if message.isUnread {

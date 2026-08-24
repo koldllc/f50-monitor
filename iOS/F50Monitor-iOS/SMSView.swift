@@ -6,6 +6,7 @@ struct SMSView: View {
     @ObservedObject var fetcher: F50Fetcher
     @State private var isComposing = false
     @State private var copiedNotice: String? = nil
+    @State private var conversationPath: [String] = []
 
     private struct Conversation: Identifiable {
         let number: String
@@ -29,7 +30,7 @@ struct SMSView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $conversationPath) {
             Group {
                 if fetcher.isFetchingSMS && fetcher.smsMessages.isEmpty {
                     ProgressView("正在读取短信…")
@@ -98,11 +99,12 @@ struct SMSView: View {
                         }
 
                         ForEach(conversations) { conversation in
-                            NavigationLink {
-                                conversationView(conversation)
+                            Button {
+                                conversationPath.append(conversation.number)
                             } label: {
                                 conversationRow(conversation)
                             }
+                                .buttonStyle(.plain)
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
@@ -171,6 +173,11 @@ struct SMSView: View {
             }
             .sheet(isPresented: $isComposing) {
                 ComposeSheet(fetcher: fetcher)
+            }
+            .navigationDestination(for: String.self) { number in
+                if let conversation = conversations.first(where: { $0.number == number }) {
+                    conversationView(conversation)
+                }
             }
             .overlay(alignment: .bottom) {
                 if let notice = copiedNotice {
@@ -248,67 +255,61 @@ struct SMSView: View {
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(message.didFailToSend ? F50Theme.red.opacity(0.12) : (message.isOutgoing ? F50Theme.blue.opacity(0.12) : F50Theme.green.opacity(0.12)))
-                        .frame(width: 26, height: 26)
-                    Image(systemName: message.isOutgoing ? "arrow.up.right" : "arrow.down.left")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : F50Theme.green))
-                }
+        HStack {
+            if message.isOutgoing { Spacer(minLength: 48) }
 
-                Text(message.number.isEmpty ? "未知号码" : message.number)
-                    .font(.system(size: 15, weight: message.isUnread ? .bold : .semibold, design: .rounded))
-                    .foregroundColor(.primary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message.content.isEmpty ? "（空短信）" : message.content)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+                    .foregroundColor(message.isOutgoing ? .white : .primary)
+                    .lineSpacing(2)
 
-                if message.isUnread {
-                    Text("未读")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(F50Theme.blue.opacity(0.15)))
-                        .foregroundColor(F50Theme.blue)
-                }
-
-                Spacer()
-                Text(message.dateText)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(.secondary)
-            }
-
-            Text(message.content.isEmpty ? "（空短信）" : message.content)
-                .font(.subheadline)
-                .textSelection(.enabled)
-                .foregroundColor(message.isUnread ? .primary : .secondary)
-                .lineSpacing(2)
-
-            // 识别验证码并提示一键复制
-            if let code = extractVerificationCode(from: message.content) {
-                Button {
-                    UIPasteboard.general.string = code
-                    withAnimation { copiedNotice = "验证码 \(code) 已复制" }
-                    fetcher.markSMSAsRead(ids: [message.id])
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.caption2.bold())
-                        Text("复制验证码: \(code)")
-                            .font(.caption.weight(.semibold).monospacedDigit())
+                // 识别验证码并提示一键复制
+                if let code = extractVerificationCode(from: message.content) {
+                    Button {
+                        UIPasteboard.general.string = code
+                        withAnimation { copiedNotice = "验证码 \(code) 已复制" }
+                        fetcher.markSMSAsRead(ids: [message.id])
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption2.bold())
+                            Text("复制验证码: \(code)")
+                                .font(.caption.weight(.semibold).monospacedDigit())
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(message.isOutgoing ? Color.white.opacity(0.2) : F50Theme.blue.opacity(0.1)))
+                        .foregroundColor(message.isOutgoing ? .white : F50Theme.blue)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(F50Theme.blue.opacity(0.1)))
-                    .foregroundColor(F50Theme.blue)
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
+
+                HStack(spacing: 5) {
+                    if message.didFailToSend {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundColor(message.isOutgoing ? .white : F50Theme.red)
+                    }
+                    Text(message.dateText)
+                        .monospacedDigit()
+                }
+                .font(.caption2)
+                .foregroundColor(message.isOutgoing ? Color.white.opacity(0.75) : .secondary)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: 280, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : Color(.secondarySystemGroupedBackground)))
+            )
+
+            if !message.isOutgoing { Spacer(minLength: 48) }
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
             if message.isUnread {
