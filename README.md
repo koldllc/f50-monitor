@@ -1,6 +1,6 @@
 # F50 Monitor ⚡
 
-专为中兴 (ZTE) F50 5G 随身 WiFi (MiFi) 打造的全平台（macOS / iOS / Windows）状态监控与短信管理应用。
+专为中兴 (ZTE) F50 5G 随身 WiFi (MiFi) 打造的桌面端（macOS / Windows）状态监控与短信管理应用。
 
 ![F50 Monitor 2.0 功能海报](assets/f50-monitor-v2.0-poster.jpg)
 
@@ -10,24 +10,22 @@
 
 ## 📦 各平台下载安装
 
-前往 [GitHub Releases](https://github.com/koldllc/f50-monitor/releases/latest) 下载最新稳定版本（**v2.2.1**）：
+前往 [GitHub Releases](https://github.com/koldllc/f50-monitor/releases/latest) 下载最新稳定版本：
 
 | 平台 / 设备 | 推荐下载文件 | 说明 |
 | :--- | :--- | :--- |
 | 🍏 **macOS (苹果电脑)** | [**`f50-monitor-macos.zip`**](https://github.com/koldllc/f50-monitor/releases/latest) | 菜单栏常驻工具，解压即用（支持 Apple Silicon M 系列芯片与 Intel Mac） |
 | 🪟 **Windows (主流电脑)** | [**`f50-monitor-windows-x64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用 99% 常见 Windows 电脑（Intel / AMD 处理器），绿色单文件免安装 |
 | 🪟 **Windows (ARM 设备)** | [**`f50-monitor-windows-arm64.exe`**](https://github.com/koldllc/f50-monitor/releases/latest) | 适用高通骁龙 ARM 架构 Windows 设备（如 Surface Pro 11 等） |
-| 📱 **iOS (iPhone)** | [**`f50-monitor-ios-unsigned.ipa`**](https://github.com/koldllc/f50-monitor/releases/latest) | 未签名 IPA 安装包（支持 Sideloadly / AltStore / TrollStore 等自签安装） |
 
 > 🍏 **macOS 首次运行提示**：若提示“未识别的开发者”，请在 macOS **系统设置 ➔ 隐私与安全性** 中点击“仍要打开”。  
-> 📱 **iOS 安装提示**：iOS 安装包为未签名 `.ipa` 文件，可使用 Sideloadly、AltStore、SideStore 或 TrollStore（巨魔）自签安装使用。
 
 ---
 
 ## ✨ 核心特性
 
 - 🔄 **数据通道全面重构 (80 ➔ 5555 ➔ 2333)**：不再主要依赖 UFI 代理接口。应用内置多级降级机制，优先通过中兴 Router 原厂官方后台（80 端口）获取基础网络与信号数据，若未就绪或需拓展硬件指标则自动回退至 5555 端口通过原生 TCP Socket 与 ADB 交互直读底层 `/proc` 与 Binder 服务，最后兜底 UFI / MiniKano 工具箱代理（2333 端口）。只要开启 ADB 即可轻松获取 CPU/内存负载、芯片温度与 QCI 签约速率等全量数据。
-- 🩺 **自动化诊断与一键反馈**：新增跨三端的自动化诊断反馈通道。遇到连接异常、数据缺失或新设备适配需求时，应用可一键自动采集完整的网络接口响应、系统版本与日志诊断数据，本地完成密码/IMEI/电话等敏感信息安全脱敏，直接提交反馈或生成 Issue，方便开发者快速定位 Bug 与高效适配新设备。
+- 🩺 **自动化诊断与一键反馈**：新增跨平台的自动化诊断反馈通道。遇到连接异常、数据缺失或新设备适配需求时，应用可一键自动采集完整的网络接口响应、系统版本与日志诊断数据，本地完成密码/IMEI/电话等敏感信息安全脱敏，直接提交反馈或生成 Issue，方便开发者快速定位 Bug 与高效适配新设备。
 - ⚡ **菜单栏 / 任务栏实时常驻**：支持自定义显示模式（仅图标、实时速率、套餐用量、CPU/内存占用、芯片温度、Wi-Fi 设备数）。
 - 📶 **蜂窝信号与频段感知**：实时获取网络制式（5G SA/NSA, 4G LTE）、`B3 + n78` 聚合频段、运营商标志，以及 RSRP、SINR/SNR、RSRQ 信号质量评级。
 - 📊 **硬件状态与容错感知**：全面适配多源硬件指标抓取，监控 CPU/内存负载与芯片各热切片温度；未就绪或断开时优雅展示 `--` 占位。
@@ -49,16 +47,6 @@
 # 编译并打包为 F50 Monitor.app 并自动安装到应用程序目录
 ./build.sh
 ```
-
-### 📱 iOS 版 (SwiftUI + WidgetKit)
-
-环境要求：Xcode 16+（iOS 16.0+）
-
-1. 打开 `iOS/F50Monitor-iOS.xcodeproj`。
-2. 在 **Signing & Capabilities** 选择你的 Apple ID 团队（免费个人账号即可真机调试）。
-3. 选择真机运行；首次安装后在手机 **设置 → 通用 → VPN 与设备管理** 中信任开发者证书。
-
-> 工程由 XcodeGen 维护（`iOS/project.yml`），修改配置后运行 `cd iOS && xcodegen generate` 即可重新生成。
 
 ### 🪟 Windows 版 (Tauri 2.0 + Vue 3 + Rust)
 

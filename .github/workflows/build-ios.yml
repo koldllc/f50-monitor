@@ -1,14 +1,6 @@
 name: Build iOS Release
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - 'iOS/**'
-      - 'Sources/F50Core/**'
-      - '.github/workflows/build-ios.yml'
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       upload_to_release:
