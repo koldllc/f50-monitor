@@ -95,6 +95,32 @@ public struct SettingsView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("文件共享")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("访问 F50 共享文件")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("通过 Finder 打开已启用的 SMB 共享")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("打开") {
+                        guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
+                        NSWorkspace.shared.open(url)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("连接设置")
                     .font(.system(size: 11, weight: .semibold))

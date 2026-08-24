@@ -7,6 +7,27 @@ struct SMSView: View {
     @State private var isComposing = false
     @State private var copiedNotice: String? = nil
 
+    private struct Conversation: Identifiable {
+        let number: String
+        let messages: [F50SMSMessage]
+        var id: String { number }
+        var latest: F50SMSMessage { messages[0] }
+        var hasUnread: Bool { messages.contains(where: { $0.isUnread }) }
+    }
+
+    private var conversations: [Conversation] {
+        var grouped: [String: [F50SMSMessage]] = [:]
+        var order: [String] = []
+        for message in fetcher.smsMessages {
+            let number = message.number.trimmingCharacters(in: .whitespacesAndNewlines)
+            if grouped[number] == nil { order.append(number) }
+            grouped[number, default: []].append(message)
+        }
+        return order.compactMap { number in
+            grouped[number].map { Conversation(number: number, messages: $0) }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -76,15 +97,19 @@ struct SMSView: View {
                             }
                         }
 
-                        ForEach(fetcher.smsMessages) { message in
-                            messageRow(message)
+                        ForEach(conversations) { conversation in
+                            NavigationLink {
+                                conversationView(conversation)
+                            } label: {
+                                conversationRow(conversation)
+                            }
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                                 .swipeActions(edge: .leading) {
-                                    if message.isUnread {
+                                    if conversation.hasUnread {
                                         Button {
-                                            fetcher.markSMSAsRead(ids: [message.id])
+                                            fetcher.markSMSAsRead(ids: conversation.messages.filter(\.isUnread).map(\.id))
                                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                         } label: {
                                             Label("已读", systemImage: "envelope.open.fill")
@@ -171,6 +196,55 @@ struct SMSView: View {
         .onDisappear {
             fetcher.stopSMSAutoRefresh()
         }
+    }
+
+    private func conversationRow(_ conversation: Conversation) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: conversation.hasUnread ? "message.fill" : "message")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(conversation.hasUnread ? F50Theme.blue : .secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill((conversation.hasUnread ? F50Theme.blue : Color.secondary).opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(conversation.number.isEmpty ? "未知号码" : conversation.number)
+                        .font(.system(size: 15, weight: conversation.hasUnread ? .bold : .semibold, design: .rounded))
+                    if conversation.hasUnread {
+                        Text("未读")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(F50Theme.blue.opacity(0.15)))
+                            .foregroundColor(F50Theme.blue)
+                    }
+                    Spacer()
+                    Text(conversation.latest.dateText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+
+                Text(conversation.latest.content.isEmpty ? "（空短信）" : conversation.latest.content)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+    }
+
+    private func conversationView(_ conversation: Conversation) -> some View {
+        List(conversation.messages.reversed()) { message in
+            messageRow(message)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+        .listStyle(.plain)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle(conversation.number.isEmpty ? "未知号码" : conversation.number)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {

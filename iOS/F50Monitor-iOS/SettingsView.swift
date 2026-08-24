@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import F50Core
 
 /// iOS 设置：连接参数、刷新频率、关于信息
@@ -12,6 +13,7 @@ struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var isInitialized = false
     @State private var isShowingFeedback = false
+    @State private var isShowingFileShareHelp = false
 
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
@@ -128,6 +130,19 @@ struct SettingsView: View {
                     Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
                 }
 
+                Section("文件共享") {
+                    Button {
+                        guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
+                        UIApplication.shared.open(url) { supported in
+                            if !supported { isShowingFileShareHelp = true }
+                        }
+                    } label: {
+                        Label("打开 F50 共享文件", systemImage: "folder")
+                    }
+                } footer: {
+                    Text("通过 F50 已开启的 SMB 文件共享访问设备存储。若系统未直接打开，请在“文件”App 的“连接服务器”中输入设备地址。")
+                }
+
                 Section("帮助与反馈") {
                     Button {
                         isShowingFeedback = true
@@ -166,6 +181,11 @@ struct SettingsView: View {
                 DeviceFeedbackView(fetcher: fetcher) {
                     isShowingFeedback = false
                 }
+            }
+            .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text("打开“文件”App → 右上角更多 → 连接服务器，输入 \(F50Configuration.fileShareURL(from: fetcher.baseURLString)?.absoluteString ?? "smb://192.168.0.1")。")
             }
             .onAppear {
                 tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)

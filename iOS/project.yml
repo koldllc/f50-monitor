@@ -47,8 +47,6 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - com.f50.monitor.ios.refresh
         ITSAppUsesNonExemptEncryption: false
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:

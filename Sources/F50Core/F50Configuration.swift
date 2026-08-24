@@ -118,6 +118,13 @@ public enum F50Configuration {
         }
     }
 
+    /// F50 原生文件共享使用 SMB；认证信息由系统文件管理器单独保存，避免写入 App 配置。
+    public static func fileShareURL(from raw: String) -> URL? {
+        let routerBaseURL = resolveEndpoints(from: raw).routerBaseURL
+        guard let host = URL(string: routerBaseURL)?.host else { return nil }
+        return URL(string: "smb://\(host)")
+    }
+
     /// 提取用于设置界面显示和保存的主机名，忽略协议与端口。
     public static func displayAddress(from raw: String) -> String {
         let clean = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/ \t\n\r"))

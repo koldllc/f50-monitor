@@ -434,10 +434,14 @@ struct StatusView: View {
                 Text("签约状态：")
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
                 Text(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? "无数据" : "QCI: \(qciVal.isEmpty ? "-" : qciVal)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(qciVal.isEmpty && dlVal.isEmpty && ulVal.isEmpty ? .secondary : .primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
             }
 
             if !dlVal.isEmpty || !ulVal.isEmpty {

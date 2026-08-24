@@ -5,6 +5,7 @@ struct SMSListView: View {
     @ObservedObject var fetcher: F50Fetcher
     var onClose: () -> Void
     @State private var isComposing = false
+    @State private var selectedConversationNumber: String?
 
     var body: some View {
         Group {
@@ -17,6 +18,9 @@ struct SMSListView: View {
                         fetcher.fetchSMSMessages()
                     }
                 )
+            } else if let selectedConversationNumber,
+                      let conversation = groupedMessages.first(where: { $0.number == selectedConversationNumber }) {
+                conversationDetail(conversation)
             } else {
                 smsList
             }
@@ -102,7 +106,12 @@ struct SMSListView: View {
                     ScrollView {
                         LazyVStack(spacing: 8) {
                             ForEach(groupedMessages, id: \.number) { group in
-                                messageGroup(group)
+                                Button {
+                                    selectedConversationNumber = group.number
+                                } label: {
+                                    conversationRow(group)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -163,6 +172,75 @@ struct SMSListView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(hasUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04))
         )
+    }
+
+    private func conversationRow(_ group: (number: String, messages: [F50SMSMessage])) -> some View {
+        let latest = group.messages[0]
+        let hasUnread = group.messages.contains(where: { $0.isUnread })
+
+        return HStack(spacing: 9) {
+            Image(systemName: hasUnread ? "message.fill" : "message")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(hasUnread ? F50Theme.blue : .secondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill((hasUnread ? F50Theme.blue : Color.secondary).opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(group.number.isEmpty ? "未知号码" : group.number)
+                        .font(.system(size: 12, weight: hasUnread ? .bold : .semibold, design: .rounded))
+                    if hasUnread {
+                        Text("未读")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundColor(F50Theme.blue)
+                    }
+                    Spacer()
+                    Text(latest.dateText)
+                        .font(.system(size: 9, design: .rounded).monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+                Text(latest.content.isEmpty ? "（空短信）" : latest.content)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hasUnread ? F50Theme.blue.opacity(0.08) : Color.primary.opacity(0.04)))
+    }
+
+    private func conversationDetail(_ group: (number: String, messages: [F50SMSMessage])) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    selectedConversationNumber = nil
+                } label: {
+                    Label("短信", systemImage: "chevron.left")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(F50Theme.blue)
+
+                Spacer()
+                Text(group.number.isEmpty ? "未知号码" : group.number)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Spacer()
+                Color.clear.frame(width: 48, height: 1)
+            }
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(group.messages.reversed()) { message in
+                        messageRow(message)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 380, height: 480)
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
