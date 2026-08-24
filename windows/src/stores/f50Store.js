@@ -1,16 +1,28 @@
 import { reactive, computed } from 'vue';
 
-// Tauri API wrapper with browser fallback for dev/preview
+// Tauri API wrapper with Android WebView bridge and browser fallback.
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__);
+const isAndroid = typeof window !== 'undefined' && Boolean(window.F50Android);
+export const isAndroidPlatform = isAndroid;
 
-async function invokeTauri(cmd, args = {}) {
+export async function invokePlatform(cmd, args = {}) {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return await invoke(cmd, args);
   }
+  if (isAndroid) {
+    const raw = window.F50Android.invoke(cmd, JSON.stringify(args || {}));
+    const response = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (response && response.error) throw new Error(response.error);
+    return response?.value ?? response;
+  }
   console.warn(`[Browser Mode] Simulated invoke: ${cmd}`, args);
   return mockInvoke(cmd, args);
 }
+
+// Keep the old internal name local to this store while allowing platform-aware
+// components (for example the feedback form) to use the same bridge.
+const invokeTauri = invokePlatform;
 
 // Mock fallback for browser preview
 let mockDl = 1024 * 1024 * 3.5;

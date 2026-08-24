@@ -1,9 +1,9 @@
 <template>
   <footer class="footer-container">
     <!-- Web Admin Dual Entrance & Screen Mirroring Grid -->
-    <div class="actions-grid">
+    <div class="actions-grid" :class="{ 'android-grid': isAndroidPlatform }">
       <!-- Screen Mirroring Button -->
-      <button class="action-card-btn" @click="emit('openMirror')" title="无线 ADB + scrcpy 设备屏幕镜像">
+      <button v-if="!isAndroidPlatform" class="action-card-btn" @click="emit('openMirror')" title="无线 ADB + scrcpy 设备屏幕镜像">
         <span class="action-icon">📺</span>
         <div class="action-texts">
           <span class="action-title">无线投屏</span>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { openWebAdmin } from '../stores/f50Store.js';
+import { openWebAdmin, isAndroidPlatform } from '../stores/f50Store.js';
 
 const emit = defineEmits(['openMirror']);
 </script>
@@ -49,6 +49,10 @@ const emit = defineEmits(['openMirror']);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.actions-grid.android-grid {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .action-card-btn {

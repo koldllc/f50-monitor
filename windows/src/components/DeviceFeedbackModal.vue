@@ -75,7 +75,7 @@
 
 <script setup>
 import { ref } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invokePlatform } from '../stores/f50Store.js';
 
 const props = defineProps({
   isOpen: Boolean
@@ -111,7 +111,7 @@ async function handleSubmit() {
   issueUrl.value = '';
 
   try {
-    const res = await invoke('submit_feedback', {
+    const res = await invokePlatform('submit_feedback', {
       category: category.value,
       deviceModel: deviceModel.value,
       userNotes: userNotes.value,

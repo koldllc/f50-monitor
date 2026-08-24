@@ -4,6 +4,9 @@ import vue from '@vitejs/plugin-vue';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  // Android loads the built UI from file:///android_asset, so relative asset
+  // URLs are required. Tauri/browser builds keep the existing root base.
+  base: process.env.F50_ANDROID ? './' : '/',
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   // prevent vite from obscuring rust errors
   clearScreen: false,

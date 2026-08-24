@@ -1,0 +1,60 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install frontend dependencies
+        working-directory: windows
+        run: npm ci
+
+      - name: Build debug APK
+        run: gradle -p android :app:assembleDebug --stacktrace
+
+      - name: Prepare artifact
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk f50-monitor-android-debug.apk
+          sha256sum f50-monitor-android-debug.apk > f50-monitor-android-debug.apk.sha256
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging f50-monitor-android-debug.apk | head -n 3
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: F50-Monitor-Android-Debug
+          path: |
+            f50-monitor-android-debug.apk
+            f50-monitor-android-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 7
