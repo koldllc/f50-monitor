@@ -606,9 +606,9 @@ struct NetworkDoctorView: View {
         .navigationTitle("Network Doctor")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(fetcher.$status) { session.receive($0) }
-        .onReceive(clock) {
-            session.tick(at: $0)
-            Task { await session.probeConnectivity(with: fetcher.status, at: $0) }
+        .onReceive(clock) { now in
+            session.tick(at: now)
+            Task { await session.probeConnectivity(with: fetcher.status, at: now) }
         }
         .sheet(isPresented: Binding(
             get: { exportReport != nil },
