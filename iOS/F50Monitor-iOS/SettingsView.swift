@@ -134,12 +134,6 @@ struct SettingsView: View {
 
                     if isFileSharingEnabled {
                         Button {
-                            isShowingFileShare = true
-                        } label: {
-                            Label("打开文件传输", systemImage: "folder")
-                        }
-
-                        Button {
                             openFileShareInFilesApp()
                         } label: {
                             Label("在“文件”App 中打开", systemImage: "folder.badge.gearshape")
