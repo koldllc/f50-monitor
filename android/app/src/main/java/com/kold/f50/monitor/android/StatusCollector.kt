@@ -1,6 +1,10 @@
 package com.kold.f50.monitor.android
 
+import android.content.Context
 import android.content.SharedPreferences
+import android.telephony.CellSignalStrengthLte
+import android.telephony.CellSignalStrengthNr
+import android.telephony.TelephonyManager
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -13,6 +17,7 @@ import org.json.JSONArray
 import java.util.concurrent.atomic.AtomicReference
 
 class StatusCollector(
+    private val context: Context,
     private val preferences: SharedPreferences
 ) {
     private val cached = AtomicReference(
@@ -22,6 +27,8 @@ class StatusCollector(
     private var lastQosAt = 0L
     private var qos: QosResult? = null
     private var sessionCookie: String? = null
+    private var routerRetryAt = 0L
+    private var previousNetSample: NetSample? = null
 
     fun currentStatus(): String = cached.get()
 
@@ -30,13 +37,16 @@ class StatusCollector(
         val previous = runCatching { JSONObject(cached.get()) }.getOrDefault(defaultStatus())
         val next = JSONObject(previous.toString())
         val router = routerBase(config.baseURL)
-        var fetch = fetchRouter(router)
+        val now = System.currentTimeMillis()
+        val attemptedRouter = now >= routerRetryAt
+        var fetch: RouterFetch? = null
+        if (attemptedRouter) fetch = fetchRouter(router)
         if (fetch != null && (!fetch.valid || fetch.httpStatus == 401 || fetch.httpStatus == 403)) {
             // One bounded login retry. A failed retry is returned to the cache;
             // this cycle never enters a login loop.
             if (login(router, config.password)) fetch = fetchRouter(router)
         }
-        val now = System.currentTimeMillis()
+        if (attemptedRouter) routerRetryAt = if (fetch?.valid == true) 0L else now + ROUTER_RETRY_MS
 
         val payload = fetch?.takeIf { it.valid }?.payload
         if (payload != null) {
@@ -44,8 +54,9 @@ class StatusCollector(
             next.put("isOnline", true)
             next.put("errorMessage", JSONObject.NULL)
         } else {
-            next.put("isOnline", false)
-            next.put("errorMessage", "无法连接 Router $router")
+            val localTelemetry = applyLocalTelemetry(next)
+            next.put("isOnline", localTelemetry)
+            next.put("errorMessage", if (localTelemetry) JSONObject.NULL else "无法连接 Router $router")
         }
 
         val metrics = ProcMetrics.read(previousCpu)
@@ -234,6 +245,87 @@ class StatusCollector(
         }
     }
 
+    /** Uses only basic phone state and /proc counters; no identity, location, or SMS access. */
+    private fun applyLocalTelemetry(status: JSONObject): Boolean {
+        val phone = runCatching { context.getSystemService(TelephonyManager::class.java) }.getOrNull()
+        val networkType = phone?.let {
+            runCatching { it.dataNetworkType }.getOrDefault(TelephonyManager.NETWORK_TYPE_UNKNOWN)
+        } ?: TelephonyManager.NETWORK_TYPE_UNKNOWN
+        val connected = phone?.let {
+            runCatching { it.dataState == TelephonyManager.DATA_CONNECTED }.getOrDefault(false)
+        } ?: false
+        var hasCarrier = false
+        if (phone != null) {
+            runCatching { phone.networkOperatorName.trim() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+                hasCarrier = true
+                status.put("carrier", it)
+            }
+            status.put("networkType", networkTypeName(networkType))
+            status.put("pppStatus", if (connected) "已连接" else "未连接")
+            val signal = runCatching { phone.signalStrength }.getOrNull()
+            signal?.let {
+                status.put("signalBar", ((it.level.coerceIn(0, 4) * 5) + 2) / 4)
+                val cell = it.cellSignalStrengths.firstOrNull { strength ->
+                    strength is CellSignalStrengthNr || strength is CellSignalStrengthLte
+                }
+                when (cell) {
+                    is CellSignalStrengthNr -> {
+                        putAvailable(status, "rsrp", cell.ssRsrp, "dBm")
+                        putAvailable(status, "rsrq", cell.ssRsrq, "dB")
+                        putAvailable(status, "snr", cell.ssSinr, "dB")
+                    }
+                    is CellSignalStrengthLte -> {
+                        putAvailable(status, "rsrp", cell.rsrp, "dBm")
+                        putAvailable(status, "rsrq", cell.rsrq, "dB")
+                        if (cell.rssnr != Int.MAX_VALUE && cell.rssnr != Int.MIN_VALUE) {
+                            status.put("snr", "${cell.rssnr / 10.0} dB")
+                        }
+                    }
+                }
+            }
+        }
+
+        val sample = readNetSample()
+        val previous = previousNetSample
+        previousNetSample = sample
+        if (sample != null && previous != null) {
+            val elapsedSeconds = (sample.at - previous.at) / 1000.0
+            if (elapsedSeconds > 0) {
+                val down = ((sample.rx - previous.rx).coerceAtLeast(0L) / elapsedSeconds)
+                val up = ((sample.tx - previous.tx).coerceAtLeast(0L) / elapsedSeconds)
+                status.put("dlSpeed", down)
+                status.put("ulSpeed", up)
+                appendHistory(status, "dlHistory", down)
+                appendHistory(status, "ulHistory", up)
+            }
+        }
+        return networkType != TelephonyManager.NETWORK_TYPE_UNKNOWN && (connected || hasCarrier)
+    }
+
+    private fun putAvailable(status: JSONObject, key: String, value: Int, unit: String) {
+        if (value != Int.MAX_VALUE && value != Int.MIN_VALUE && value < 1_000_000) {
+            status.put(key, "$value $unit")
+        }
+    }
+
+    private fun readNetSample(): NetSample? = runCatching {
+        val line = File("/proc/net/dev").readLines().firstOrNull { it.trimStart().startsWith("sipa_eth0:") }
+            ?: return@runCatching null
+        val fields = line.substringAfter(':').trim().split(Regex("\\s+"))
+        if (fields.size < 9) return@runCatching null
+        NetSample(fields[0].toLongOrNull() ?: return@runCatching null, fields[8].toLongOrNull() ?: return@runCatching null, System.currentTimeMillis())
+    }.getOrNull()
+
+    internal fun networkTypeName(type: Int): String = when (type) {
+        TelephonyManager.NETWORK_TYPE_NR -> "5G NR"
+        TelephonyManager.NETWORK_TYPE_LTE -> "4G LTE"
+        TelephonyManager.NETWORK_TYPE_UMTS -> "3G UMTS"
+        TelephonyManager.NETWORK_TYPE_HSDPA, TelephonyManager.NETWORK_TYPE_HSUPA,
+        TelephonyManager.NETWORK_TYPE_HSPA, TelephonyManager.NETWORK_TYPE_HSPAP -> "3G"
+        TelephonyManager.NETWORK_TYPE_EDGE, TelephonyManager.NETWORK_TYPE_GPRS -> "2G"
+        else -> "未知"
+    }
+
     private fun number(payload: JSONObject, vararg keys: String): Double? = keys.asSequence()
         .mapNotNull { payload.optString(it, "").trim().toDoubleOrNull() }
         .firstOrNull()
@@ -272,7 +364,13 @@ class StatusCollector(
         listOf("monthlyRx", "monthlyTx", "dailyRx", "dailyTx", "packageRx", "packageTx", "packageTotal", "ufiDailyUsage", "ufiMonthlyUsage", "trafficLimit").forEach { put(it, 0) }
         put("trafficResetDay", 0); put("daysUntilReset", JSONObject.NULL)
     }
+
+    companion object {
+        private const val ROUTER_RETRY_MS = 30_000L
+    }
 }
+
+private data class NetSample(val rx: Long, val tx: Long, val at: Long)
 
 private data class RouterFetch(val httpStatus: Int, val payload: JSONObject?, val valid: Boolean)
 

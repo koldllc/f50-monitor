@@ -82,7 +82,7 @@ internal object RouterEndpoint {
 
 class RuntimeState(private val context: Context) {
     private val preferences = context.getSharedPreferences("f50_agent", Context.MODE_PRIVATE)
-    private val collector = StatusCollector(preferences)
+    private val collector = StatusCollector(context, preferences)
     private val lanServer = LanApiServer(this)
     private var scheduler: ScheduledExecutorService? = null
     @Volatile private var config = loadConfig()
