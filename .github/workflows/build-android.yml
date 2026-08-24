@@ -16,9 +16,6 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      ANDROID_HOME: ${{ runner.temp }}/android-sdk
-      ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
 
     steps:
       - name: Checkout repository
@@ -44,17 +41,20 @@ jobs:
 
       - name: Install Android SDK 35
         run: |
+          android_sdk_root="$RUNNER_TEMP/android-sdk"
+          echo "ANDROID_HOME=$android_sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$android_sdk_root" >> "$GITHUB_ENV"
           tools_zip="$RUNNER_TEMP/android-command-line-tools.zip"
           curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip" -o "$tools_zip"
           echo "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583  $tools_zip" | sha256sum -c -
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-          unzip -q "$tools_zip" -d "$ANDROID_SDK_ROOT/cmdline-tools"
-          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          sdkmanager_path="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          mkdir -p "$android_sdk_root/cmdline-tools"
+          unzip -q "$tools_zip" -d "$android_sdk_root/cmdline-tools"
+          mv "$android_sdk_root/cmdline-tools/cmdline-tools" "$android_sdk_root/cmdline-tools/latest"
+          sdkmanager_path="$android_sdk_root/cmdline-tools/latest/bin/sdkmanager"
           yes | "$sdkmanager_path" --licenses > /dev/null
           "$sdkmanager_path" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$android_sdk_root/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$android_sdk_root/platform-tools" >> "$GITHUB_PATH"
 
       - name: Install frontend dependencies
         working-directory: windows
