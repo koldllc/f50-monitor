@@ -744,6 +744,25 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(normalized["qci"] as? String, "9")
     }
 
+    func testNormalizesUFIFluxTrafficConfigurationAliases() {
+        let normalized = F50ResponseParser.normalizeUFIPayload([
+            "flux_data_volume_limit_size": "600_1024",
+            "flux_data_volume_limit_switch": "1",
+            "flux_clear_date": "26"
+        ])
+
+        XCTAssertEqual(normalized["data_volume_limit_size"] as? String, "600_1024")
+        XCTAssertEqual(normalized["data_volume_limit_switch"] as? String, "1")
+        XCTAssertEqual(normalized["data_volume_clear_date"] as? String, "26")
+        XCTAssertEqual(
+            F50ResponseParser.parseTrafficLimit(
+                size: normalized["data_volume_limit_size"],
+                unit: normalized["data_volume_limit_unit"]
+            ),
+            600 * 1024 * 1024 * 1024
+        )
+    }
+
     func testParsesQosFromJSONAndNumericFormats() {
         // Direct JSON string
         let jsonQos = "{\"qci\": \"9\", \"qos_dl\": \"300Mbps\", \"qos_ul\": \"50Mbps\"}"

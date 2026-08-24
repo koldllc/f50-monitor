@@ -81,6 +81,8 @@ enum F50ResponseParser {
 
         copyFirstValue(in: &normalized, to: "day_rx_bytes", from: ["daily_rx_bytes", "today_rx_bytes"])
         copyFirstValue(in: &normalized, to: "day_tx_bytes", from: ["daily_tx_bytes", "today_tx_bytes"])
+        copyFirstValue(in: &normalized, to: "data_volume_limit_size", from: ["flux_data_volume_limit_size"])
+        copyFirstValue(in: &normalized, to: "data_volume_limit_switch", from: ["flux_data_volume_limit_switch"])
         // 注意：daily_data/monthly_data 是“自某时刻起的累计值”（设备重置后从 0 累计），
         // 不能当作“当日/本月”精确用量；当日/本月由 /api/cellularUsage 按日期区间查询。
         if normalized["monthly_rx_bytes"] == nil && normalized["monthly_tx_bytes"] == nil {
@@ -98,6 +100,7 @@ enum F50ResponseParser {
             "monthly_reset_day",
             "traffic_clear_day",
             "traffic_clear_date",
+            "flux_clear_date",
             "billing_date"
         ])
 
