@@ -7,10 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0AD42F1F746138E3ED911751 /* NetworkToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10DDB7ABBE2D3CC4E9B2D016 /* NetworkToolsViews.swift */; };
 		0C2E0D9C7B835A94415EAC44 /* SMSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6E537BE8C7321F883183A0 /* SMSView.swift */; };
 		0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */; };
-		11A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */; };
-		11B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */; };
 		16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */; };
 		1AE5F77524F74BC03CF6B072 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200C7CBFDFAD1274C4C1834A /* Assets.xcassets */; };
 		285817CABF530E542DBF18DE /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1096D2D8034A8D422EADEA /* StatusView.swift */; };
@@ -23,6 +22,7 @@
 		75B91A4B03BA9AB12BA52C72 /* DeviceDiagnosticProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A57B9283A4F8F09188B26A4 /* DeviceDiagnosticProbe.swift */; };
 		893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */; };
 		8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98379B8BC17A9858D569301 /* F50ResponseParser.swift */; };
+		8E12D4A6121A16E09EAF9B5B /* HuaweiHiLinkAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81899AF5A01EB4E3C204C6B7 /* HuaweiHiLinkAdapter.swift */; };
 		9BD590C306BAAFC5E150B4B7 /* F50MonitorWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E88757B1003B6203002724A0 /* F50MonitorWidget.swift */; };
 		9F0B2E55B01FE592511659E8 /* SMSNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */; };
 		B6B52C7A279EFEE7D2BD107D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B9CAAAC3B51EA52BF43833C9 /* PrivacyInfo.xcprivacy */; };
@@ -32,6 +32,7 @@
 		C9C74D56E4CD72FF224BE0E2 /* F50MonitorWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D4804E8A708915BF7370847E /* F50MonitorWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D5EEEAB259F505EC13C5C41B /* F50Core.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */; };
+		E51E479EDD76BE8B4B795FD5 /* NetworkInsightEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A39FE9F901D09614FDF6A78 /* NetworkInsightEngine.swift */; };
 		F4474EE6CDA29D1CEDA8CBF8 /* F50Core.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 56EF02DAC980BCBC4A16C254 /* F50Core.framework */; };
 /* End PBXBuildFile section */
 
@@ -87,17 +88,18 @@
 /* Begin PBXFileReference section */
 		0A4504C9A6F913914886451D /* ADBHardwareFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADBHardwareFetcher.swift; sourceTree = "<group>"; };
 		0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		10DDB7ABBE2D3CC4E9B2D016 /* NetworkToolsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkToolsViews.swift; sourceTree = "<group>"; };
 		1118F60CAA519BD93D0FB79D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		200C7CBFDFAD1274C4C1834A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Fetcher.swift; sourceTree = "<group>"; };
-		22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkInsightEngine.swift; sourceTree = "<group>"; };
-		22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkToolsViews.swift; sourceTree = "<group>"; };
+		2A39FE9F901D09614FDF6A78 /* NetworkInsightEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkInsightEngine.swift; sourceTree = "<group>"; };
 		2F0B9727BB928D70319933F7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Configuration.swift; sourceTree = "<group>"; };
 		56EF02DAC980BCBC4A16C254 /* F50Core.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = F50Core.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50SMSMessage.swift; sourceTree = "<group>"; };
 		7732F1A3FEA24F865A12BA48 /* F50Monitor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = F50Monitor.entitlements; sourceTree = "<group>"; };
 		7A57B9283A4F8F09188B26A4 /* DeviceDiagnosticProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDiagnosticProbe.swift; sourceTree = "<group>"; };
+		81899AF5A01EB4E3C204C6B7 /* HuaweiHiLinkAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HuaweiHiLinkAdapter.swift; sourceTree = "<group>"; };
 		89766F43C86001C45B5E81B1 /* F50Status.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = F50Status.swift; sourceTree = "<group>"; };
 		8A6E537BE8C7321F883183A0 /* SMSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMSView.swift; sourceTree = "<group>"; };
 		8F1096D2D8034A8D422EADEA /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
@@ -142,9 +144,9 @@
 				CAD7F7B321E80BC44D14911D /* F50iOSApp.swift */,
 				7732F1A3FEA24F865A12BA48 /* F50Monitor.entitlements */,
 				CACBC8FF3BE2D3C40D80CF3B /* Info.plist */,
+				10DDB7ABBE2D3CC4E9B2D016 /* NetworkToolsViews.swift */,
 				B9CAAAC3B51EA52BF43833C9 /* PrivacyInfo.xcprivacy */,
 				ECE426A585E5ACC39D46A60F /* SettingsView.swift */,
-				22B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift */,
 				8A6E537BE8C7321F883183A0 /* SMSView.swift */,
 				8F1096D2D8034A8D422EADEA /* StatusView.swift */,
 			);
@@ -168,12 +170,13 @@
 				BD5ACAA691B7B55EEA53D514 /* DeviceFeedbackView.swift */,
 				37F9E5A4848BEE38BC5A593E /* F50Configuration.swift */,
 				20E5BCA19692E40ABE151CA0 /* F50Fetcher.swift */,
-				22A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift */,
 				A98379B8BC17A9858D569301 /* F50ResponseParser.swift */,
 				66FEFCFA6C0BE0FB3DD29C6B /* F50SMSMessage.swift */,
 				89766F43C86001C45B5E81B1 /* F50Status.swift */,
 				F7CB4653E99458481318ABCB /* F50WidgetDataStore.swift */,
+				81899AF5A01EB4E3C204C6B7 /* HuaweiHiLinkAdapter.swift */,
 				0B9C046D9BD4C0FD5CA9CF5F /* KeychainCredentialStore.swift */,
+				2A39FE9F901D09614FDF6A78 /* NetworkInsightEngine.swift */,
 				D464B48BA4210B28EA7C9CE4 /* SMSNotificationManager.swift */,
 			);
 			path = F50Core;
@@ -352,12 +355,13 @@
 				71B4CF8DDA7F6BD4C52F131D /* DeviceFeedbackView.swift in Sources */,
 				0DF6CABE11D9A75ECCAD9B02 /* F50Configuration.swift in Sources */,
 				D882161612C022D41F9A47BB /* F50Fetcher.swift in Sources */,
-				11A4D4F123456789ABCDEF01 /* NetworkInsightEngine.swift in Sources */,
 				8D14A107D35693635FB158DB /* F50ResponseParser.swift in Sources */,
 				893AD8FB53B653891874F612 /* F50SMSMessage.swift in Sources */,
 				4F5342D65D640BFA9C074A64 /* F50Status.swift in Sources */,
 				3BF85C70A424EE6253182A2D /* F50WidgetDataStore.swift in Sources */,
+				8E12D4A6121A16E09EAF9B5B /* HuaweiHiLinkAdapter.swift in Sources */,
 				16A893116532CD6B476A2636 /* KeychainCredentialStore.swift in Sources */,
+				E51E479EDD76BE8B4B795FD5 /* NetworkInsightEngine.swift in Sources */,
 				9F0B2E55B01FE592511659E8 /* SMSNotificationManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -375,9 +379,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				48EDD3951E186CF1D1D2BF17 /* F50iOSApp.swift in Sources */,
+				0AD42F1F746138E3ED911751 /* NetworkToolsViews.swift in Sources */,
 				0C2E0D9C7B835A94415EAC44 /* SMSView.swift in Sources */,
 				4B3D6E7AF0C693A3DBA13587 /* SettingsView.swift in Sources */,
-				11B4D4F123456789ABCDEF02 /* NetworkToolsViews.swift in Sources */,
 				285817CABF530E542DBF18DE /* StatusView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -498,8 +502,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.f50.core;
 				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.f50.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -523,8 +527,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.f50.core;
 				MARKETING_VERSION = 2.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.f50.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
