@@ -58,10 +58,21 @@ struct F50iOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var fetcher = F50Fetcher()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isShowingInitialSetup: Bool
+
+    init() {
+        _isShowingInitialSetup = State(initialValue: F50Configuration.needsInitialSetup)
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView(fetcher: fetcher)
+                .fullScreenCover(isPresented: $isShowingInitialSetup) {
+                    InitialSetupView(fetcher: fetcher) {
+                        isShowingInitialSetup = false
+                    }
+                    .interactiveDismissDisabled()
+                }
                 .onAppear {
                     appDelegate.smsNotificationManager.requestAuthorizationIfNeeded()
                 }
@@ -76,6 +87,83 @@ struct F50iOSApp: App {
                         appDelegate.scheduleBackgroundRefresh()
                     }
                 }
+        }
+    }
+}
+
+private struct InitialSetupView: View {
+    @ObservedObject var fetcher: F50Fetcher
+    var onComplete: () -> Void
+
+    @State private var address = ""
+    @State private var password = ""
+    @State private var isPasswordVisible = false
+
+    private var isAddressValid: Bool {
+        F50Configuration.isValidAddress(address)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("欢迎使用 F50 Monitor")
+                        .font(.title2.bold())
+                    Text("请输入 F50 的地址和后台密码，之后可随时在设置中修改。")
+                        .foregroundColor(.secondary)
+                }
+
+                Section("连接设备") {
+                    TextField("设备地址，例如 192.168.0.1", text: $address)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+
+                    if !address.isEmpty && !isAddressValid {
+                        Text("请输入正确的 IP 地址或域名")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+
+                    HStack {
+                        Group {
+                            if isPasswordVisible {
+                                TextField("后台密码", text: $password)
+                            } else {
+                                SecureField("后台密码", text: $password)
+                            }
+                        }
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                } footer: {
+                    Text("该密码会同时用于中兴与 UFI 后台；如两者不同，可稍后在设置中分别调整。")
+                }
+            }
+            .navigationTitle("初始设置")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("开始使用") {
+                        fetcher.applyConfiguration(
+                            baseURL: F50Configuration.normalizeBaseURL(address),
+                            password: password,
+                            ufiToken: password,
+                            refreshInterval: fetcher.refreshInterval,
+                            displayMode: fetcher.displayMode
+                        )
+                        UserDefaults.standard.set(true, forKey: F50Configuration.initialSetupCompletedDefaultsKey)
+                        onComplete()
+                    }
+                    .disabled(!isAddressValid || password.isEmpty)
+                }
+            }
         }
     }
 }

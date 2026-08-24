@@ -18,6 +18,7 @@ public enum F50Configuration {
     public static let defaultADBPort = 5555
     public static let trafficResetDayDefaultsKey = "F50_TrafficResetDay"
     public static let demoModeDefaultsKey = "F50_DemoMode"
+    public static let initialSetupCompletedDefaultsKey = "F50_InitialSetupCompleted"
 
     // UFI-TOOLS 签名密钥（设备端协议固定值）
     public static let kanoSignKey = "minikano_kOyXz0Ciz4V7wR0IeKmJFYFQ20jd"
@@ -25,6 +26,13 @@ public enum F50Configuration {
     public static let detectedTrafficResetDayDefaultsKey = "F50_DetectedTrafficResetDay"
     public static let dailyTrafficDateDefaultsKey = "F50_DailyTrafficDate"
     public static let dailyTrafficStartBytesDefaultsKey = "F50_DailyTrafficStartBytes"
+
+    /// 旧版本已保存过地址的用户无需再次经过首次设置。
+    public static var needsInitialSetup: Bool {
+        let defaults = UserDefaults.standard
+        return !defaults.bool(forKey: initialSetupCompletedDefaultsKey)
+            && defaults.object(forKey: baseURLDefaultsKey) == nil
+    }
 
     /// 判断指定主机名是否为 IP 地址（IPv4 或包含冒号/方括号的 IPv6）
     public static func isIPAddress(_ host: String) -> Bool {
