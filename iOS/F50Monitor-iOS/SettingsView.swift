@@ -130,7 +130,7 @@ struct SettingsView: View {
                     Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
                 }
 
-                Section("文件共享") {
+                Section {
                     Button {
                         guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
                         UIApplication.shared.open(url) { supported in
@@ -139,6 +139,8 @@ struct SettingsView: View {
                     } label: {
                         Label("打开 F50 共享文件", systemImage: "folder")
                     }
+                } header: {
+                    Text("文件共享")
                 } footer: {
                     Text("通过 F50 已开启的 SMB 文件共享访问设备存储。若系统未直接打开，请在“文件”App 的“连接服务器”中输入设备地址。")
                 }
