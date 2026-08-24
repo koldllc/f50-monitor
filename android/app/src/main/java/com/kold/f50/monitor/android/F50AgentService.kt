@@ -21,7 +21,7 @@ class F50AgentService : Service() {
         val notification = notificationBuilder
             .setContentTitle("F50 Monitor")
             .setContentText("正在后台采集路由器状态 · LAN API :8787")
-            .setSmallIcon(android.R.drawable.stat_sys_data_connected)
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
             .build()
 
