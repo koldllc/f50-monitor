@@ -255,57 +255,61 @@ struct SMSView: View {
     }
 
     private func messageRow(_ message: F50SMSMessage) -> some View {
-        HStack {
+        let alignment: HorizontalAlignment = message.isOutgoing ? .trailing : .leading
+
+        return HStack {
             if message.isOutgoing { Spacer(minLength: 48) }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message.content.isEmpty ? "（空短信）" : message.content)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-                    .foregroundColor(message.isOutgoing ? .white : .primary)
-                    .lineSpacing(2)
+            VStack(alignment: alignment, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(message.content.isEmpty ? "（空短信）" : message.content)
+                        .font(.subheadline)
+                        .textSelection(.enabled)
+                        .foregroundColor(message.isOutgoing ? .white : .primary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                // 识别验证码并提示一键复制
-                if let code = extractVerificationCode(from: message.content) {
-                    Button {
-                        UIPasteboard.general.string = code
-                        withAnimation { copiedNotice = "验证码 \(code) 已复制" }
-                        fetcher.markSMSAsRead(ids: [message.id])
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption2.bold())
-                            Text("复制验证码: \(code)")
-                                .font(.caption.weight(.semibold).monospacedDigit())
+                    // 识别验证码并提示一键复制
+                    if let code = extractVerificationCode(from: message.content) {
+                        Button {
+                            UIPasteboard.general.string = code
+                            withAnimation { copiedNotice = "验证码 \(code) 已复制" }
+                            fetcher.markSMSAsRead(ids: [message.id])
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption2.bold())
+                                Text("复制验证码: \(code)")
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(message.isOutgoing ? Color.white.opacity(0.2) : F50Theme.blue.opacity(0.1)))
+                            .foregroundColor(message.isOutgoing ? .white : F50Theme.blue)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(message.isOutgoing ? Color.white.opacity(0.2) : F50Theme.blue.opacity(0.1)))
-                        .foregroundColor(message.isOutgoing ? .white : F50Theme.blue)
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 2)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : Color(.secondarySystemGroupedBackground)))
+                )
 
                 HStack(spacing: 5) {
                     if message.didFailToSend {
                         Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundColor(message.isOutgoing ? .white : F50Theme.red)
+                            .foregroundColor(F50Theme.red)
                     }
                     Text(message.dateText)
                         .monospacedDigit()
                 }
                 .font(.caption2)
-                .foregroundColor(message.isOutgoing ? Color.white.opacity(0.75) : .secondary)
+                .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: 280, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(message.didFailToSend ? F50Theme.red : (message.isOutgoing ? F50Theme.blue : Color(.secondarySystemGroupedBackground)))
-            )
 
             if !message.isOutgoing { Spacer(minLength: 48) }
         }
