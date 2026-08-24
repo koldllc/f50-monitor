@@ -1,6 +1,58 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")"
+
+choose_branch() {
+    local current_branch selected_branch choice index
+    local branches=()
+
+    while IFS= read -r branch; do
+        branches+=("$branch")
+    done < <(git for-each-ref --format='%(refname:short)' refs/heads)
+
+    current_branch="$(git branch --show-current)"
+
+    if [ "${#branches[@]}" -le 1 ] || [ ! -t 0 ]; then
+        echo "🌿 构建分支：${current_branch:-HEAD}"
+        return
+    fi
+
+    echo "🌿 请选择要构建的本地分支："
+    for index in "${!branches[@]}"; do
+        if [ "${branches[$index]}" = "$current_branch" ]; then
+            printf "  %d) %s（当前）\n" "$((index + 1))" "${branches[$index]}"
+        else
+            printf "  %d) %s\n" "$((index + 1))" "${branches[$index]}"
+        fi
+    done
+
+    while true; do
+        read -r -p "请输入序号（直接回车使用当前分支）：" choice
+        if [ -z "$choice" ]; then
+            selected_branch="$current_branch"
+            break
+        fi
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#branches[@]}" ]; then
+            selected_branch="${branches[$((choice - 1))]}"
+            break
+        fi
+        echo "⚠️  无效序号，请重新输入。"
+    done
+
+    if [ "$selected_branch" != "$current_branch" ]; then
+        if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "❌ 当前工作区有未提交改动，无法安全切换分支。请先提交或使用 git stash。" >&2
+            exit 1
+        fi
+        git switch "$selected_branch"
+    fi
+
+    echo "✅ 已选择分支：$selected_branch"
+}
+
+choose_branch
+
 echo "🔨 正在编译 macOS F50 Monitor 菜单栏程序..."
 swift build -c release
 
