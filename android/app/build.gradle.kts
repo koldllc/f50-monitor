@@ -15,6 +15,13 @@ android {
         versionName = "0.1.0"
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions { jvmTarget = "17" }
+
     buildFeatures { buildConfig = true }
 
     // The web UI is built by Vite into windows/dist and copied into the APK
