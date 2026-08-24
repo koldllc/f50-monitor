@@ -117,14 +117,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("开启演示模式 (Demo Mode)", isOn: $fetcher.isDemoMode)
-                } header: {
-                    Text("演示与审核")
-                } footer: {
-                    Text("开启后将展示全套模拟 5G 信号、流量用量与短信数据，无需物理 F50 硬件即可完整体验 App 全部功能。")
-                }
-
-                Section {
                     Picker("前台自动刷新频率", selection: $tempInterval) {
                         Text("1 秒").tag(1.0)
                         Text("3 秒（推荐节能）").tag(3.0)
@@ -191,6 +183,12 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                 }
                 .listRowBackground(Color.clear)
+
+                Section {
+                    Toggle("开启演示模式 (Demo Mode)", isOn: $fetcher.isDemoMode)
+                } header: {
+                    Text("演示与审核")
+                }
             }
             .navigationTitle("设置")
             .sheet(isPresented: $isShowingFeedback) {
