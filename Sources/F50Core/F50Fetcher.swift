@@ -3227,6 +3227,9 @@ public class F50Fetcher: ObservableObject {
             request.timeoutInterval = 4.0
             request.httpBody = body
             request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+            request.setValue("application/json, text/javascript, */*; q=0.01", forHTTPHeaderField: "Accept")
+            request.setValue(baseURL, forHTTPHeaderField: "Origin")
             request.setValue("\(baseURL)/index.html", forHTTPHeaderField: "Referer")
         }
         if let cookie, !cookie.isEmpty {
