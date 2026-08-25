@@ -95,6 +95,74 @@ final class NetworkInsightEngineTests: XCTestCase {
         XCTAssertEqual(comparison.downloadImprovementPercent ?? -1, 100, accuracy: 0.001)
     }
 
+    func testLocationStabilityUsesSwitchRateInsteadOfAbsoluteCount() {
+        let engine = NetworkInsightEngine()
+        let oneMinute = [
+            sample(0), sample(10), sample(20),
+            sample(30, network: "4G LTE"), sample(40, network: "4G LTE"), sample(50, network: "4G LTE")
+        ]
+        let twoMinutes = [
+            sample(0), sample(10), sample(20),
+            sample(30, network: "4G LTE"), sample(40, network: "4G LTE"), sample(50, network: "4G LTE"),
+            sample(60, network: "4G LTE"), sample(70, network: "4G LTE"), sample(80, network: "4G LTE"),
+            sample(90), sample(100), sample(110)
+        ]
+
+        let short = engine.makeLocationReport(name: "短测", samples: oneMinute, durationSeconds: 60, observedDurationSeconds: 60)
+        let long = engine.makeLocationReport(name: "长测", samples: twoMinutes, durationSeconds: 120, observedDurationSeconds: 120)
+
+        XCTAssertEqual(short.switchRatePerMinute ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(long.switchRatePerMinute ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(short.stabilityScore, long.stabilityScore)
+    }
+
+    func testLocationTieBreakIgnoresPassiveTraffic() {
+        let lowTrafficStrongSignal = LocationReport(
+            name: "窗边", sampleCount: 10, score: 80,
+            averageLatencyMilliseconds: nil, averagePacketLossPercent: nil,
+            averageDownloadBytesPerSecond: 10, averageUploadBytesPerSecond: 0,
+            fiveGOnlineRate: 1, switchCount: 0,
+            stabilityScore: 95, averageRSRP: -85, averageSNR: 20
+        )
+        let highTrafficWeakSignal = LocationReport(
+            name: "桌面", sampleCount: 10, score: 80,
+            averageLatencyMilliseconds: nil, averagePacketLossPercent: nil,
+            averageDownloadBytesPerSecond: 10_000, averageUploadBytesPerSecond: 0,
+            fiveGOnlineRate: 1, switchCount: 0,
+            stabilityScore: 90, averageRSRP: -95, averageSNR: 10
+        )
+
+        let comparison = NetworkInsightEngine().compareLocations([highTrafficWeakSignal, lowTrafficStrongSignal])
+        XCTAssertEqual(comparison.bestLocationName, "窗边")
+    }
+
+    func testLocationReportCarriesComparableTestContext() {
+        let report = NetworkInsightEngine().makeLocationReport(
+            name: "窗边",
+            samples: (0..<8).map { sample(Double($0), network: "5G SA", band: "n78") },
+            testedAt: Date(timeIntervalSince1970: 123),
+            deviceIdentifier: "192.168.0.1",
+            durationSeconds: 30
+        )
+
+        XCTAssertEqual(report.testedAt, Date(timeIntervalSince1970: 123))
+        XCTAssertEqual(report.networkType, "5G SA")
+        XCTAssertEqual(report.band, "n78")
+        XCTAssertEqual(report.validSampleCount, 8)
+        XCTAssertEqual(report.scoreVersion, LocationReport.currentScoreVersion)
+        XCTAssertTrue(report.isComparable(deviceIdentifier: "192.168.0.1", durationSeconds: 30))
+        XCTAssertFalse(report.isComparable(deviceIdentifier: "192.168.8.1", durationSeconds: 30))
+    }
+
+    func testLegacyLocationReportStillDecodesAsNonComparableHistory() throws {
+        let data = Data(#"{"name":"旧窗边","sampleCount":4,"score":72,"averageLatencyMilliseconds":null,"averagePacketLossPercent":null,"averageDownloadBytesPerSecond":100,"averageUploadBytesPerSecond":10,"fiveGOnlineRate":1,"switchCount":0}"#.utf8)
+
+        let report = try JSONDecoder().decode(LocationReport.self, from: data)
+        XCTAssertNil(report.scoreVersion)
+        XCTAssertNil(report.testedAt)
+        XCTAssertFalse(report.isComparable(deviceIdentifier: "192.168.0.1", durationSeconds: 30))
+    }
+
     func testDoctorCountsSwitchesAndUsesEvidenceForLikelyInterference() {
         let networks = ["5G SA", "4G LTE", "5G SA", "4G LTE", "5G SA"]
         let samples = networks.enumerated().flatMap { group, network in

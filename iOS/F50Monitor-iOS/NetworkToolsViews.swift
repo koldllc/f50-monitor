@@ -47,6 +47,14 @@ private extension TelemetrySample {
     }
 }
 
+private struct SignalChartPoint: Identifiable {
+    let id = UUID()
+    let score: Double
+    let strength: Double?
+    let interference: Double?
+    let isStablePhase: Bool
+}
+
 @MainActor
 private final class SignalLabSession: ObservableObject {
     @Published private(set) var insight: LiveSignalInsight
@@ -56,12 +64,18 @@ private final class SignalLabSession: ObservableObject {
     @Published var locationName = "窗边"
     @Published var duration: TimeInterval = 30
     @Published var soundEnabled = true
+    @Published private(set) var recentPoints: [SignalChartPoint] = []
+    @Published private(set) var resultMessage: String?
 
     private let engine = NetworkInsightEngine()
     private let locationsDefaultsKey = "F50_iOS_SignalLabLocations_v1"
+    private let warmupDuration: TimeInterval = 5
+    private let maximumExtension: TimeInterval = 60
+    let minimumValidSampleCount = 8
     private var locationSamples: [TelemetrySample] = []
     private var startedAt: Date?
     private var nextSoundAt = Date.distantPast
+    private var activeDeviceIdentifier = ""
 
     init() {
         insight = engine.liveInsight
@@ -76,24 +90,49 @@ private final class SignalLabSession: ObservableObject {
         insight = engine.append(sample)
         if isTesting {
             locationSamples.append(sample)
+            recentPoints.append(SignalChartPoint(
+                score: Double(insight.score.value),
+                strength: insight.score.strengthScore.map(Double.init),
+                interference: insight.score.interferenceScore.map(Double.init),
+                isStablePhase: elapsed(at: now) >= warmupDuration
+            ))
+            if recentPoints.count > 60 { recentPoints.removeFirst(recentPoints.count - 60) }
             updateProgress(at: now)
         }
     }
 
-    func start() {
+    func configure(deviceIdentifier: String) {
+        activeDeviceIdentifier = deviceIdentifier
+        if let lockedDuration = locations.first(where: {
+            $0.deviceIdentifier == deviceIdentifier && $0.scoreVersion == LocationReport.currentScoreVersion
+        })?.durationSeconds {
+            duration = lockedDuration
+        }
+    }
+
+    func start(with status: F50Status, deviceIdentifier: String) {
         let cleanName = locationName.trimmingCharacters(in: .whitespacesAndNewlines)
         locationName = cleanName.isEmpty ? "位置 \(locations.count + 1)" : cleanName
+        activeDeviceIdentifier = deviceIdentifier
+        engine.reset()
         locationSamples.removeAll(keepingCapacity: true)
+        recentPoints.removeAll(keepingCapacity: true)
+        resultMessage = nil
         startedAt = Date()
         progress = 0
         nextSoundAt = .distantPast
         isTesting = true
+        receive(status)
     }
 
     func tick(at now: Date = Date()) {
         guard isTesting else { return }
         updateProgress(at: now)
-        guard soundEnabled, now >= nextSoundAt, insight.score.confidence > 0 else { return }
+        guard soundEnabled,
+              elapsed(at: now) >= warmupDuration,
+              now >= nextSoundAt,
+              insight.score.confidence >= 0.5
+        else { return }
         AudioServicesPlaySystemSound(1104)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         let scoreRatio = Double(insight.score.value) / 100
@@ -104,38 +143,95 @@ private final class SignalLabSession: ObservableObject {
         guard isTesting else { return }
         isTesting = false
         progress = 1
-        if !locationSamples.isEmpty {
-            let stableSamples: [TelemetrySample]
-            if let startedAt {
-                stableSamples = locationSamples.filter { $0.timestamp.timeIntervalSince(startedAt) >= 5 }
-            } else {
-                stableSamples = locationSamples
-            }
+        let stableSamples = validStableSamples
+        if stableSamples.count >= minimumValidSampleCount {
+            let observedDuration = max(1, elapsed(at: Date()) - warmupDuration)
             let report = engine.makeLocationReport(
                 name: locationName,
-                samples: stableSamples.isEmpty ? locationSamples : stableSamples
+                samples: stableSamples,
+                deviceIdentifier: activeDeviceIdentifier,
+                durationSeconds: duration,
+                observedDurationSeconds: observedDuration
             )
-            locations.removeAll { $0.name == report.name }
+            locations.removeAll {
+                $0.name == report.name
+                    && $0.isComparable(deviceIdentifier: activeDeviceIdentifier, durationSeconds: duration)
+            }
             locations.append(report)
             persistLocations()
+            resultMessage = "已保存 \(stableSamples.count) 个有效样本"
+        } else {
+            resultMessage = "有效样本仅 \(stableSamples.count)/\(minimumValidSampleCount)，本次结果未保存"
         }
         locationSamples.removeAll()
         startedAt = nil
     }
 
+    func cancel() {
+        guard isTesting else { return }
+        isTesting = false
+        progress = 0
+        locationSamples.removeAll()
+        startedAt = nil
+        resultMessage = "已取消本次测试"
+    }
+
     func removeLocations(at offsets: IndexSet) {
         let sorted = comparison.locations
-        let names = Set(offsets.compactMap { sorted.indices.contains($0) ? sorted[$0].name : nil })
-        locations.removeAll { names.contains($0.name) }
+        let reports = offsets.compactMap { sorted.indices.contains($0) ? sorted[$0] : nil }
+        locations.removeAll { reports.contains($0) }
         persistLocations()
     }
 
-    var comparison: LocationComparison { engine.compareLocations(locations) }
+    func removeIncompatibleLocations(at offsets: IndexSet) {
+        let sorted = incompatibleLocations
+        let reports = offsets.compactMap { sorted.indices.contains($0) ? sorted[$0] : nil }
+        locations.removeAll { reports.contains($0) }
+        persistLocations()
+    }
+
+    var comparableLocations: [LocationReport] {
+        locations.filter { $0.isComparable(deviceIdentifier: activeDeviceIdentifier, durationSeconds: duration) }
+    }
+
+    var comparison: LocationComparison { engine.compareLocations(comparableLocations) }
+
+    var incompatibleLocations: [LocationReport] {
+        locations.filter { !comparableLocations.contains($0) }.sorted {
+            ($0.testedAt ?? .distantPast) > ($1.testedAt ?? .distantPast)
+        }
+    }
+
+    var isDurationLocked: Bool { !comparableLocations.isEmpty }
+    var validSampleCount: Int { validStableSamples.count }
+    var isWarmingUp: Bool { isTesting && elapsed(at: Date()) < warmupDuration }
+    var warmupRemaining: Int { max(0, Int(ceil(warmupDuration - elapsed(at: Date())))) }
+    var isExtending: Bool { isTesting && elapsed(at: Date()) >= duration }
+
+    private var validStableSamples: [TelemetrySample] {
+        guard let startedAt else { return [] }
+        return locationSamples.filter {
+            $0.timestamp.timeIntervalSince(startedAt) >= warmupDuration
+                && $0.online
+                && ($0.dataAgeSeconds ?? 0) <= 10
+                && engine.signalScore(for: $0).confidence >= 0.5
+        }
+    }
 
     private func updateProgress(at now: Date) {
         guard let startedAt else { return }
         progress = min(1, max(0, now.timeIntervalSince(startedAt) / duration))
-        if progress >= 1 { finish() }
+        let elapsed = now.timeIntervalSince(startedAt)
+        if elapsed >= duration, validSampleCount >= minimumValidSampleCount {
+            finish()
+        } else if elapsed >= duration + maximumExtension {
+            finish()
+        }
+    }
+
+    private func elapsed(at now: Date) -> TimeInterval {
+        guard let startedAt else { return 0 }
+        return max(0, now.timeIntervalSince(startedAt))
     }
 
     private func persistLocations() {
@@ -217,6 +313,11 @@ struct SignalLabView: View {
                     Text(dataQualityText)
                         .font(.caption2)
                         .foregroundStyle(session.insight.score.isStale ? .orange : .secondary)
+
+                    if !session.recentPoints.isEmpty {
+                        SignalTrendChart(points: session.recentPoints)
+                            .frame(height: 112)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -241,16 +342,32 @@ struct SignalLabView: View {
                     Text("60 秒").tag(60.0)
                 }
                 .pickerStyle(.segmented)
-                .disabled(session.isTesting)
+                .disabled(session.isTesting || session.isDurationLocked)
 
                 Toggle("声音与触觉提示", isOn: $session.soundEnabled)
 
                 if session.isTesting {
                     ProgressView(value: session.progress)
+                    if session.isWarmingUp {
+                        Label("请保持设备静止，\(session.warmupRemaining) 秒后开始采样", systemImage: "hourglass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if session.isExtending {
+                        Text("有效样本 \(session.validSampleCount)/\(session.minimumValidSampleCount) · 正在延长采样")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("有效样本 \(session.validSampleCount)/\(session.minimumValidSampleCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Button("提前结束并保存") { session.finish() }
+                        .disabled(session.validSampleCount < session.minimumValidSampleCount)
+                    Button("取消测试", role: .cancel) { session.cancel() }
                 } else {
                     Button {
-                        session.start()
+                        session.start(with: fetcher.status, deviceIdentifier: deviceIdentifier)
                     } label: {
                         Label("开始测试当前位置", systemImage: "location.fill")
                             .frame(maxWidth: .infinity)
@@ -258,20 +375,28 @@ struct SignalLabView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(session.insight.score.confidence < 0.5)
                 }
+
+                if let resultMessage = session.resultMessage {
+                    Text(resultMessage)
+                        .font(.caption)
+                        .foregroundStyle(resultMessage.contains("已保存") ? .green : .secondary)
+                }
             } header: {
                 Text("找信号最佳位置")
             } footer: {
-                Text("当前版本比较 F50 上报的信号、5G 在线率、切换次数与实际活动速率；不会主动下载测速文件或消耗额外测试流量。")
+                Text(session.isDurationLocked
+                    ? "本组已锁定为 \(Int(session.duration)) 秒测试；活动速率仅供参考，不参与位置排名。"
+                    : "首个结果会锁定本组测试时长；活动速率仅供参考，不参与位置排名，也不会主动下载测速文件。")
             }
 
-            if !session.locations.isEmpty {
+            if !session.comparableLocations.isEmpty {
                 Section {
                     ForEach(session.comparison.locations, id: \.name) { location in
                         LocationResultRow(location: location, isBest: location.name == session.comparison.bestLocationName)
                     }
                     .onDelete(perform: session.removeLocations)
 
-                    if session.locations.count >= 2 {
+                    if session.comparableLocations.count >= 2 {
                         Button {
                             shareImage = SignalShareRenderer.render(session.comparison)
                         } label: {
@@ -282,10 +407,26 @@ struct SignalLabView: View {
                     Text(session.comparison.bestLocationName.map { "最佳位置：\($0)" } ?? "位置结果")
                 }
             }
+
+            if !session.incompatibleLocations.isEmpty {
+                Section {
+                    ForEach(session.incompatibleLocations.indices, id: \.self) { index in
+                        LocationResultRow(location: session.incompatibleLocations[index], isBest: false)
+                    }
+                    .onDelete(perform: session.removeIncompatibleLocations)
+                } header: {
+                    Text("历史记录（不参与本组比较）")
+                } footer: {
+                    Text("旧算法、其他设备或不同时长的结果不会与当前测试混排。")
+                }
+            }
         }
         .navigationTitle("Signal Lab")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { session.receive(fetcher.status) }
+        .onAppear {
+            session.configure(deviceIdentifier: deviceIdentifier)
+            session.receive(fetcher.status)
+        }
         .onReceive(fetcher.$status) { session.receive($0) }
         .onReceive(clock) { session.tick(at: $0) }
         .sheet(isPresented: Binding(
@@ -296,6 +437,10 @@ struct SignalLabView: View {
                 ActivityViewController(items: [shareImage])
             }
         }
+    }
+
+    private var deviceIdentifier: String {
+        F50Configuration.displayAddress(from: fetcher.baseURLString)
     }
 
     private var scoreColor: Color {
@@ -354,6 +499,87 @@ struct SignalLabView: View {
     }
 }
 
+private struct SignalTrendChart: View {
+    let points: [SignalChartPoint]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            GeometryReader { geometry in
+                ZStack {
+                    ForEach([0.25, 0.5, 0.75], id: \.self) { ratio in
+                        Path { path in
+                            let y = geometry.size.height * ratio
+                            path.move(to: CGPoint(x: 0, y: y))
+                            path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                        }
+                        .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                    }
+
+                    if let stableIndex = points.firstIndex(where: \.isStablePhase), stableIndex > 0 {
+                        Path { path in
+                            let x = xPosition(for: stableIndex, width: geometry.size.width)
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                        }
+                        .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    }
+
+                    metricPath(points.map { Optional($0.score) }, size: geometry.size)
+                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
+                    metricPath(points.map(\.strength), size: geometry.size)
+                        .stroke(Color.green, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                    metricPath(points.map(\.interference), size: geometry.size)
+                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                }
+            }
+
+            HStack(spacing: 12) {
+                legend("综合", color: .blue)
+                legend("强度", color: .green)
+                legend("干扰", color: .orange)
+                Spacer()
+                Text("虚线后为稳定采样")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("信号趋势图，共 \(points.count) 个采样")
+    }
+
+    private func metricPath(_ values: [Double?], size: CGSize) -> Path {
+        Path { path in
+            var hasPoint = false
+            for (index, value) in values.enumerated() {
+                guard let value else {
+                    hasPoint = false
+                    continue
+                }
+                let point = CGPoint(
+                    x: xPosition(for: index, width: size.width),
+                    y: size.height * (1 - min(100, max(0, value)) / 100)
+                )
+                if hasPoint { path.addLine(to: point) } else { path.move(to: point) }
+                hasPoint = true
+            }
+        }
+    }
+
+    private func xPosition(for index: Int, width: CGFloat) -> CGFloat {
+        guard points.count > 1 else { return width / 2 }
+        return width * CGFloat(index) / CGFloat(points.count - 1)
+    }
+
+    private func legend(_ title: String, color: Color) -> some View {
+        Label {
+            Text(title).font(.caption2)
+        } icon: {
+            Circle().fill(color).frame(width: 6, height: 6)
+        }
+        .foregroundStyle(.secondary)
+    }
+}
+
 private struct LocationResultRow: View {
     let location: LocationReport
     let isBest: Bool
@@ -381,6 +607,22 @@ private struct LocationResultRow: View {
                 Text("活动速率 ↓ \(F50Status.formatSpeed(location.averageDownloadBytesPerSecond))  ↑ \(F50Status.formatSpeed(location.averageUploadBytesPerSecond))")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                if let testedAt = location.testedAt {
+                    Text("\(testedAt.formatted(date: .abbreviated, time: .shortened)) · \(location.networkType ?? "未知制式")\(location.band.map { " · \($0)" } ?? "")")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                if let validSampleCount = location.validSampleCount, let duration = location.durationSeconds {
+                    let observed = location.observedDurationSeconds.map { " · 实采 \(Int($0)) 秒" } ?? ""
+                    Text("协议 \(Int(duration)) 秒\(observed) · \(validSampleCount) 个有效样本 · 算法 v\(location.scoreVersion ?? 1)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                if let deviceIdentifier = location.deviceIdentifier {
+                    Text("设备 \(deviceIdentifier)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
     }

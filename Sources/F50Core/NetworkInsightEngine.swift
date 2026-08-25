@@ -194,6 +194,8 @@ public struct CellularChangeEvent: Codable, Equatable, Sendable {
 }
 
 public struct LocationReport: Codable, Equatable, Sendable {
+    public static let currentScoreVersion = 2
+
     public let name: String
     public let sampleCount: Int
     public let score: Int
@@ -203,8 +205,21 @@ public struct LocationReport: Codable, Equatable, Sendable {
     public let averageUploadBytesPerSecond: Double
     public let fiveGOnlineRate: Double
     public let switchCount: Int
+    public let testedAt: Date?
+    public let deviceIdentifier: String?
+    public let networkType: String?
+    public let band: String?
+    public let durationSeconds: Double?
+    public let observedDurationSeconds: Double?
+    public let validSampleCount: Int?
+    public let scoreVersion: Int?
+    public let stabilityScore: Int?
+    public let averageRSRP: Double?
+    public let averageSNR: Double?
+    public let averageRSRQ: Double?
+    public let switchRatePerMinute: Double?
 
-    public init(name: String, sampleCount: Int, score: Int, averageLatencyMilliseconds: Double?, averagePacketLossPercent: Double?, averageDownloadBytesPerSecond: Double, averageUploadBytesPerSecond: Double, fiveGOnlineRate: Double, switchCount: Int) {
+    public init(name: String, sampleCount: Int, score: Int, averageLatencyMilliseconds: Double?, averagePacketLossPercent: Double?, averageDownloadBytesPerSecond: Double, averageUploadBytesPerSecond: Double, fiveGOnlineRate: Double, switchCount: Int, testedAt: Date? = nil, deviceIdentifier: String? = nil, networkType: String? = nil, band: String? = nil, durationSeconds: Double? = nil, observedDurationSeconds: Double? = nil, validSampleCount: Int? = nil, scoreVersion: Int? = nil, stabilityScore: Int? = nil, averageRSRP: Double? = nil, averageSNR: Double? = nil, averageRSRQ: Double? = nil, switchRatePerMinute: Double? = nil) {
         self.name = name
         self.sampleCount = sampleCount
         self.score = min(100, max(0, score))
@@ -214,6 +229,25 @@ public struct LocationReport: Codable, Equatable, Sendable {
         self.averageUploadBytesPerSecond = averageUploadBytesPerSecond
         self.fiveGOnlineRate = fiveGOnlineRate
         self.switchCount = switchCount
+        self.testedAt = testedAt
+        self.deviceIdentifier = deviceIdentifier
+        self.networkType = networkType
+        self.band = band
+        self.durationSeconds = durationSeconds
+        self.observedDurationSeconds = observedDurationSeconds
+        self.validSampleCount = validSampleCount
+        self.scoreVersion = scoreVersion
+        self.stabilityScore = stabilityScore
+        self.averageRSRP = averageRSRP
+        self.averageSNR = averageSNR
+        self.averageRSRQ = averageRSRQ
+        self.switchRatePerMinute = switchRatePerMinute
+    }
+
+    public func isComparable(deviceIdentifier: String, durationSeconds: Double) -> Bool {
+        self.deviceIdentifier == deviceIdentifier
+            && self.durationSeconds == durationSeconds
+            && scoreVersion == Self.currentScoreVersion
     }
 }
 
@@ -447,7 +481,14 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         )
     }
 
-    public func makeLocationReport(name: String, samples: [TelemetrySample]) -> LocationReport {
+    public func makeLocationReport(
+        name: String,
+        samples: [TelemetrySample],
+        testedAt: Date = Date(),
+        deviceIdentifier: String? = nil,
+        durationSeconds: TimeInterval? = nil,
+        observedDurationSeconds: TimeInterval? = nil
+    ) -> LocationReport {
         let ordered = samples.sorted { $0.timestamp < $1.timestamp }
         let onlineSamples = ordered.filter { $0.online && ($0.dataAgeSeconds ?? 0) <= 10 }
         let scores = onlineSamples.map { signalScore(for: $0) }
@@ -456,7 +497,11 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         let loss = average(ordered.compactMap(\.packetLossPercent))
         let fiveGRate = fiveGRate(in: ordered)
         let switches = switchSummary(in: ordered).total + cellularChangeEvents(in: ordered).count
-        let stabilityScore = max(0, 100 - Double(switches) * 25)
+        let measuredDuration = max(1, observedDurationSeconds ?? durationSeconds ?? ordered.last.map { last in
+            last.timestamp.timeIntervalSince(ordered.first?.timestamp ?? last.timestamp)
+        } ?? 1)
+        let switchRate = Double(switches) / (measuredDuration / 60)
+        let stabilityScore = max(0, 100 - switchRate * 25)
         let compositeScore = avgScore * 0.7 + fiveGRate * 100 * 0.2 + stabilityScore * 0.1
         return LocationReport(
             name: name,
@@ -467,14 +512,36 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             averageDownloadBytesPerSecond: average(ordered.map(\.downloadBytesPerSecond)) ?? 0,
             averageUploadBytesPerSecond: average(ordered.map(\.uploadBytesPerSecond)) ?? 0,
             fiveGOnlineRate: fiveGRate,
-            switchCount: switches
+            switchCount: switches,
+            testedAt: testedAt,
+            deviceIdentifier: deviceIdentifier,
+            networkType: mostFrequent(onlineSamples.map(\.networkType)),
+            band: mostFrequent(onlineSamples.compactMap(\.band)),
+            durationSeconds: durationSeconds,
+            observedDurationSeconds: measuredDuration,
+            validSampleCount: onlineSamples.count,
+            scoreVersion: LocationReport.currentScoreVersion,
+            stabilityScore: Int(stabilityScore.rounded()),
+            averageRSRP: average(onlineSamples.compactMap(\.rsrp)),
+            averageSNR: average(onlineSamples.compactMap(\.snr)),
+            averageRSRQ: average(onlineSamples.compactMap(\.rsrq)),
+            switchRatePerMinute: switchRate
         )
     }
 
     public func compareLocations(_ reports: [LocationReport]) -> LocationComparison {
         let sorted = reports.sorted {
             if $0.score != $1.score { return $0.score > $1.score }
-            return $0.averageDownloadBytesPerSecond > $1.averageDownloadBytesPerSecond
+            if ($0.stabilityScore ?? 0) != ($1.stabilityScore ?? 0) {
+                return ($0.stabilityScore ?? 0) > ($1.stabilityScore ?? 0)
+            }
+            if ($0.averageSNR ?? -.infinity) != ($1.averageSNR ?? -.infinity) {
+                return ($0.averageSNR ?? -.infinity) > ($1.averageSNR ?? -.infinity)
+            }
+            if ($0.averageRSRP ?? -.infinity) != ($1.averageRSRP ?? -.infinity) {
+                return ($0.averageRSRP ?? -.infinity) > ($1.averageRSRP ?? -.infinity)
+            }
+            return $0.fiveGOnlineRate > $1.fiveGOnlineRate
         }
         guard let best = sorted.first else { return LocationComparison(locations: [], bestLocationName: nil, downloadImprovementPercent: nil) }
         let baseline = sorted.dropFirst().map(\.averageDownloadBytesPerSecond).max() ?? 0
@@ -852,6 +919,15 @@ public final class NetworkInsightEngine: @unchecked Sendable {
     }
 
     private func weightedAverage(_ values: [Double]) -> Double? { average(values) }
+
+    private func mostFrequent(_ values: [String]) -> String? {
+        let cleaned = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return nil }
+        let counts = Dictionary(grouping: cleaned, by: { $0 }).mapValues(\.count)
+        return counts.max { lhs, rhs in
+            lhs.value == rhs.value ? lhs.key > rhs.key : lhs.value < rhs.value
+        }?.key
+    }
 
     private func standardDeviation(_ values: [Double]) -> Double? {
         guard let mean = average(values), values.count >= 2 else { return nil }
