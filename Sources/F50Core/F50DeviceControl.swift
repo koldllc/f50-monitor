@@ -239,16 +239,6 @@ public struct F50DeviceControlView: View {
                 ))
                 .disabled(model.isApplying || model.isLoading)
 
-                Picker("5G 模式", selection: Binding(
-                    get: { fiveGMode },
-                    set: { mode in Task { await model.setNetworkMode(mode) } }
-                )) {
-                    Text("自动").tag(F50NetworkMode.automatic)
-                    Text("NSA").tag(F50NetworkMode.fiveGNSA)
-                    Text("SA").tag(F50NetworkMode.fiveGSA)
-                }
-                .disabled(model.isApplying || model.isLoading)
-
                 Picker("网络模式", selection: Binding(
                     get: { model.snapshot.networkMode },
                     set: { mode in Task { await model.setNetworkMode(mode) } }
@@ -307,13 +297,6 @@ public struct F50DeviceControlView: View {
         }
     }
 
-    private var fiveGMode: F50NetworkMode {
-        switch model.snapshot.networkMode {
-        case .fiveGNSA: return .fiveGNSA
-        case .fiveGSA: return .fiveGSA
-        default: return .automatic
-        }
-    }
 }
 
 private struct F50APNControlView: View {

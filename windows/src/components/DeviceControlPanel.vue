@@ -10,7 +10,6 @@
       <section>
         <h3>蜂窝网络</h3>
         <label class="row"><span>移动数据</span><input type="checkbox" :checked="controls.mobileDataEnabled" :disabled="busy" @change="setMobileData($event.target.checked)" /></label>
-        <label><span>5G SA / NSA / 自动</span><select v-model="fiveGMode" :disabled="busy" @change="setNetworkMode(fiveGMode)"><option value="WL_AND_5G">自动</option><option value="LTE_AND_5G">NSA</option><option value="Only_5G">SA</option></select></label>
         <label><span>网络模式</span><select v-model="controls.networkMode" :disabled="busy" @change="setNetworkMode(controls.networkMode)"><option v-for="mode in networkModes" :key="mode.value" :value="mode.value">{{ mode.label }}</option></select></label>
       </section>
 
@@ -49,7 +48,6 @@ const busy = ref(false), message = ref(''), messageType = ref('success');
 const controls = reactive({ mobileDataEnabled: false, networkMode: 'WL_AND_5G', lteBands: '', nrBands: '', clients: [], apn: { index: 0, isAutomatic: true, profileName: '', apn: '', username: '', password: '', authentication: 'none', pdpType: 'IPv4v6', primaryDNS: '', secondaryDNS: '' } });
 const cell = reactive({ is5G: true, pci: '', earfcn: '' });
 const networkModes = [['自动（5G / 4G / 3G）','WL_AND_5G'],['5G NSA','LTE_AND_5G'],['5G SA','Only_5G'],['4G / 3G','WCDMA_AND_LTE'],['仅 4G','Only_LTE'],['仅 3G','Only_WCDMA']].map(([label,value])=>({label,value}));
-const fiveGMode = computed({ get:()=>['LTE_AND_5G','Only_5G'].includes(controls.networkMode)?controls.networkMode:'WL_AND_5G', set:value=>{controls.networkMode=value;} });
 const canSaveApn = computed(()=>controls.apn.isAutomatic||(controls.apn.profileName&&controls.apn.apn));
 async function run(action, success, refresh=true){if(busy.value)return;busy.value=true;message.value='';try{await action();messageType.value='success';message.value=success;if(refresh)await load(true);}catch(error){messageType.value='error';message.value=String(error?.message||error);}finally{busy.value=false;}}
 async function load(nested=false){if(!nested)busy.value=true;try{Object.assign(controls,await invokePlatform('get_device_controls'));}catch(error){messageType.value='error';message.value=String(error?.message||error);}finally{if(!nested)busy.value=false;}}
