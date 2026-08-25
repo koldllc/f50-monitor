@@ -19,7 +19,6 @@ public struct SettingsView: View {
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
-    @State private var isShowingDeviceControl = false
     
     init(
         fetcher: F50Fetcher,
@@ -232,28 +231,6 @@ public struct SettingsView: View {
                         .buttonStyle(.plain)
                     }
                     .frame(width: 170)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("设备控制")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("网络与设备管理")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("移动数据、APN / DNS、客户端、SMS、网络模式与锁定")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button("打开") { isShowingDeviceControl = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(F50Theme.blue)
                 }
             }
             .padding(12)
@@ -497,20 +474,6 @@ public struct SettingsView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
-        }
-        .sheet(isPresented: $isShowingDeviceControl) {
-            NavigationStack {
-                F50DeviceControlView(fetcher: fetcher) {
-                    isShowingDeviceControl = false
-                    onOpenSMS()
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("关闭") { isShowingDeviceControl = false }
-                    }
-                }
-            }
-            .frame(minWidth: 460, minHeight: 560)
         }
     }
 }

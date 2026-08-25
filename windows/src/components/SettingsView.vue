@@ -74,17 +74,6 @@
         </div>
       </div>
 
-      <div v-if="isAndroidPlatform" class="settings-section">
-        <span class="section-title">设备控制</span>
-        <div class="setting-row">
-          <div class="setting-text">
-            <span class="setting-title">网络与设备管理</span>
-            <span class="setting-desc">移动数据、APN / DNS、客户端、SMS、网络模式、Band / Cell Lock 与重启</span>
-          </div>
-          <button class="btn-primary" @click="showDeviceControl = true">打开</button>
-        </div>
-      </div>
-
       <!-- Refresh Preferences -->
       <div class="settings-section">
         <span class="section-title">刷新与显示（节能优化）</span>
@@ -155,7 +144,6 @@
 
     <!-- Device Feedback Modal Component -->
     <DeviceFeedbackModal :isOpen="showFeedbackModal" @close="showFeedbackModal = false" />
-    <DeviceControlPanel v-if="showDeviceControl" @close="showDeviceControl = false" @openSMS="openSMS" />
   </div>
 </template>
 
@@ -163,14 +151,12 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { state, saveConfig, invokePlatform, isAndroidPlatform } from '../stores/f50Store.js';
 import DeviceFeedbackModal from './DeviceFeedbackModal.vue';
-import DeviceControlPanel from './DeviceControlPanel.vue';
 
 const emit = defineEmits(['close', 'openSMS']);
 
 const showRouterPwd = ref(false);
 const showUfiToken = ref(false);
 const showFeedbackModal = ref(false);
-const showDeviceControl = ref(false);
 const agentInfo = ref(null);
 const batteryMessage = ref('');
 
@@ -238,11 +224,6 @@ async function requestBatteryOptimization() {
 
 function handleCancel() {
   emit('close');
-}
-
-function openSMS() {
-  showDeviceControl.value = false;
-  emit('openSMS');
 }
 
 async function handleSave() {
