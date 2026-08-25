@@ -3077,24 +3077,35 @@ public class F50Fetcher: ObservableObject {
 
     private func controlGet(commands: String) async throws -> [String: Any] {
         let expectedKeys = commands.split(separator: ",").map(String.init)
+
+        if let cookie = try? await controlLogin(backend: .router(cookie: nil)),
+           let payload = try? await controlGetPayload(commands: commands, backend: .router(cookie: cookie)),
+           expectedKeys.contains(where: { payload[$0] != nil }) {
+            return payload
+        }
+
         for token in candidateTokens() {
             if let payload = try? await controlGetPayload(commands: commands, backend: .ufi(token: token, cookie: nil)),
                expectedKeys.contains(where: { payload[$0] != nil }) {
                 return payload
             }
         }
-
-        let cookie = try await controlLogin(backend: .router(cookie: nil))
-        let payload = try await controlGetPayload(commands: commands, backend: .router(cookie: cookie))
-        guard expectedKeys.contains(where: { payload[$0] != nil }) else {
-            throw F50DeviceControlError.unavailable
-        }
-        return payload
+        throw F50DeviceControlError.unavailable
     }
 
     private func controlSet(_ parameters: [String: String]) async throws {
         guard !isDemoMode else { throw F50DeviceControlError.demoMode }
         var lastMessage = "设备拒绝了控制请求"
+
+        do {
+            let cookie = try await controlLogin(backend: .router(cookie: nil))
+            let result = try await controlPost(parameters, backend: .router(cookie: cookie))
+            if controlSucceeded(result) { return }
+            lastMessage = firstString(result, keys: ["error", "message", "msg"], fallback: lastMessage)
+        } catch {
+            lastMessage = error.localizedDescription
+        }
+
         for token in candidateTokens() {
             do {
                 let cookie = try await controlLogin(backend: .ufi(token: token, cookie: nil))
@@ -3104,14 +3115,6 @@ public class F50Fetcher: ObservableObject {
             } catch {
                 lastMessage = error.localizedDescription
             }
-        }
-        do {
-            let cookie = try await controlLogin(backend: .router(cookie: nil))
-            let result = try await controlPost(parameters, backend: .router(cookie: cookie))
-            if controlSucceeded(result) { return }
-            lastMessage = firstString(result, keys: ["error", "message", "msg"], fallback: lastMessage)
-        } catch {
-            lastMessage = error.localizedDescription
         }
         throw F50DeviceControlError.rejected(lastMessage)
     }
