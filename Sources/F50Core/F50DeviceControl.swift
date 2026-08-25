@@ -417,19 +417,28 @@ private struct F50WiFiClientControlView: View {
 
 private struct F50BandLockView: View {
     @ObservedObject var model: F50DeviceControlModel
-    @State private var lteBands = ""
-    @State private var nrBands = ""
+    @State private var lteBands: Set<Int> = []
+    @State private var nrBands: Set<Int> = []
     @State private var pendingApply = false
+
+    private let commonLTEBands = [1, 3, 5, 8, 34, 38, 39, 40, 41]
+    private let commonNRBands = [1, 5, 8, 28, 41, 78]
 
     var body: some View {
         Form {
-            Section("锁定频段") {
-                TextField("4G Band，例如 1,3,8", text: $lteBands)
-                TextField("5G Band，例如 41,78", text: $nrBands)
+            Section("4G 常用频段") {
+                ForEach(commonLTEBands, id: \.self) { band in
+                    Toggle("B\(band)", isOn: bandBinding(band, in: $lteBands))
+                }
+            }
+            Section("5G 常用频段") {
+                ForEach(commonNRBands, id: \.self) { band in
+                    Toggle("n\(band)", isOn: bandBinding(band, in: $nrBands))
+                }
             }
             Section {
                 Button("应用频段锁定") { pendingApply = true }
-                    .disabled(model.isApplying || (parsedLTE.isEmpty && parsedNR.isEmpty))
+                    .disabled(model.isApplying || (lteBands.isEmpty && nrBands.isEmpty))
                 Button("解除全部频段锁定", role: .destructive) {
                     Task { await model.setBandLock(lte: [], nr: []) }
                 }
@@ -440,12 +449,12 @@ private struct F50BandLockView: View {
         }
         .navigationTitle("频段锁定")
         .onAppear {
-            lteBands = model.snapshot.lockedLTEBands.sorted().map(String.init).joined(separator: ",")
-            nrBands = model.snapshot.lockedNRBands.sorted().map(String.init).joined(separator: ",")
+            lteBands = model.snapshot.lockedLTEBands
+            nrBands = model.snapshot.lockedNRBands
         }
         .confirmationDialog("确认锁定频段？", isPresented: $pendingApply, titleVisibility: .visible) {
             Button("应用锁定", role: .destructive) {
-                Task { await model.setBandLock(lte: parsedLTE, nr: parsedNR) }
+                Task { await model.setBandLock(lte: lteBands, nr: nrBands) }
             }
             Button("取消", role: .cancel) {}
         } message: {
@@ -453,10 +462,17 @@ private struct F50BandLockView: View {
         }
     }
 
-    private var parsedLTE: Set<Int> { parseBands(lteBands) }
-    private var parsedNR: Set<Int> { parseBands(nrBands) }
-    private func parseBands(_ value: String) -> Set<Int> {
-        Set(value.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }.filter { (1...1024).contains($0) })
+    private func bandBinding(_ band: Int, in bands: Binding<Set<Int>>) -> Binding<Bool> {
+        Binding(
+            get: { bands.wrappedValue.contains(band) },
+            set: { isSelected in
+                if isSelected {
+                    bands.wrappedValue.insert(band)
+                } else {
+                    bands.wrappedValue.remove(band)
+                }
+            }
+        )
     }
 }
 
