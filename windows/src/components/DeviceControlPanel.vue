@@ -31,7 +31,7 @@
       </section>
 
       <section><h3>频段锁定</h3><input v-model.trim="controls.lteBands" placeholder="4G 频段，例如 1,3,8" /><input v-model.trim="controls.nrBands" placeholder="5G 频段，例如 41,78" /><div class="actions"><button :disabled="busy" @click="setBands(false)">应用频段锁定</button><button class="danger" :disabled="busy" @click="setBands(true)">解除全部</button></div></section>
-      <section><h3>小区锁定</h3><div class="two-columns"><select v-model="cell.is5G"><option :value="true">5G</option><option :value="false">4G</option></select><input v-model.number="cell.pci" type="number" placeholder="PCI" /></div><input v-model.number="cell.earfcn" type="number" placeholder="EARFCN / NR-ARFCN" /><div class="actions"><button :disabled="busy || cell.pci === '' || cell.earfcn === ''" @click="lockCell">应用小区锁定</button><button class="danger" :disabled="busy" @click="unlockCells">解除全部</button></div></section>
+      <section><h3>基站锁定</h3><div class="two-columns"><select v-model="cell.is5G"><option :value="true">5G</option><option :value="false">4G</option></select><input v-model.number="cell.pci" type="number" placeholder="PCI" /></div><input v-model.number="cell.earfcn" type="number" placeholder="EARFCN / NR-ARFCN" /><div class="actions"><button :disabled="busy || cell.pci === '' || cell.earfcn === ''" @click="lockCell">应用基站锁定</button><button class="danger" :disabled="busy" @click="unlockCells">解除全部</button></div></section>
       <section><h3>设备电源</h3><button class="danger" :disabled="busy" @click="reboot">重启设备</button></section>
 
       <p v-if="message" :class="['message', messageType]">{{ message }}</p><p class="warning">网络模式、APN、锁频和锁站可能导致蜂窝连接中断。请保留本地 Wi-Fi 或 USB 恢复路径。</p>
@@ -55,8 +55,8 @@ const setNetworkMode=mode=>run(()=>invokePlatform('set_network_mode',{mode}),'�
 const saveApn=()=>run(()=>controls.apn.isAutomatic?invokePlatform('set_apn_auto'):invokePlatform('save_apn',{apn:controls.apn}),controls.apn.isAutomatic?'已恢复自动 APN':'APN 与 DNS 已保存');
 const toggleClient=client=>{if(!client.isBlocked&&!confirm(`踢出并拉黑 ${client.name||client.macAddress}？`))return;run(()=>invokePlatform('set_client_blocked',{...client,blocked:!client.isBlocked}),client.isBlocked?'已解除黑名单':'设备已踢出并拉黑');};
 const setBands=unlock=>{if(!confirm(unlock?'确认解除全部频段锁定？':'错误频段可能导致无法入网，仍要应用？'))return;run(()=>invokePlatform('set_band_lock',{lteBands:controls.lteBands,nrBands:controls.nrBands,unlock}),unlock?'已解除频段锁定':'频段锁定已应用');};
-const lockCell=()=>{if(confirm('错误小区参数可能导致无信号，仍要应用？'))run(()=>invokePlatform('lock_cell',{...cell}),'小区锁定已应用');};
-const unlockCells=()=>run(()=>invokePlatform('unlock_cells'),'已解除小区锁定');
+const lockCell=()=>{if(confirm('错误基站参数可能导致无信号，仍要应用？'))run(()=>invokePlatform('lock_cell',{...cell}),'基站锁定已应用');};
+const unlockCells=()=>run(()=>invokePlatform('unlock_cells'),'已解除基站锁定');
 const reboot=()=>{if(confirm('确认重启 F50？当前连接会暂时中断。'))run(()=>invokePlatform('reboot_device'),'重启指令已发送',false);};
 onMounted(load);
 </script>

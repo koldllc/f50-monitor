@@ -126,7 +126,7 @@ struct SettingsView: View {
                 } header: {
                     Text("设备管理")
                 } footer: {
-                    Text("移动数据、APN / DNS、Wi-Fi 客户端、网络模式、频段锁定、小区锁定与重启。")
+                    Text("移动数据、APN / DNS、Wi-Fi 客户端、网络模式、频段锁定、基站锁定与重启。")
                 }
 
                 Section {
