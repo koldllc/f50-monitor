@@ -2907,4 +2907,350 @@ public class F50Fetcher: ObservableObject {
     private func calcKanoSign(key: String, data: String) -> String {
         F50ResponseParser.kanoSign(key: key, data: data)
     }
+
+    // MARK: - Device control
+
+    public func fetchDeviceControlSnapshot() async throws -> F50DeviceControlSnapshot {
+        guard !isDemoMode else { throw F50DeviceControlError.demoMode }
+        let commands = [
+            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock",
+            "station_list", "lan_station_list", "queryDeviceAccessControlList", "hostNameList",
+            "apn_Current_index", "apn_mode", "apn_m_profile_name", "profile_name", "profile_name_ui",
+            "apn_wan_apn", "apn_ppp_username", "apn_ppp_passwd", "apn_ppp_auth_mode", "apn_pdp_type",
+            "dns_mode", "prefer_dns_manual", "standby_dns_manual"
+        ].joined(separator: ",")
+        let payload = try await controlGet(commands: commands)
+
+        let ppp = stringValue(payload["ppp_status"]).lowercased()
+        let isMobileDataEnabled = !["ppp_disconnected", "disconnected", "disconnect", "0", "off"].contains(ppp)
+        let mode = F50NetworkMode(rawValue: stringValue(payload["net_select"])) ?? .automatic
+        let apn = F50APNSettings(
+            index: intValue(payload["apn_Current_index"] ?? payload["index"]),
+            profileName: firstString(payload, keys: ["apn_m_profile_name", "profile_name", "profile_name_ui"]),
+            apn: firstString(payload, keys: ["apn_wan_apn", "wan_apn_ui"]),
+            username: firstString(payload, keys: ["apn_ppp_username", "ppp_username_ui"]),
+            password: firstString(payload, keys: ["apn_ppp_passwd", "ppp_passwd_ui"]),
+            authentication: firstString(payload, keys: ["apn_ppp_auth_mode", "ppp_auth_mode_ui"], fallback: "none"),
+            pdpType: firstString(payload, keys: ["apn_pdp_type", "pdp_type_ui"], fallback: "IPv4v6"),
+            primaryDNS: firstString(payload, keys: ["prefer_dns_manual", "prefer_dns_manual_ui"]),
+            secondaryDNS: firstString(payload, keys: ["standby_dns_manual", "standby_dns_manual_ui"]),
+            isAutomatic: stringValue(payload["apn_mode"]).lowercased() != "manual"
+        )
+
+        let blackMACs = splitList(payload["BlackMacList"])
+        let blackNames = splitList(payload["BlackNameList"])
+        var clients = parseClients(payload["station_list"], isWired: false)
+        clients.append(contentsOf: parseClients(payload["lan_station_list"], isWired: true))
+        for (index, mac) in blackMACs.enumerated() where !mac.isEmpty {
+            clients.removeAll { $0.macAddress.caseInsensitiveCompare(mac) == .orderedSame }
+            clients.append(F50WiFiClient(
+                name: blackNames.indices.contains(index) ? blackNames[index] : "",
+                ipAddress: "",
+                macAddress: mac,
+                isWired: false,
+                isBlocked: true
+            ))
+        }
+
+        return F50DeviceControlSnapshot(
+            isMobileDataEnabled: isMobileDataEnabled,
+            networkMode: mode,
+            apn: apn,
+            clients: clients.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
+            accessControlMode: firstString(payload, keys: ["AclMode"], fallback: "2"),
+            lockedLTEBands: parseBands(payload["lte_band_lock"]),
+            lockedNRBands: parseBands(payload["nr_band_lock"])
+        )
+    }
+
+    public func setMobileDataEnabled(_ enabled: Bool) async throws {
+        try await controlSet(["goformId": enabled ? "CONNECT_NETWORK" : "DISCONNECT_NETWORK"])
+    }
+
+    public func setNetworkMode(_ mode: F50NetworkMode) async throws {
+        try await controlSet([
+            "goformId": "SET_BEARER_PREFERENCE",
+            "BearerPreference": mode.rawValue
+        ])
+    }
+
+    public func saveAPNSettings(_ settings: F50APNSettings) async throws {
+        guard !settings.profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !settings.apn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw F50DeviceControlError.rejected("请填写配置名称与 APN")
+        }
+        let dnsMode = settings.primaryDNS.isEmpty && settings.secondaryDNS.isEmpty ? "auto" : "manual"
+        var parameters: [String: String] = [
+            "goformId": "APN_PROC_EX", "apn_mode": "manual", "apn_action": "save",
+            "profile_name": settings.profileName, "index": String(max(0, settings.index)),
+            "wan_dial": "*99#", "apn_wan_dial": "*99#", "apn_select": "manual",
+            "apn_pdp_type": settings.pdpType, "pdp_type": settings.pdpType,
+            "apn_pdp_select": "auto", "pdp_select": "auto", "apn_pdp_addr": "", "pdp_addr": "",
+            "apn_wan_apn": settings.apn, "wan_apn": settings.apn,
+            "apn_ppp_auth_mode": settings.authentication, "ppp_auth_mode": settings.authentication,
+            "apn_ppp_username": settings.username, "ppp_username": settings.username,
+            "apn_ppp_passwd": settings.password, "ppp_passwd": settings.password,
+            "dns_mode": dnsMode, "prefer_dns_manual": settings.primaryDNS,
+            "standby_dns_manual": settings.secondaryDNS
+        ]
+        if settings.pdpType != "IP" {
+            parameters.merge([
+                "apn_ipv6_wan_apn": settings.apn, "ipv6_wan_apn": settings.apn,
+                "apn_ipv6_ppp_auth_mode": settings.authentication, "ipv6_ppp_auth_mode": settings.authentication,
+                "apn_ipv6_ppp_username": settings.username, "ipv6_ppp_username": settings.username,
+                "apn_ipv6_ppp_passwd": settings.password, "ipv6_ppp_passwd": settings.password,
+                "ipv6_dns_mode": "auto", "ipv6_prefer_dns_manual": "", "ipv6_standby_dns_manual": ""
+            ]) { _, new in new }
+        }
+        try await controlSet(parameters)
+        try await controlSet([
+            "goformId": "APN_PROC_EX", "apn_mode": "manual", "apn_action": "set_default",
+            "set_default_flag": "1", "apn_pdp_type": "", "index": String(max(0, settings.index))
+        ])
+    }
+
+    public func useAutomaticAPN() async throws {
+        try await controlSet(["goformId": "APN_PROC_EX", "apn_mode": "auto"])
+    }
+
+    public func setWiFiClient(
+        _ client: F50WiFiClient,
+        blocked: Bool,
+        currentClients: [F50WiFiClient]
+    ) async throws {
+        var blockedClients = currentClients.filter(\.isBlocked)
+        blockedClients.removeAll { $0.macAddress.caseInsensitiveCompare(client.macAddress) == .orderedSame }
+        if blocked { blockedClients.append(client) }
+        try await controlSet([
+            "goformId": "setDeviceAccessControlList", "AclMode": "2",
+            "WhiteMacList": "", "WhiteNameList": "",
+            "BlackMacList": blockedClients.map(\.macAddress).joined(separator: ";"),
+            "BlackNameList": blockedClients.map(\.name).joined(separator: ";")
+        ])
+    }
+
+    public func setBandLock(lte: Set<Int>, nr: Set<Int>) async throws {
+        let supportedLTE: Set<Int> = [1, 3, 5, 8, 34, 38, 39, 40, 41]
+        let supportedNR: Set<Int> = [1, 5, 8, 28, 41, 78]
+        let effectiveLTE = lte.isEmpty && nr.isEmpty ? supportedLTE : lte
+        let effectiveNR = lte.isEmpty && nr.isEmpty ? supportedNR : nr
+        try await controlSet([
+            "goformId": "LTE_BAND_LOCK",
+            "lte_band_lock": effectiveLTE.sorted().map(String.init).joined(separator: ",")
+        ])
+        try await controlSet([
+            "goformId": "NR_BAND_LOCK",
+            "nr_band_lock": effectiveNR.sorted().map(String.init).joined(separator: ",")
+        ])
+    }
+
+    public func lockCell(pci: Int, earfcn: Int, is5G: Bool) async throws {
+        guard (0...1007).contains(pci), earfcn > 0 else {
+            throw F50DeviceControlError.rejected("PCI 或频点无效")
+        }
+        try await controlSet([
+            "goformId": "CELL_LOCK", "pci": String(pci), "earfcn": String(earfcn),
+            "rat": is5G ? "16" : "12"
+        ])
+    }
+
+    public func unlockAllCells() async throws {
+        try await controlSet(["goformId": "UNLOCK_ALL_CELL"])
+    }
+
+    public func rebootDevice() async throws {
+        try await controlSet(["goformId": "REBOOT_DEVICE"])
+    }
+
+    private func controlGet(commands: String) async throws -> [String: Any] {
+        guard var components = URLComponents(string: "\(ufiURLString)/api/goform/goform_get_cmd_process") else {
+            throw F50DeviceControlError.unavailable
+        }
+        components.queryItems = [
+            URLQueryItem(name: "isTest", value: "false"),
+            URLQueryItem(name: "multi_data", value: "1"),
+            URLQueryItem(name: "cmd", value: commands),
+            URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
+        ]
+        guard let url = components.url else { throw F50DeviceControlError.unavailable }
+        for token in candidateTokens() {
+            do {
+                let (data, response) = try await session.data(for: signedUFIRequest(url: url, token: token))
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                let payload = (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
+                let expectedKeys = commands.split(separator: ",").map(String.init)
+                if expectedKeys.contains(where: { payload[$0] != nil }) { return payload }
+            } catch { continue }
+        }
+        throw F50DeviceControlError.unavailable
+    }
+
+    private func controlSet(_ parameters: [String: String]) async throws {
+        guard !isDemoMode else { throw F50DeviceControlError.demoMode }
+        var lastMessage = "设备拒绝了控制请求"
+        for token in candidateTokens() {
+            do {
+                let cookie = try await controlLogin(token: token)
+                let result = try await controlPost(parameters, token: token, cookie: cookie)
+                if controlSucceeded(result) { return }
+                lastMessage = firstString(result, keys: ["error", "message", "msg"], fallback: lastMessage)
+            } catch {
+                lastMessage = error.localizedDescription
+            }
+        }
+        throw F50DeviceControlError.rejected(lastMessage)
+    }
+
+    private func controlLogin(token: String) async throws -> String {
+        let ld = try await controlGetSingle(command: "LD", token: token, cookie: nil)
+        guard !ld.isEmpty,
+              let url = URL(string: "\(ufiURLString)/api/goform/goform_set_cmd_process") else {
+            throw F50DeviceControlError.unavailable
+        }
+        let loginPassword = F50ResponseParser.calculateLoginPasswordHash(tokenOrPassword: password, ld: ld)
+        let body = formBody([
+            "goformId": "LOGIN", "isTest": "false", "user": "admin", "password": loginPassword
+        ])
+        let request = signedUFIRequest(
+            url: url, token: token, method: "POST", body: body,
+            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw F50DeviceControlError.unavailable
+        }
+        let cookie = http.value(forHTTPHeaderField: "kano-cookie")
+            ?? http.value(forHTTPHeaderField: "Set-Cookie")?.split(separator: ";").first.map(String.init)
+            ?? sessionCookie
+        guard let cookie, !cookie.isEmpty else {
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], controlSucceeded(json) {
+                return ""
+            }
+            throw F50DeviceControlError.rejected("中兴后台口令验证失败")
+        }
+        return cookie
+    }
+
+    private func controlPost(
+        _ parameters: [String: String],
+        token: String,
+        cookie: String
+    ) async throws -> [String: Any] {
+        let version = try await controlGetPayload(
+            commands: "Language,cr_version,wa_inner_version", token: token, cookie: cookie
+        )
+        let rd = try await controlGetSingle(command: "RD", token: token, cookie: cookie)
+        let wa = stringValue(version["wa_inner_version"])
+        let cr = stringValue(version["cr_version"])
+        guard !wa.isEmpty, !cr.isEmpty, !rd.isEmpty,
+              let url = URL(string: "\(ufiURLString)/api/goform/goform_set_cmd_process") else {
+            throw F50DeviceControlError.invalidResponse
+        }
+        var form = parameters
+        form["isTest"] = "false"
+        form["AD"] = sha256(sha256(wa + cr) + rd)
+        var request = signedUFIRequest(
+            url: url, token: token, method: "POST", body: formBody(form),
+            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+        )
+        if !cookie.isEmpty {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+            request.setValue(cookie, forHTTPHeaderField: "kano-cookie")
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw F50DeviceControlError.invalidResponse
+        }
+        return json
+    }
+
+    private func controlGetPayload(commands: String, token: String, cookie: String?) async throws -> [String: Any] {
+        guard var components = URLComponents(string: "\(ufiURLString)/api/goform/goform_get_cmd_process") else {
+            throw F50DeviceControlError.unavailable
+        }
+        components.queryItems = [
+            URLQueryItem(name: "isTest", value: "false"),
+            URLQueryItem(name: "multi_data", value: "1"),
+            URLQueryItem(name: "cmd", value: commands),
+            URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
+        ]
+        guard let url = components.url else { throw F50DeviceControlError.unavailable }
+        var request = signedUFIRequest(url: url, token: token)
+        if let cookie, !cookie.isEmpty {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+            request.setValue(cookie, forHTTPHeaderField: "kano-cookie")
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw F50DeviceControlError.invalidResponse
+        }
+        return (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
+    }
+
+    private func controlGetSingle(command: String, token: String, cookie: String?) async throws -> String {
+        let payload = try await controlGetPayload(commands: command, token: token, cookie: cookie)
+        return stringValue(payload[command])
+    }
+
+    private func formBody(_ parameters: [String: String]) -> Data {
+        var components = URLComponents()
+        components.queryItems = parameters.sorted { $0.key < $1.key }.map {
+            URLQueryItem(name: $0.key, value: $0.value)
+        }
+        return Data((components.percentEncodedQuery ?? "").utf8)
+    }
+
+    private func controlSucceeded(_ json: [String: Any]) -> Bool {
+        let value = stringValue(json["result"] ?? json["success"] ?? json["status"]).lowercased()
+        return ["success", "true", "ok", "0", "3"].contains(value)
+    }
+
+    private func parseClients(_ value: Any?, isWired: Bool) -> [F50WiFiClient] {
+        guard let rows = value as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            let mac = firstString(row, keys: ["mac_addr", "mac", "macAddress"])
+            guard !mac.isEmpty else { return nil }
+            return F50WiFiClient(
+                name: firstString(row, keys: ["hostname", "name", "host_name"]),
+                ipAddress: firstString(row, keys: ["ip_addr", "ip", "ipAddress"]),
+                macAddress: mac,
+                isWired: isWired,
+                isBlocked: false
+            )
+        }
+    }
+
+    private func splitList(_ value: Any?) -> [String] {
+        stringValue(value).split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    private func parseBands(_ value: Any?) -> Set<Int> {
+        Set(stringValue(value).split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) })
+    }
+
+    private func firstString(
+        _ payload: [String: Any],
+        keys: [String],
+        fallback: String = ""
+    ) -> String {
+        for key in keys {
+            let value = stringValue(payload[key])
+            if !value.isEmpty { return value }
+        }
+        return fallback
+    }
+
+    private func stringValue(_ value: Any?) -> String {
+        if let string = value as? String { return string.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let number = value as? NSNumber { return number.stringValue }
+        return ""
+    }
+
+    private func intValue(_ value: Any?) -> Int {
+        if let number = value as? NSNumber { return number.intValue }
+        return Int(stringValue(value)) ?? 0
+    }
 }

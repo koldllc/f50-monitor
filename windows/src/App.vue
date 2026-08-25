@@ -37,6 +37,7 @@
     <SettingsView 
       v-else-if="state.activeView === 'settings'" 
       @close="state.activeView = 'main'" 
+      @openSMS="state.activeView = 'sms'"
     />
 
     <!-- Wireless Mirroring View -->

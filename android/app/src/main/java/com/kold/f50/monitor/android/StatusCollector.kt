@@ -85,8 +85,10 @@ class StatusCollector(
         return JSONObject().apply {
             put("apiVersion", "v1")
             put("readOnly", true)
+            put("localTypedControls", true)
             put("lanApi", true)
             put("sms", false)
+            put("localSMS", true)
             put("scrcpy", false)
             put("routerGoform", true)
             put("procMetrics", true)

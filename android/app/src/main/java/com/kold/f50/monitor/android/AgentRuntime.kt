@@ -84,6 +84,7 @@ class RuntimeState(private val context: Context) {
     private val preferences = context.getSharedPreferences("f50_agent", Context.MODE_PRIVATE)
     private val collector = StatusCollector(context, preferences)
     private val lanServer = LanApiServer(this)
+    private val deviceController = DeviceController()
     private var scheduler: ScheduledExecutorService? = null
     @Volatile private var config = loadConfig()
 
@@ -145,7 +146,38 @@ class RuntimeState(private val context: Context) {
                     })
                     JSONObject().put("success", true).toString()
                 }
-                "get_sms_messages", "send_sms" -> unsupported("Android 端不支持短信功能")
+                "get_device_controls" -> deviceController.snapshot(config).toString()
+                "set_mobile_data" -> success {
+                    deviceController.setMobileData(config, JSONObject(argsJson).optBoolean("enabled"))
+                }
+                "set_network_mode" -> success {
+                    deviceController.setNetworkMode(config, JSONObject(argsJson).optString("mode"))
+                }
+                "save_apn" -> success {
+                    deviceController.saveApn(config, JSONObject(argsJson).optJSONObject("apn") ?: JSONObject(argsJson))
+                }
+                "set_apn_auto" -> success { deviceController.useAutomaticApn(config) }
+                "set_band_lock" -> success {
+                    val args = JSONObject(argsJson)
+                    deviceController.setBands(config, args.optString("lteBands"), args.optString("nrBands"), args.optBoolean("unlock"))
+                }
+                "lock_cell" -> success {
+                    val args = JSONObject(argsJson)
+                    deviceController.lockCell(config, args.optInt("pci", -1), args.optInt("earfcn", -1), args.optBoolean("is5G", true))
+                }
+                "unlock_cells" -> success { deviceController.unlockCells(config) }
+                "reboot_device" -> success { deviceController.reboot(config) }
+                "set_client_blocked" -> success {
+                    val args = JSONObject(argsJson)
+                    deviceController.setClientBlocked(
+                        config, args.optString("macAddress"), args.optString("name"), args.optBoolean("blocked")
+                    )
+                }
+                "get_sms_messages" -> deviceController.getSmsMessages(config).toString()
+                "send_sms" -> success {
+                    val args = JSONObject(argsJson)
+                    deviceController.sendSms(config, args.optString("number"), args.optString("content"))
+                }
                 "get_scrcpy_status" -> JSONObject().apply {
                     put("hasAdb", false)
                     put("hasScrcpy", false)
@@ -164,6 +196,11 @@ class RuntimeState(private val context: Context) {
     }
 
     private fun unsupported(message: String): String = JSONObject().put("error", message).toString()
+
+    private fun success(action: () -> Unit): String {
+        action()
+        return JSONObject().put("success", true).toString()
+    }
 
     private fun agentInfo(): JSONObject {
         val ignored = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

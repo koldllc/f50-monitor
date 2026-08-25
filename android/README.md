@@ -1,6 +1,6 @@
 # F50 Monitor Android
 
-这是安装在 F50 本机的 Android MVP：前台常驻服务负责只读采集和 LAN API，WebView 复用 `windows` Vue 界面。
+这是安装在 F50 本机的 Android 应用：前台常驻服务负责状态采集与只读 LAN API，WebView 复用 `windows` Vue 界面，并通过本机 typed bridge 提供设备控制。
 
 ## 构建与安装
 
@@ -45,11 +45,11 @@ GET /api/v1/capabilities
 adb shell run-as com.kold.f50.monitor.android cat shared_prefs/f50_agent.xml
 ```
 
-令牌会在首次访问时随机生成并保存在应用私有目录，首选在 Android 设置页查看 LAN API 配对信息。`adb shell run-as ...` 只适用于 debuggable 的 debug APK。API 是只读的，不提供短信、AT 控制、配置写入或 scrcpy 接口。
+令牌会在首次访问时随机生成并保存在应用私有目录，首选在 Android 设置页查看 LAN API 配对信息。`adb shell run-as ...` 只适用于 debuggable 的 debug APK。`8787` API 保持只读；移动数据、APN / DNS、客户端、SMS、网络模式、Band / Cell Lock 与重启仅通过应用本机的 typed bridge 暴露，不提供任意 shell、AT 或 goform 透传。
 
 ## 当前限制
 
 - 优先尝试 `192.168.0.1` Router goform，旧版 `127.0.0.1` 配置会自动迁移；MU300 固件若阻止本机回连 LAN Web 服务，则降级到 Android Telephony、`sipa_eth0` 及 `/proc` 的只读状态。
 - 展锐 `vendor.sprd.hardware.tool.IToolControl/default`（API >33）或 `vendor.sprd.hardware.log.ILogControl/default`（旧版）发送 `AT+CGEQOSRDP=1` 的只读探测可能受固件/SELinux 权限限制，失败时 QCI/速率字段为空。
-- Android 端界面隐藏短信、scrcpy 投屏、在线反馈和 Windows 专属设置；这些能力不会通过 Android bridge 或 LAN API 暴露。
+- Android 端仍隐藏 scrcpy 投屏、在线反馈和 Windows 专属设置。设备控制依赖目标固件的 Router goform；各写操作必须以真实设备回读结果验收。
 - 当前是调试 APK，未包含签名、应用商店发布和跨固件实机验收。

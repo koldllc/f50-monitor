@@ -30,6 +30,10 @@ struct F50PopoverView: View {
                         isShowingSettings = false
                         isShowingFeedback = true
                     },
+                    onOpenSMS: {
+                        isShowingSettings = false
+                        isShowingSMS = true
+                    },
                     onClose: {
                         isShowingSettings = false
                     }

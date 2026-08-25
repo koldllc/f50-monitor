@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var isShowingFeedback = false
     @State private var isShowingFileShareHelp = false
     @State private var isShowingFileShare = false
+    @State private var isShowingSMS = false
     @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
 
     private var isIPValid: Bool {
@@ -114,6 +115,20 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderless)
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        F50DeviceControlView(fetcher: fetcher) {
+                            isShowingSMS = true
+                        }
+                    } label: {
+                        Label("设备控制", systemImage: "switch.2")
+                    }
+                } header: {
+                    Text("设备管理")
+                } footer: {
+                    Text("移动数据、APN / DNS、Wi-Fi 客户端、SMS、网络模式、Band Lock、Cell Lock 与重启。")
                 }
 
                 Section {
@@ -220,6 +235,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $isShowingFileShare) {
                 IOSFileShareView(fetcher: fetcher)
+            }
+            .sheet(isPresented: $isShowingSMS) {
+                SMSView(fetcher: fetcher)
             }
             .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
                 Button("知道了", role: .cancel) {}
