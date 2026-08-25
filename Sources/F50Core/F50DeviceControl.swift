@@ -109,7 +109,7 @@ public enum F50DeviceControlError: LocalizedError {
         case .demoMode:
             return "演示模式不会修改真实设备"
         case .unavailable:
-            return "设备控制不可用，请检查 UFI 后台口令与 2333 服务"
+            return "设备控制不可用，请检查中兴后台口令，以及 2333 或 Router 80 服务"
         case .invalidResponse:
             return "设备返回了无法识别的数据"
         case .rejected(let message):

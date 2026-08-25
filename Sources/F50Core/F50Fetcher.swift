@@ -3070,28 +3070,26 @@ public class F50Fetcher: ObservableObject {
         try await controlSet(["goformId": "REBOOT_DEVICE"])
     }
 
+    private enum DeviceControlBackend {
+        case ufi(token: String, cookie: String?)
+        case router(cookie: String?)
+    }
+
     private func controlGet(commands: String) async throws -> [String: Any] {
-        guard var components = URLComponents(string: "\(ufiURLString)/api/goform/goform_get_cmd_process") else {
+        let expectedKeys = commands.split(separator: ",").map(String.init)
+        for token in candidateTokens() {
+            if let payload = try? await controlGetPayload(commands: commands, backend: .ufi(token: token, cookie: nil)),
+               expectedKeys.contains(where: { payload[$0] != nil }) {
+                return payload
+            }
+        }
+
+        let cookie = try await controlLogin(backend: .router(cookie: nil))
+        let payload = try await controlGetPayload(commands: commands, backend: .router(cookie: cookie))
+        guard expectedKeys.contains(where: { payload[$0] != nil }) else {
             throw F50DeviceControlError.unavailable
         }
-        components.queryItems = [
-            URLQueryItem(name: "isTest", value: "false"),
-            URLQueryItem(name: "multi_data", value: "1"),
-            URLQueryItem(name: "cmd", value: commands),
-            URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
-        ]
-        guard let url = components.url else { throw F50DeviceControlError.unavailable }
-        for token in candidateTokens() {
-            do {
-                let (data, response) = try await session.data(for: signedUFIRequest(url: url, token: token))
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                      let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-                let payload = (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
-                let expectedKeys = commands.split(separator: ",").map(String.init)
-                if expectedKeys.contains(where: { payload[$0] != nil }) { return payload }
-            } catch { continue }
-        }
-        throw F50DeviceControlError.unavailable
+        return payload
     }
 
     private func controlSet(_ parameters: [String: String]) async throws {
@@ -3099,73 +3097,67 @@ public class F50Fetcher: ObservableObject {
         var lastMessage = "设备拒绝了控制请求"
         for token in candidateTokens() {
             do {
-                let cookie = try await controlLogin(token: token)
-                let result = try await controlPost(parameters, token: token, cookie: cookie)
+                let cookie = try await controlLogin(backend: .ufi(token: token, cookie: nil))
+                let result = try await controlPost(parameters, backend: .ufi(token: token, cookie: cookie))
                 if controlSucceeded(result) { return }
                 lastMessage = firstString(result, keys: ["error", "message", "msg"], fallback: lastMessage)
             } catch {
                 lastMessage = error.localizedDescription
             }
         }
+        do {
+            let cookie = try await controlLogin(backend: .router(cookie: nil))
+            let result = try await controlPost(parameters, backend: .router(cookie: cookie))
+            if controlSucceeded(result) { return }
+            lastMessage = firstString(result, keys: ["error", "message", "msg"], fallback: lastMessage)
+        } catch {
+            lastMessage = error.localizedDescription
+        }
         throw F50DeviceControlError.rejected(lastMessage)
     }
 
-    private func controlLogin(token: String) async throws -> String {
-        let ld = try await controlGetSingle(command: "LD", token: token, cookie: nil)
-        guard !ld.isEmpty,
-              let url = URL(string: "\(ufiURLString)/api/goform/goform_set_cmd_process") else {
-            throw F50DeviceControlError.unavailable
-        }
+    private func controlLogin(backend: DeviceControlBackend) async throws -> String {
+        let ld = try await controlGetSingle(command: "LD", backend: backend)
+        guard !ld.isEmpty else { throw F50DeviceControlError.unavailable }
         let loginPassword = F50ResponseParser.calculateLoginPasswordHash(tokenOrPassword: password, ld: ld)
         let body = formBody([
             "goformId": "LOGIN", "isTest": "false", "user": "admin", "password": loginPassword
         ])
-        let request = signedUFIRequest(
-            url: url, token: token, method: "POST", body: body,
-            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+        let request = try controlRequest(
+            path: "goform/goform_set_cmd_process", backend: backend, method: "POST", body: body
         )
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw F50DeviceControlError.unavailable
         }
+        let sessionFallback: String?
+        if case .ufi = backend {
+            sessionFallback = sessionCookie
+        } else {
+            sessionFallback = nil
+        }
         let cookie = http.value(forHTTPHeaderField: "kano-cookie")
             ?? http.value(forHTTPHeaderField: "Set-Cookie")?.split(separator: ";").first.map(String.init)
-            ?? sessionCookie
-        guard let cookie, !cookie.isEmpty else {
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], controlSucceeded(json) {
-                return ""
-            }
-            throw F50DeviceControlError.rejected("中兴后台口令验证失败")
+            ?? sessionFallback
+        if let cookie, !cookie.isEmpty { return cookie }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], controlSucceeded(json) {
+            return ""
         }
-        return cookie
+        throw F50DeviceControlError.rejected("中兴后台口令验证失败")
     }
 
-    private func controlPost(
-        _ parameters: [String: String],
-        token: String,
-        cookie: String
-    ) async throws -> [String: Any] {
-        let version = try await controlGetPayload(
-            commands: "Language,cr_version,wa_inner_version", token: token, cookie: cookie
-        )
-        let rd = try await controlGetSingle(command: "RD", token: token, cookie: cookie)
+    private func controlPost(_ parameters: [String: String], backend: DeviceControlBackend) async throws -> [String: Any] {
+        let version = try await controlGetPayload(commands: "Language,cr_version,wa_inner_version", backend: backend)
+        let rd = try await controlGetSingle(command: "RD", backend: backend)
         let wa = stringValue(version["wa_inner_version"])
         let cr = stringValue(version["cr_version"])
-        guard !wa.isEmpty, !cr.isEmpty, !rd.isEmpty,
-              let url = URL(string: "\(ufiURLString)/api/goform/goform_set_cmd_process") else {
-            throw F50DeviceControlError.invalidResponse
-        }
+        guard !wa.isEmpty, !cr.isEmpty, !rd.isEmpty else { throw F50DeviceControlError.invalidResponse }
         var form = parameters
         form["isTest"] = "false"
         form["AD"] = sha256(sha256(wa + cr) + rd)
-        var request = signedUFIRequest(
-            url: url, token: token, method: "POST", body: formBody(form),
-            contentType: "application/x-www-form-urlencoded; charset=UTF-8"
+        let request = try controlRequest(
+            path: "goform/goform_set_cmd_process", backend: backend, method: "POST", body: formBody(form)
         )
-        if !cookie.isEmpty {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
-            request.setValue(cookie, forHTTPHeaderField: "kano-cookie")
-        }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -3174,22 +3166,14 @@ public class F50Fetcher: ObservableObject {
         return json
     }
 
-    private func controlGetPayload(commands: String, token: String, cookie: String?) async throws -> [String: Any] {
-        guard var components = URLComponents(string: "\(ufiURLString)/api/goform/goform_get_cmd_process") else {
-            throw F50DeviceControlError.unavailable
-        }
-        components.queryItems = [
+    private func controlGetPayload(commands: String, backend: DeviceControlBackend) async throws -> [String: Any] {
+        let query = [
             URLQueryItem(name: "isTest", value: "false"),
             URLQueryItem(name: "multi_data", value: "1"),
             URLQueryItem(name: "cmd", value: commands),
             URLQueryItem(name: "_", value: String(Int64(Date().timeIntervalSince1970 * 1000)))
         ]
-        guard let url = components.url else { throw F50DeviceControlError.unavailable }
-        var request = signedUFIRequest(url: url, token: token)
-        if let cookie, !cookie.isEmpty {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
-            request.setValue(cookie, forHTTPHeaderField: "kano-cookie")
-        }
+        let request = try controlRequest(path: "goform/goform_get_cmd_process", backend: backend, query: query)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -3198,9 +3182,54 @@ public class F50Fetcher: ObservableObject {
         return (json["data"] as? [String: Any]) ?? (json["result"] as? [String: Any]) ?? json
     }
 
-    private func controlGetSingle(command: String, token: String, cookie: String?) async throws -> String {
-        let payload = try await controlGetPayload(commands: command, token: token, cookie: cookie)
+    private func controlGetSingle(command: String, backend: DeviceControlBackend) async throws -> String {
+        let payload = try await controlGetPayload(commands: command, backend: backend)
         return stringValue(payload[command])
+    }
+
+    private func controlRequest(
+        path: String,
+        backend: DeviceControlBackend,
+        method: String = "GET",
+        query: [URLQueryItem] = [],
+        body: Data? = nil
+    ) throws -> URLRequest {
+        let baseURL: String
+        let requestPath: String
+        let token: String?
+        let cookie: String?
+        switch backend {
+        case .ufi(let value, let session):
+            baseURL = ufiURLString
+            requestPath = "api/\(path)"
+            token = value
+            cookie = session
+        case .router(let session):
+            baseURL = routerURLString
+            requestPath = path
+            token = nil
+            cookie = session
+        }
+        guard var components = URLComponents(string: "\(baseURL)/\(requestPath)") else {
+            throw F50DeviceControlError.unavailable
+        }
+        components.queryItems = query
+        guard let url = components.url else { throw F50DeviceControlError.unavailable }
+        var request = token.map {
+            signedUFIRequest(url: url, token: $0, method: method, body: body,
+                             contentType: "application/x-www-form-urlencoded; charset=UTF-8")
+        } ?? URLRequest(url: url)
+        if token == nil {
+            request.httpMethod = method
+            request.timeoutInterval = 4.0
+            request.httpBody = body
+            request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        }
+        if let cookie, !cookie.isEmpty {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+            if token != nil { request.setValue(cookie, forHTTPHeaderField: "kano-cookie") }
+        }
+        return request
     }
 
     private func formBody(_ parameters: [String: String]) -> Data {
