@@ -3227,6 +3227,7 @@ public class F50Fetcher: ObservableObject {
             request.timeoutInterval = 4.0
             request.httpBody = body
             request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+            request.setValue("\(baseURL)/index.html", forHTTPHeaderField: "Referer")
         }
         if let cookie, !cookie.isEmpty {
             request.setValue(cookie, forHTTPHeaderField: "Cookie")
