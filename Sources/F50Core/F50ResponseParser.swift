@@ -58,6 +58,16 @@ enum F50ResponseParser {
             || lowercasedKeys.isDisjoint(with: clientCountKeys)
     }
 
+    /// 某些 F50 Pro 固件只回传 total_*_bytes；在缺少月度计数器时将其作为流量总量兜底。
+    /// 明确的 monthly_*_bytes 始终优先，避免改变支持标准月度字段的设备行为。
+    static func preferredMonthlyTrafficCounter(
+        in payload: [String: Any],
+        monthlyKey: String,
+        totalKey: String
+    ) -> Any? {
+        payload[monthlyKey] ?? payload[totalKey]
+    }
+
     static func parseSMSMessages(_ json: [String: Any]) -> [F50SMSMessage]? {
         guard let rows = json["messages"] as? [[String: Any]] else { return nil }
 

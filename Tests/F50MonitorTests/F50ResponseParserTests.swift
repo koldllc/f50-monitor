@@ -34,6 +34,46 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertFalse(F50ResponseParser.requiresUFISupplement(payload))
     }
 
+    func testF50ProTotalTrafficCountersFallbackWhenMonthlyCountersAreAbsent() {
+        let f50ProPayload: [String: Any] = [
+            "total_rx_bytes": "123456789",
+            "total_tx_bytes": "987654"
+        ]
+
+        XCTAssertEqual(
+            F50ResponseParser.parseUInt64(F50ResponseParser.preferredMonthlyTrafficCounter(
+                in: f50ProPayload,
+                monthlyKey: "monthly_rx_bytes",
+                totalKey: "total_rx_bytes"
+            ) ?? 0),
+            123456789
+        )
+        XCTAssertEqual(
+            F50ResponseParser.parseUInt64(F50ResponseParser.preferredMonthlyTrafficCounter(
+                in: f50ProPayload,
+                monthlyKey: "monthly_tx_bytes",
+                totalKey: "total_tx_bytes"
+            ) ?? 0),
+            987654
+        )
+    }
+
+    func testMonthlyTrafficCountersTakePrecedenceOverF50ProTotalFallback() {
+        let payload: [String: Any] = [
+            "monthly_rx_bytes": "111",
+            "total_rx_bytes": "222"
+        ]
+
+        XCTAssertEqual(
+            F50ResponseParser.parseUInt64(F50ResponseParser.preferredMonthlyTrafficCounter(
+                in: payload,
+                monthlyKey: "monthly_rx_bytes",
+                totalKey: "total_rx_bytes"
+            ) ?? 0),
+            111
+        )
+    }
+
     func testQosRefreshesWhenConnectionContextChanges() {
         var previous = F50Status()
         var current = previous

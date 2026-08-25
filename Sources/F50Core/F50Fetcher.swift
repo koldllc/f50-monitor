@@ -2770,10 +2770,18 @@ public class F50Fetcher: ObservableObject {
         }
 
         if refreshTraffic {
-            if let val = dict["monthly_rx_bytes"] {
+            if let val = F50ResponseParser.preferredMonthlyTrafficCounter(
+                in: dict,
+                monthlyKey: "monthly_rx_bytes",
+                totalKey: "total_rx_bytes"
+            ) {
                 newStatus.monthlyRx = parseUInt64(val)
             }
-            if let val = dict["monthly_tx_bytes"] {
+            if let val = F50ResponseParser.preferredMonthlyTrafficCounter(
+                in: dict,
+                monthlyKey: "monthly_tx_bytes",
+                totalKey: "total_tx_bytes"
+            ) {
                 newStatus.monthlyTx = parseUInt64(val)
             }
             if let val = dict["realtime_rx_bytes"] {
