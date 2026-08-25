@@ -84,10 +84,50 @@ public struct F50APNSettings: Equatable, Sendable {
     }
 }
 
+public enum F50TrafficUnit: String, CaseIterable, Identifiable, Sendable {
+    case megabytes = "0"
+    case gigabytes = "1"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .megabytes: return "MB"
+        case .gigabytes: return "GB"
+        }
+    }
+}
+
+public struct F50TrafficManagementSettings: Equatable, Sendable {
+    public var isEnabled: Bool
+    public var clearsAutomatically: Bool
+    public var clearDay: Int
+    public var limit: Int
+    public var unit: F50TrafficUnit
+    public var reminderPercentage: Int
+
+    public init(
+        isEnabled: Bool = false,
+        clearsAutomatically: Bool = true,
+        clearDay: Int = 1,
+        limit: Int = 0,
+        unit: F50TrafficUnit = .gigabytes,
+        reminderPercentage: Int = 90
+    ) {
+        self.isEnabled = isEnabled
+        self.clearsAutomatically = clearsAutomatically
+        self.clearDay = clearDay
+        self.limit = limit
+        self.unit = unit
+        self.reminderPercentage = reminderPercentage
+    }
+}
+
 public struct F50DeviceControlSnapshot: Sendable {
     public var isMobileDataEnabled: Bool
     public var networkMode: F50NetworkMode
     public var apn: F50APNSettings
+    public var trafficManagement: F50TrafficManagementSettings
     public var clients: [F50WiFiClient]
     public var accessControlMode: String
     public var lockedLTEBands: Set<Int>
@@ -99,6 +139,7 @@ public struct F50DeviceControlSnapshot: Sendable {
         isMobileDataEnabled: Bool = false,
         networkMode: F50NetworkMode = .automatic,
         apn: F50APNSettings = F50APNSettings(),
+        trafficManagement: F50TrafficManagementSettings = F50TrafficManagementSettings(),
         clients: [F50WiFiClient] = [],
         accessControlMode: String = "2",
         lockedLTEBands: Set<Int> = [],
@@ -109,6 +150,7 @@ public struct F50DeviceControlSnapshot: Sendable {
         self.isMobileDataEnabled = isMobileDataEnabled
         self.networkMode = networkMode
         self.apn = apn
+        self.trafficManagement = trafficManagement
         self.clients = clients
         self.accessControlMode = accessControlMode
         self.lockedLTEBands = lockedLTEBands
@@ -185,6 +227,12 @@ public final class F50DeviceControlModel: ObservableObject {
     public func useAutomaticAPN() async {
         await apply(success: "已恢复自动 APN") {
             try await fetcher.useAutomaticAPN()
+        }
+    }
+
+    public func saveTrafficManagement(_ settings: F50TrafficManagementSettings) async {
+        await apply(success: "流量管理设置已保存") {
+            try await fetcher.saveTrafficManagement(settings)
         }
     }
 
@@ -272,6 +320,9 @@ public struct F50DeviceControlView: View {
                 NavigationLink("APN 与 DNS") {
                     F50APNControlView(model: model)
                 }
+                NavigationLink("流量管理") {
+                    F50TrafficManagementView(model: model)
+                }
                 NavigationLink("Wi-Fi 客户端") {
                     F50WiFiClientControlView(model: model)
                 }
@@ -314,6 +365,59 @@ public struct F50DeviceControlView: View {
         }
     }
 
+}
+
+private struct F50TrafficManagementView: View {
+    @ObservedObject var model: F50DeviceControlModel
+    @State private var draft = F50TrafficManagementSettings()
+    @State private var initialized = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("流量管理", isOn: $draft.isEnabled)
+                Toggle("按月清零", isOn: $draft.clearsAutomatically)
+                    .disabled(!draft.isEnabled)
+                Stepper("清零日期：每月 \(draft.clearDay) 日", value: $draft.clearDay, in: 1...31)
+                    .disabled(!draft.isEnabled || !draft.clearsAutomatically)
+            }
+
+            Section("套餐流量") {
+                HStack {
+                    TextField("套餐额度", value: $draft.limit, format: .number)
+                    Picker("单位", selection: $draft.unit) {
+                        ForEach(F50TrafficUnit.allCases) { unit in
+                            Text(unit.title).tag(unit)
+                        }
+                    }
+                    .labelsHidden()
+                }
+                .disabled(!draft.isEnabled)
+
+                Stepper("达到 \(draft.reminderPercentage)% 时提醒", value: $draft.reminderPercentage, in: 1...100)
+                    .disabled(!draft.isEnabled)
+            }
+
+            Section {
+                Button("保存并应用") {
+                    Task { await model.saveTrafficManagement(draft) }
+                }
+                .disabled(model.isApplying || (draft.isEnabled && draft.limit <= 0))
+            } footer: {
+                Text("流量管理开启后，设备会按设定套餐额度统计用量，并在达到提醒阈值后提示。")
+            }
+        }
+        .navigationTitle("流量管理")
+        .onAppear {
+            guard !initialized else { return }
+            draft = model.snapshot.trafficManagement
+            initialized = true
+        }
+        .onChange(of: model.snapshot.trafficManagement) { settings in
+            guard !model.isApplying else { return }
+            draft = settings
+        }
+    }
 }
 
 private struct F50APNControlView: View {

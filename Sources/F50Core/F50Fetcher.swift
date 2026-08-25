@@ -2927,7 +2927,9 @@ public class F50Fetcher: ObservableObject {
             "station_list", "lan_station_list", "queryDeviceAccessControlList", "hostNameList",
             "apn_Current_index", "apn_mode", "apn_m_profile_name", "profile_name", "profile_name_ui",
             "apn_wan_apn", "apn_ppp_username", "apn_ppp_passwd", "apn_ppp_auth_mode", "apn_pdp_type",
-            "dns_mode", "prefer_dns_manual", "standby_dns_manual"
+            "dns_mode", "prefer_dns_manual", "standby_dns_manual",
+            "data_volume_limit_switch", "data_volume_clear_switch", "data_volume_clear_date",
+            "data_volume_limit_size", "data_volume_limit_unit", "data_volume_limit_percentage"
         ].joined(separator: ",")
         let payload = try await controlGet(commands: commands)
 
@@ -2945,6 +2947,21 @@ public class F50Fetcher: ObservableObject {
             primaryDNS: firstString(payload, keys: ["prefer_dns_manual", "prefer_dns_manual_ui"]),
             secondaryDNS: firstString(payload, keys: ["standby_dns_manual", "standby_dns_manual_ui"]),
             isAutomatic: stringValue(payload["apn_mode"]).lowercased() != "manual"
+        )
+        let clearDay = intValue(payload["data_volume_clear_date"])
+        let reminderPercentage = intValue(payload["data_volume_limit_percentage"])
+        let trafficUnit: F50TrafficUnit
+        switch stringValue(payload["data_volume_limit_unit"]).uppercased() {
+        case "0", "MB", "M": trafficUnit = .megabytes
+        default: trafficUnit = .gigabytes
+        }
+        let trafficManagement = F50TrafficManagementSettings(
+            isEnabled: stringValue(payload["data_volume_limit_switch"]) == "1",
+            clearsAutomatically: stringValue(payload["data_volume_clear_switch"]) != "0",
+            clearDay: (1...31).contains(clearDay) ? clearDay : 1,
+            limit: max(0, intValue(payload["data_volume_limit_size"])),
+            unit: trafficUnit,
+            reminderPercentage: (1...100).contains(reminderPercentage) ? reminderPercentage : 90
         )
 
         let blackMACs = splitList(payload["BlackMacList"])
@@ -2966,6 +2983,7 @@ public class F50Fetcher: ObservableObject {
             isMobileDataEnabled: isMobileDataEnabled,
             networkMode: mode,
             apn: apn,
+            trafficManagement: trafficManagement,
             clients: clients.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
             accessControlMode: firstString(payload, keys: ["AclMode"], fallback: "2"),
             lockedLTEBands: parseBands(payload["lte_band_lock"]),
@@ -3099,6 +3117,23 @@ public class F50Fetcher: ObservableObject {
 
     public func useAutomaticAPN() async throws {
         try await controlSet(["goformId": "APN_PROC_EX", "apn_mode": "auto"])
+    }
+
+    public func saveTrafficManagement(_ settings: F50TrafficManagementSettings) async throws {
+        guard (1...31).contains(settings.clearDay),
+              (1...100).contains(settings.reminderPercentage),
+              !settings.isEnabled || settings.limit > 0 else {
+            throw F50DeviceControlError.rejected("请填写有效的套餐额度、清零日期与提醒比例")
+        }
+        try await controlSet([
+            "goformId": "SET_DATA_LIMIT",
+            "data_volume_limit_switch": settings.isEnabled ? "1" : "0",
+            "data_volume_clear_switch": settings.clearsAutomatically ? "1" : "0",
+            "data_volume_clear_date": String(settings.clearDay),
+            "data_volume_limit_size": String(settings.limit),
+            "data_volume_limit_unit": settings.unit.rawValue,
+            "data_volume_limit_percentage": String(settings.reminderPercentage)
+        ])
     }
 
     public func setWiFiClient(
