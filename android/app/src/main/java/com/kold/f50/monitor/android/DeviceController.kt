@@ -216,17 +216,14 @@ class DeviceController {
     }
 
     private fun ensureLogin(config: F50Config) {
-        val currentWorks = runCatching { loginCurrentBackend(config) }.isSuccess
-        if (currentWorks) return
-
-        useUfiProxy = false
-        ufiAuthorization = ""
-        cookie = null
-        if (runCatching { loginCurrentBackend(config) }.isSuccess) return
+        // 已建立的后端会话优先复用；首次连接或会话失效时，
+        // F50 本机先走 UFI 内部端口，避免部分固件阻止回连 LAN 网关。
+        if (!cookie.isNullOrBlank() && runCatching { loginCurrentBackend(config) }.isSuccess) return
 
         val tokens = listOf(config.ufiToken, config.password, "admin")
-            .flatMap { listOf(sha256(it.trim()), it.trim()) }
-            .filter { it.isNotBlank() }
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .flatMap { listOf(sha256(it), it) }
             .distinct()
         useUfiProxy = true
         for (token in tokens) {
@@ -234,8 +231,12 @@ class DeviceController {
             cookie = null
             if (runCatching { loginCurrentBackend(config) }.isSuccess) return
         }
+
         useUfiProxy = false
         ufiAuthorization = ""
+        cookie = null
+        if (runCatching { loginCurrentBackend(config) }.isSuccess) return
+
         throw IllegalStateException("无法登录 Router 或 UFI 控制后端")
     }
 
