@@ -100,6 +100,9 @@ public struct AppStateSnapshot: Codable, Sendable {
     public let cpuUsage: Double
     public let memUsage: Double
     public let temperature: Double
+    public let qci: String
+    public let qosDl: String
+    public let qosUl: String
     public let connectedDevices: Int
     public let trafficResetDay: Int
     public let monthlyTotalBytes: UInt64
@@ -130,6 +133,9 @@ public struct AppStateSnapshot: Codable, Sendable {
         cpuUsage: Double = 0,
         memUsage: Double = 0,
         temperature: Double = 0,
+        qci: String = "",
+        qosDl: String = "",
+        qosUl: String = "",
         connectedDevices: Int = 0,
         trafficResetDay: Int = 0,
         monthlyTotalBytes: UInt64 = 0,
@@ -159,6 +165,9 @@ public struct AppStateSnapshot: Codable, Sendable {
         self.cpuUsage = cpuUsage
         self.memUsage = memUsage
         self.temperature = temperature
+        self.qci = qci
+        self.qosDl = qosDl
+        self.qosUl = qosUl
         self.connectedDevices = connectedDevices
         self.trafficResetDay = trafficResetDay
         self.monthlyTotalBytes = monthlyTotalBytes
@@ -186,6 +195,8 @@ public struct EndpointProbeDef: Sendable {
     public let method: String
     public let portOverride: Int?
     public let headers: [String: String]
+    public let alwaysTryCandidateAuth: Bool
+    public let expectsQosPayload: Bool
 
     public init(
         name: String,
@@ -193,7 +204,9 @@ public struct EndpointProbeDef: Sendable {
         path: String,
         method: String = "GET",
         portOverride: Int? = nil,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        alwaysTryCandidateAuth: Bool = false,
+        expectsQosPayload: Bool = false
     ) {
         self.name = name
         self.vendor = vendor
@@ -201,6 +214,8 @@ public struct EndpointProbeDef: Sendable {
         self.method = method
         self.portOverride = portOverride
         self.headers = headers
+        self.alwaysTryCandidateAuth = alwaysTryCandidateAuth
+        self.expectsQosPayload = expectsQosPayload
     }
 }
 
@@ -344,6 +359,7 @@ public struct DeviceDiagnosticReport: Codable, Sendable {
             }
             md += "- **信号指标**: RSRP: `\(state.rsrp)` | SNR: `\(state.snr)` | RSRQ: `\(state.rsrq)` (信号格数: \(state.signalBar))\n"
             md += "- **硬件状态**: 温度: `\(state.temperature)℃` | CPU: `\(state.cpuUsage)%` | 内存: `\(state.memUsage)%` | Wi-Fi设备: `\(state.connectedDevices)`\n"
+            md += "- **签约状态**: QCI: `\(state.qci.isEmpty ? "--" : state.qci)` | 下行: `\(state.qosDl.isEmpty ? "--" : state.qosDl)` | 上行: `\(state.qosUl.isEmpty ? "--" : state.qosUl)`\n"
             if !state.firmwareVersion.isEmpty {
                 md += "- **设备固件版本**: `\(state.firmwareVersion)`\n"
             }
@@ -587,6 +603,43 @@ public enum DiagnosticSanitizer {
         return truncateSnippet(sanitized)
     }
 
+    /// AT 接口常把结果放在 `result.content` 中；这里只保留可公开诊断的签约字段，
+    /// 避免通用 `content` 脱敏规则把有效证据整体抹掉。
+    public static func sanitizedQosEvidence(_ text: String) -> String? {
+        let candidates = qosTextCandidates(from: text)
+        guard let qos = candidates.lazy.compactMap({ F50ResponseParser.parseQos($0) }).first else {
+            return nil
+        }
+        let evidence = [
+            "qci": qos.qci,
+            "qos_dl": qos.downlink,
+            "qos_ul": qos.uplink
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]),
+              let result = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return result
+    }
+
+    private static func qosTextCandidates(from text: String) -> [String] {
+        var candidates = [text]
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data),
+              let dict = json as? [String: Any] else {
+            return candidates
+        }
+        for key in ["result", "data"] {
+            if let value = dict[key] as? String {
+                candidates.append(value)
+            } else if let value = dict[key] as? [String: Any],
+                      let content = value["content"] as? String {
+                candidates.append(content)
+            }
+        }
+        return candidates
+    }
+
     private static func sanitizeJSON(_ object: Any) -> Any {
         if let dict = object as? [String: Any] {
             var newDict: [String: Any] = [:]
@@ -696,6 +749,11 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
             path: "/goform/goform_get_cmd_process?cmd=battery_value,battery_charging,ppp_status&multi_data=1"
         ),
         EndpointProbeDef(
+            name: "ZTE 签约状态",
+            vendor: "中兴 (ZTE)",
+            path: "/goform/goform_get_cmd_process?cmd=qci,ambr,dl_ambr,ul_ambr&multi_data=1"
+        ),
+        EndpointProbeDef(
             name: "ZTE RD 鉴权参数",
             vendor: "中兴 (ZTE)",
             path: "/goform/goform_get_cmd_process?cmd=RD&isTest=false"
@@ -725,6 +783,14 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
             vendor: "UFI-TOOLS",
             path: "/api/networkDeviceInfo",
             portOverride: 2333
+        ),
+        EndpointProbeDef(
+            name: "UFI 签约状态 AT (:2333)",
+            vendor: "UFI-TOOLS",
+            path: "/api/AT?command=AT%2BCGEQOSRDP%3D1&slot=0",
+            portOverride: 2333,
+            alwaysTryCandidateAuth: true,
+            expectsQosPayload: true
         ),
         EndpointProbeDef(
             name: "UFI 默认端口基础信息",
@@ -1077,8 +1143,11 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
             sessionCookie: sessionCookie
         )
 
-        // 2. 如果返回 401/403，依次使用候选 Token 数组及 kano-sign 签名轮询尝试
-        if (statusCode == 401 || statusCode == 403) && !candidateTokens.isEmpty {
+        // 2. 鉴权失败，或该接口明确要求验证签名链路时，依次轮询候选 Token。
+        if (probeDef.alwaysTryCandidateAuth || statusCode == 401 || statusCode == 403),
+           !firstResult.isSuccess,
+           !candidateTokens.isEmpty {
+            var lastAuthResult: EndpointProbeResult?
             for token in candidateTokens {
                 guard !token.isEmpty else { continue }
                 let (authResult, authStatus) = await performHTTPRequest(
@@ -1087,10 +1156,12 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
                     token: token,
                     sessionCookie: sessionCookie
                 )
-                if (200...299).contains(authStatus) || authResult.isSuccess {
+                lastAuthResult = authResult
+                if (200...299).contains(authStatus) && authResult.isSuccess {
                     return authResult
                 }
             }
+            if let lastAuthResult { return lastAuthResult }
         }
 
         return firstResult
@@ -1170,8 +1241,13 @@ public final class DeviceDiagnosticProbe: @unchecked Sendable {
                 ?? String(data: data, encoding: .ascii)
                 ?? ""
 
-            let sanitizedBody = DiagnosticSanitizer.sanitizeResponseSnippet(rawBody, contentType: contentType)
-            let isSuccess = (200...299).contains(httpResponse.statusCode) && !sanitizedBody.isEmpty
+            let qosEvidence = probeDef.expectsQosPayload
+                ? DiagnosticSanitizer.sanitizedQosEvidence(rawBody)
+                : nil
+            let sanitizedBody = qosEvidence
+                ?? DiagnosticSanitizer.sanitizeResponseSnippet(rawBody, contentType: contentType)
+            let hasExpectedPayload = probeDef.expectsQosPayload ? qosEvidence != nil : !sanitizedBody.isEmpty
+            let isSuccess = (200...299).contains(httpResponse.statusCode) && hasExpectedPayload
 
             let res = EndpointProbeResult(
                 name: probeDef.name,

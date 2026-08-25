@@ -153,6 +153,29 @@ final class DeviceDiagnosticProbeTests: XCTestCase {
         XCTAssertEqual(first, second)
     }
 
+    func testExtractsSanitizedQosEvidenceFromNestedATResponse() throws {
+        let raw = #"{"result":{"content":"+CGEQOSRDP: 1,9,3,4,5,6,2000000,1000000\r\nOK"},"token":"do-not-store"}"#
+
+        let evidence = try XCTUnwrap(DiagnosticSanitizer.sanitizedQosEvidence(raw))
+
+        XCTAssertTrue(evidence.contains(#""qci" : "9""#))
+        XCTAssertTrue(evidence.contains("2000Mbps"))
+        XCTAssertTrue(evidence.contains("1000Mbps"))
+        XCTAssertFalse(evidence.contains("do-not-store"))
+        XCTAssertFalse(evidence.contains("CGEQOSRDP"))
+    }
+
+    func testDefaultProbesIncludeRouterAndSignedUFIQosDiagnostics() throws {
+        let router = try XCTUnwrap(DeviceDiagnosticProbe.defaultProbeDefs.first { $0.name == "ZTE 签约状态" })
+        XCTAssertTrue(router.path.contains("qci,ambr,dl_ambr,ul_ambr"))
+
+        let ufi = try XCTUnwrap(DeviceDiagnosticProbe.defaultProbeDefs.first { $0.name == "UFI 签约状态 AT (:2333)" })
+        XCTAssertEqual(ufi.portOverride, 2333)
+        XCTAssertTrue(ufi.path.contains("CGEQOSRDP"))
+        XCTAssertTrue(ufi.alwaysTryCandidateAuth)
+        XCTAssertTrue(ufi.expectsQosPayload)
+    }
+
     func testExtractsScriptCallSignatureWithoutValues() {
         let script = #"axios({url:"/cgi-bin/http.cgi",method:"post",data:{cmd:"network_info",password:"do-not-store",page:1}})"#
 

@@ -47,6 +47,10 @@ async fn probe_one(
     tokens: &[String],
     cookie: Option<&str>,
 ) -> (EndpointProbeResult, String) {
+    if probe.name == "UFI 签约状态 AT (:2333)" {
+        return probe_qos_endpoint(client, probe, url, tokens, cookie).await;
+    }
+
     let mut builder = client.get(&url).header("Accept", "application/json, text/plain, */*");
     if let Some(cookie) = cookie.filter(|v| !v.is_empty()) {
         builder = builder.header("Cookie", cookie);
@@ -104,6 +108,160 @@ async fn probe_one(
     }
 }
 
+async fn probe_qos_endpoint(
+    client: &reqwest::Client,
+    probe: ProbeDef,
+    url: String,
+    tokens: &[String],
+    cookie: Option<&str>,
+) -> (EndpointProbeResult, String) {
+    let mut auth_used = None;
+    let mut attempt = send_probe_request(client, &url, cookie, None).await;
+    if attempt.as_ref().ok().and_then(|value| normalized_qos_evidence(&value.text)).is_none() {
+        for token in tokens.iter().filter(|value| !value.is_empty()) {
+            attempt = send_probe_request(client, &url, cookie, Some(token.as_str())).await;
+            auth_used = Some("Candidate Token + KanoSign".to_string());
+            if attempt.as_ref().ok().is_some_and(|value| {
+                (200..300).contains(&value.status_code) && normalized_qos_evidence(&value.text).is_some()
+            }) {
+                break;
+            }
+        }
+    }
+
+    match attempt {
+        Ok(value) => {
+            let qos_evidence = normalized_qos_evidence(&value.text);
+            let snippet = qos_evidence.clone().unwrap_or_else(|| sanitize_text_snippet(&value.text));
+            let result = EndpointProbeResult {
+                name: probe.name.to_string(), vendor: probe.vendor.to_string(), url, method: "GET".to_string(),
+                statusCode: value.status_code, statusText: value.status_text, latencyMs: value.latency_ms,
+                contentType: value.content_type, serverHeader: value.server_header, responseSnippet: snippet,
+                isSuccess: (200..300).contains(&value.status_code) && qos_evidence.is_some(), authUsed: auth_used,
+            };
+            (result, value.text)
+        }
+        Err(error) => (EndpointProbeResult {
+            name: probe.name.to_string(), vendor: probe.vendor.to_string(), url, method: "GET".to_string(),
+            statusCode: 0, statusText: error, latencyMs: 0,
+            contentType: String::new(), serverHeader: String::new(), responseSnippet: String::new(),
+            isSuccess: false, authUsed: auth_used,
+        }, String::new()),
+    }
+}
+
+struct ProbeAttempt {
+    status_code: u16,
+    status_text: String,
+    latency_ms: u128,
+    content_type: String,
+    server_header: String,
+    text: String,
+}
+
+async fn send_probe_request(
+    client: &reqwest::Client,
+    url: &str,
+    cookie: Option<&str>,
+    token: Option<&str>,
+) -> Result<ProbeAttempt, String> {
+    let start = std::time::Instant::now();
+    let mut request = client
+        .get(url)
+        .header("Accept", "application/json, text/plain, */*");
+    if let Some(cookie) = cookie.filter(|value| !value.is_empty()) {
+        request = request.header("Cookie", cookie);
+    }
+    if let Some(token) = token.filter(|value| !value.is_empty()) {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .to_string();
+        let path = reqwest::Url::parse(url)
+            .map(|value| value.path().to_string())
+            .unwrap_or_default();
+        let sign = kano_sign(KANO_SIGN_KEY, &format!("minikanoGET{}{}", path, timestamp));
+        request = request
+            .header("Authorization", token)
+            .header("token", token)
+            .header("user", "admin")
+            .header("kano-t", &timestamp)
+            .header("kano-sign", sign);
+    }
+    let response = request.send().await.map_err(|error| error.to_string())?;
+    let status_code = response.status().as_u16();
+    let status_text = response.status().canonical_reason().unwrap_or("").to_string();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let server_header = response
+        .headers()
+        .get("server")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let text = response.text().await.unwrap_or_default();
+    Ok(ProbeAttempt {
+        status_code,
+        status_text,
+        latency_ms: start.elapsed().as_millis(),
+        content_type,
+        server_header,
+        text,
+    })
+}
+
+fn normalized_qos_evidence(raw: &str) -> Option<String> {
+    let mut candidates = vec![raw.to_string()];
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) {
+        for key in ["result", "data"] {
+            if let Some(text) = value.get(key).and_then(|item| item.as_str()) {
+                candidates.push(text.to_string());
+            } else if let Some(text) = value
+                .get(key)
+                .and_then(|item| item.get("content"))
+                .and_then(|item| item.as_str())
+            {
+                candidates.push(text.to_string());
+            }
+        }
+    }
+    for candidate in candidates {
+        let Some(line) = candidate
+            .lines()
+            .find(|line| line.contains("+CGEQOSRDP:"))
+        else {
+            continue;
+        };
+        let Some((_, payload)) = line.split_once("+CGEQOSRDP:") else {
+            continue;
+        };
+        let payload = payload.trim();
+        let parts: Vec<&str> = payload.split(',').map(str::trim).collect();
+        if parts.len() < 8
+            || parts[1]
+                .parse::<u8>()
+                .ok()
+                .filter(|value| (1..=15).contains(value))
+                .is_none()
+            || parts[6].parse::<f64>().is_err()
+            || parts[7].parse::<f64>().is_err()
+        {
+            continue;
+        }
+        return serde_json::to_string_pretty(&json!({
+            "qci": parts[1],
+            "qos_dl_kbps": parts[6],
+            "qos_ul_kbps": parts[7]
+        })).ok();
+    }
+    None
+}
+
 #[derive(Clone, Copy)]
 struct ProbeDef {
     name: &'static str,
@@ -116,10 +274,12 @@ const DEFAULT_PROBE_DEFS: &[ProbeDef] = &[
     ProbeDef { name: "Web UI 首页 (/)", vendor: "通用/基础", path: "/", port_override: None },
     ProbeDef { name: "Web UI 登录页", vendor: "通用/基础", path: "/index.html", port_override: None },
     ProbeDef { name: "ZTE 状态接口", vendor: "中兴 (ZTE)", path: "/goform/goform_get_cmd_process?cmd=Language,cr_version,wa_inner_version,network_type,network_provider,signalbar,lte_rsrp,rscp,Nr_bands,battery_value,realtime_rx_thrpt,realtime_tx_thrpt,monthly_rx_bytes,day_rx_bytes&multi_data=1", port_override: None },
+    ProbeDef { name: "ZTE 签约状态", vendor: "中兴 (ZTE)", path: "/goform/goform_get_cmd_process?cmd=qci,ambr,dl_ambr,ul_ambr&multi_data=1", port_override: None },
     ProbeDef { name: "ZTE 频段/网络详情", vendor: "中兴 (ZTE)", path: "/goform/goform_get_cmd_process?cmd=network_information&multi_data=1", port_override: None },
     ProbeDef { name: "UFI 设备信息 (:2333)", vendor: "UFI-TOOLS", path: "/api/baseDeviceInfo", port_override: Some(2333) },
     ProbeDef { name: "UFI 信号指标 (:2333)", vendor: "UFI-TOOLS", path: "/api/signalDeviceInfo", port_override: Some(2333) },
     ProbeDef { name: "UFI 蜂窝用量 (:2333)", vendor: "UFI-TOOLS", path: "/api/cellularUsage", port_override: Some(2333) },
+    ProbeDef { name: "UFI 签约状态 AT (:2333)", vendor: "UFI-TOOLS", path: "/api/AT?command=AT%2BCGEQOSRDP%3D1&slot=0", port_override: Some(2333) },
     ProbeDef { name: "Huawei 状态接口", vendor: "华为 (HiLink)", path: "/api/monitoring/status", port_override: None },
     ProbeDef { name: "Huawei 设备信息", vendor: "华为 (HiLink)", path: "/api/device/information", port_override: None },
     ProbeDef { name: "Unisoc 综合状态", vendor: "展锐/翱捷 (Unisoc/ASR)", path: "/reqproc/proc_get?cmd=get_network_info,get_device_info,get_sim_status,get_wan_traffic", port_override: None },
@@ -242,6 +402,9 @@ pub async fn execute_and_submit_feedback(
             "cpuUsage": current_status.cpu_usage,
             "memUsage": current_status.mem_usage,
             "temperature": current_status.temperature,
+            "qci": current_status.qci,
+            "qosDl": current_status.qos_dl,
+            "qosUl": current_status.qos_ul,
             "connectedDevices": current_status.connected_devices,
             "lastErrorMessage": current_status.error_message,
             "activeChannelMode": active_channel_mode(&probe_results),
@@ -409,4 +572,20 @@ fn sanitize_text_snippet(raw: &str) -> String {
         text = re.replace_all(&text, "$1*******$2").to_string();
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_qos_evidence;
+
+    #[test]
+    fn normalizes_nested_qos_response_without_raw_content() {
+        let raw = r#"{"result":{"content":"+CGEQOSRDP: 1,9,3,4,5,6,2000000,1000000\r\nOK"},"token":"do-not-store"}"#;
+        let evidence = normalized_qos_evidence(raw).expect("应提取签约状态");
+
+        assert!(evidence.contains(r#""qci": "9""#));
+        assert!(evidence.contains(r#""qos_dl_kbps": "2000000""#));
+        assert!(!evidence.contains("do-not-store"));
+        assert!(!evidence.contains("CGEQOSRDP"));
+    }
 }
