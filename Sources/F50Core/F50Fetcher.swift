@@ -2923,7 +2923,7 @@ public class F50Fetcher: ObservableObject {
     public func fetchDeviceControlSnapshot() async throws -> F50DeviceControlSnapshot {
         guard !isDemoMode else { throw F50DeviceControlError.demoMode }
         let commands = [
-            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock",
+            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock", "neighbor_cell_info",
             "station_list", "lan_station_list", "queryDeviceAccessControlList", "hostNameList",
             "apn_Current_index", "apn_mode", "apn_m_profile_name", "profile_name", "profile_name_ui",
             "apn_wan_apn", "apn_ppp_username", "apn_ppp_passwd", "apn_ppp_auth_mode", "apn_pdp_type",
@@ -2969,8 +2969,41 @@ public class F50Fetcher: ObservableObject {
             clients: clients.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
             accessControlMode: firstString(payload, keys: ["AclMode"], fallback: "2"),
             lockedLTEBands: parseBands(payload["lte_band_lock"]),
-            lockedNRBands: parseBands(payload["nr_band_lock"])
+            lockedNRBands: parseBands(payload["nr_band_lock"]),
+            neighborCells: parseNeighborCells(payload["neighbor_cell_info"])
         )
+    }
+
+    private func parseNeighborCells(_ value: Any?) -> [F50NeighborCell] {
+        let rows: [[String: Any]]
+        if let array = value as? [[String: Any]] {
+            rows = array
+        } else if let array = value as? [Any] {
+            rows = array.compactMap { $0 as? [String: Any] }
+        } else if let string = value as? String,
+                  let data = string.data(using: .utf8),
+                  let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            rows = array
+        } else {
+            rows = []
+        }
+
+        return rows.compactMap { row in
+            let earfcn = intValue(row["earfcn"] ?? row["EARFCN"])
+            let pci = intValue(row["pci"] ?? row["PCI"])
+            guard earfcn > 0, (0...1007).contains(pci) else { return nil }
+            let rat = stringValue(row["rat"] ?? row["network_type"]).lowercased()
+            let is5G = rat == "16" || rat.contains("5g") || rat.contains("nr") || earfcn > 262_143
+            return F50NeighborCell(
+                band: firstString(row, keys: ["band", "Band"], fallback: "—"),
+                earfcn: earfcn,
+                pci: pci,
+                rsrp: firstString(row, keys: ["rsrp", "RSRP"], fallback: "—"),
+                rsrq: firstString(row, keys: ["rsrq", "RSRQ"], fallback: "—"),
+                sinr: firstString(row, keys: ["sinr", "SINR"], fallback: "—"),
+                is5G: is5G
+            )
+        }
     }
 
     public func setMobileDataEnabled(_ enabled: Bool) async throws {

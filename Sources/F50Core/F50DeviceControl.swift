@@ -33,6 +33,20 @@ public struct F50WiFiClient: Identifiable, Hashable, Sendable {
     public var id: String { macAddress.lowercased() }
 }
 
+public struct F50NeighborCell: Identifiable, Hashable, Sendable {
+    public let band: String
+    public let earfcn: Int
+    public let pci: Int
+    public let rsrp: String
+    public let rsrq: String
+    public let sinr: String
+    public let is5G: Bool
+
+    public var id: String { "\(is5G ? "5G" : "4G")-\(band)-\(earfcn)-\(pci)" }
+    public var radioTitle: String { is5G ? "5G" : "4G" }
+    public var bandTitle: String { "\(is5G ? "n" : "B")\(band)" }
+}
+
 public struct F50APNSettings: Equatable, Sendable {
     public var index: Int
     public var profileName: String
@@ -78,6 +92,7 @@ public struct F50DeviceControlSnapshot: Sendable {
     public var accessControlMode: String
     public var lockedLTEBands: Set<Int>
     public var lockedNRBands: Set<Int>
+    public var neighborCells: [F50NeighborCell]
 
     public init(
         isMobileDataEnabled: Bool = false,
@@ -86,7 +101,8 @@ public struct F50DeviceControlSnapshot: Sendable {
         clients: [F50WiFiClient] = [],
         accessControlMode: String = "2",
         lockedLTEBands: Set<Int> = [],
-        lockedNRBands: Set<Int> = []
+        lockedNRBands: Set<Int> = [],
+        neighborCells: [F50NeighborCell] = []
     ) {
         self.isMobileDataEnabled = isMobileDataEnabled
         self.networkMode = networkMode
@@ -95,6 +111,7 @@ public struct F50DeviceControlSnapshot: Sendable {
         self.accessControlMode = accessControlMode
         self.lockedLTEBands = lockedLTEBands
         self.lockedNRBands = lockedNRBands
+        self.neighborCells = neighborCells
     }
 }
 
@@ -478,44 +495,59 @@ private struct F50BandLockView: View {
 
 private struct F50CellLockView: View {
     @ObservedObject var model: F50DeviceControlModel
-    @State private var is5G = true
-    @State private var pci = ""
-    @State private var earfcn = ""
+    @State private var selectedCell: F50NeighborCell?
     @State private var pendingLock = false
 
     var body: some View {
         Form {
-            Section("目标小区") {
-                Picker("网络类型", selection: $is5G) {
-                    Text("5G").tag(true)
-                    Text("4G").tag(false)
+            Section("已扫描基站") {
+                if model.snapshot.neighborCells.isEmpty {
+                    Text("未读取到扫描结果，请刷新设备控制后重试。")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.snapshot.neighborCells) { cell in
+                        Button {
+                            selectedCell = cell
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(cell.radioTitle) \(cell.bandTitle) · PCI \(cell.pci)")
+                                        .fontWeight(.medium)
+                                    Text("EARFCN \(cell.earfcn) · RSRP \(cell.rsrp) · RSRQ \(cell.rsrq) · SINR \(cell.sinr)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if selectedCell == cell {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                TextField("PCI", text: $pci)
-                TextField("EARFCN / NR-ARFCN", text: $earfcn)
             }
             Section {
                 Button("应用基站锁定") { pendingLock = true }
-                    .disabled(model.isApplying || pciValue == nil || earfcnValue == nil)
+                    .disabled(model.isApplying || selectedCell == nil)
                 Button("解除全部基站锁定", role: .destructive) {
                     Task { await model.unlockCells() }
                 }
                 .disabled(model.isApplying)
             } footer: {
-                Text("5G 使用 RAT 16，4G 使用 RAT 12。请先从设备当前小区信息确认 PCI 与频点。")
+                Text("选择扫描到的基站后再锁定。锁定可能导致当前连接中断，请保留本地 Wi-Fi 或 USB 恢复路径。")
             }
         }
         .navigationTitle("基站锁定")
         .confirmationDialog("确认锁定基站？", isPresented: $pendingLock, titleVisibility: .visible) {
             Button("应用锁定", role: .destructive) {
-                guard let pciValue, let earfcnValue else { return }
-                Task { await model.lockCell(pci: pciValue, earfcn: earfcnValue, is5G: is5G) }
+                guard let selectedCell else { return }
+                Task { await model.lockCell(pci: selectedCell.pci, earfcn: selectedCell.earfcn, is5G: selectedCell.is5G) }
             }
             Button("取消", role: .cancel) {}
         } message: {
             Text("错误的小区参数可能导致设备无信号。")
         }
     }
-
-    private var pciValue: Int? { Int(pci).flatMap { (0...1007).contains($0) ? $0 : nil } }
-    private var earfcnValue: Int? { Int(earfcn).flatMap { $0 > 0 ? $0 : nil } }
 }
