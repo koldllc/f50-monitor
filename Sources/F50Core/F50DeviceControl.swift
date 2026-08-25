@@ -175,19 +175,19 @@ public final class F50DeviceControlModel: ObservableObject {
     }
 
     public func setBandLock(lte: Set<Int>, nr: Set<Int>) async {
-        await apply(success: lte.isEmpty && nr.isEmpty ? "已解除 Band Lock" : "Band Lock 已应用") {
+        await apply(success: lte.isEmpty && nr.isEmpty ? "已解除频段锁定" : "频段锁定已应用") {
             try await fetcher.setBandLock(lte: lte, nr: nr)
         }
     }
 
     public func lockCell(pci: Int, earfcn: Int, is5G: Bool) async {
-        await apply(success: "Cell Lock 已应用") {
+        await apply(success: "小区锁定已应用") {
             try await fetcher.lockCell(pci: pci, earfcn: earfcn, is5G: is5G)
         }
     }
 
     public func unlockCells() async {
-        await apply(success: "已解除 Cell Lock") {
+        await apply(success: "已解除小区锁定") {
             try await fetcher.unlockAllCells()
         }
     }
@@ -258,10 +258,10 @@ public struct F50DeviceControlView: View {
             }
 
             Section("高级蜂窝控制") {
-                NavigationLink("Band Lock") {
+                NavigationLink("频段锁定") {
                     F50BandLockView(model: model)
                 }
-                NavigationLink("Cell Lock") {
+                NavigationLink("小区锁定") {
                     F50CellLockView(model: model)
                 }
             }
@@ -270,7 +270,7 @@ public struct F50DeviceControlView: View {
                 Button("重启设备", role: .destructive) { pendingReboot = true }
                     .disabled(model.isApplying)
             } footer: {
-                Text("网络模式、APN、Band Lock、Cell Lock 可能导致蜂窝连接中断。修改前请确保仍可通过本地 Wi-Fi 或 USB 恢复。")
+                Text("网络模式、APN、频段锁定、小区锁定可能导致蜂窝连接中断。修改前请确保仍可通过本地 Wi-Fi 或 USB 恢复。")
             }
 
             if model.isLoading || model.isApplying {
@@ -428,9 +428,9 @@ private struct F50BandLockView: View {
                 TextField("5G Band，例如 41,78", text: $nrBands)
             }
             Section {
-                Button("应用 Band Lock") { pendingApply = true }
+                Button("应用频段锁定") { pendingApply = true }
                     .disabled(model.isApplying || (parsedLTE.isEmpty && parsedNR.isEmpty))
-                Button("解除全部 Band Lock", role: .destructive) {
+                Button("解除全部频段锁定", role: .destructive) {
                     Task { await model.setBandLock(lte: [], nr: []) }
                 }
                 .disabled(model.isApplying)
@@ -438,7 +438,7 @@ private struct F50BandLockView: View {
                 Text("仅接受逗号分隔的频段数字。解除锁定会恢复设备支持的全部频段。")
             }
         }
-        .navigationTitle("Band Lock")
+        .navigationTitle("频段锁定")
         .onAppear {
             lteBands = model.snapshot.lockedLTEBands.sorted().map(String.init).joined(separator: ",")
             nrBands = model.snapshot.lockedNRBands.sorted().map(String.init).joined(separator: ",")
@@ -478,9 +478,9 @@ private struct F50CellLockView: View {
                 TextField("EARFCN / NR-ARFCN", text: $earfcn)
             }
             Section {
-                Button("应用 Cell Lock") { pendingLock = true }
+                Button("应用小区锁定") { pendingLock = true }
                     .disabled(model.isApplying || pciValue == nil || earfcnValue == nil)
-                Button("解除全部 Cell Lock", role: .destructive) {
+                Button("解除全部小区锁定", role: .destructive) {
                     Task { await model.unlockCells() }
                 }
                 .disabled(model.isApplying)
@@ -488,7 +488,7 @@ private struct F50CellLockView: View {
                 Text("5G 使用 RAT 16，4G 使用 RAT 12。请先从设备当前小区信息确认 PCI 与频点。")
             }
         }
-        .navigationTitle("Cell Lock")
+        .navigationTitle("小区锁定")
         .confirmationDialog("确认锁定小区？", isPresented: $pendingLock, titleVisibility: .visible) {
             Button("应用锁定", role: .destructive) {
                 guard let pciValue, let earfcnValue else { return }
