@@ -192,7 +192,6 @@ struct SettingsView: View {
 struct ToolsView: View {
     @ObservedObject var fetcher: F50Fetcher
     @State private var isShowingFileShareHelp = false
-    @State private var isShowingFileShare = false
     @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
 
     var body: some View {
@@ -224,11 +223,6 @@ struct ToolsView: View {
                         } label: {
                             Label("在“文件”App 中打开", systemImage: "folder.badge.gearshape")
                         }
-                        Button {
-                            isShowingFileShare = true
-                        } label: {
-                            Label("管理 F50 文件", systemImage: "folder.fill")
-                        }
                     }
                 } header: {
                     Text("文件共享")
@@ -237,9 +231,6 @@ struct ToolsView: View {
                 }
             }
             .navigationTitle("工具")
-            .sheet(isPresented: $isShowingFileShare) {
-                IOSFileShareView(fetcher: fetcher)
-            }
             .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
                 Button("知道了", role: .cancel) {}
             } message: {
