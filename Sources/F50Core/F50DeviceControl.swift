@@ -505,7 +505,7 @@ private struct F50CellLockView: View {
         Form {
             Section("当前基站") {
                 if let currentCell = model.snapshot.currentCell {
-                    selectableCellRow(currentCell, prefix: "当前")
+                    selectableCellRow(currentCell)
                 } else {
                     Text("未读取到当前基站信息，请刷新设备控制后重试。")
                         .foregroundStyle(.secondary)
@@ -533,6 +533,13 @@ private struct F50CellLockView: View {
             }
         }
         .navigationTitle("基站锁定")
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { return }
+                await model.refresh()
+            }
+        }
         .confirmationDialog("确认锁定基站？", isPresented: $pendingLock, titleVisibility: .visible) {
             Button("应用锁定", role: .destructive) {
                 guard let selectedCell else { return }
@@ -544,25 +551,58 @@ private struct F50CellLockView: View {
         }
     }
 
-    private func selectableCellRow(_ cell: F50NeighborCell, prefix: String? = nil) -> some View {
+    private func selectableCellRow(_ cell: F50NeighborCell) -> some View {
         Button {
             selectedCell = cell
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(prefix.map { "\($0) · " } ?? "")\(cell.radioTitle) \(cell.bandTitle) · PCI \(cell.pci)")
+                    Text("\(cell.radioTitle) \(cell.bandTitle) · EARFCN \(cell.earfcn) · PCI \(cell.pci)")
                         .fontWeight(.medium)
-                    Text("EARFCN \(cell.earfcn) · RSRP \(cell.rsrp) · RSRQ \(cell.rsrq) · SINR \(cell.sinr)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    HStack(spacing: 8) {
+                        signalMetric("RSRP", value: cell.rsrp, thresholds: [-85, -95, -105])
+                        signalMetric("RSRQ", value: cell.rsrq, thresholds: [-10, -15, -20])
+                        signalMetric("SINR", value: cell.sinr, thresholds: [20, 13, 3])
+                    }
                 }
                 Spacer()
-                if selectedCell == cell {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.tint)
-                }
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.tint)
+                    .opacity(isSelected(cell) ? 1 : 0)
+                    .frame(width: 20)
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func isSelected(_ cell: F50NeighborCell) -> Bool {
+        selectedCell?.pci == cell.pci && selectedCell?.earfcn == cell.earfcn && selectedCell?.is5G == cell.is5G
+    }
+
+    private func signalMetric(_ title: String, value: String, thresholds: [Double]) -> some View {
+        let quality = signalQuality(value, thresholds: thresholds)
+        return HStack(spacing: 4) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(quality.color)
+                .frame(width: CGFloat(36 * quality.ratio), height: 3)
+                .frame(width: 36, alignment: .leading)
+            Text(value)
+                .foregroundStyle(quality.color)
+                .monospacedDigit()
+        }
+        .font(.caption2.weight(.medium))
+    }
+
+    private func signalQuality(_ value: String, thresholds: [Double]) -> (label: String, color: Color, ratio: Double) {
+        let number = Double(value.replacingOccurrences(of: "dBm", with: "").replacingOccurrences(of: "dB", with: "").trimmingCharacters(in: .whitespaces))
+        guard let number else { return ("—", .secondary, 0) }
+        if number >= thresholds[0] { return ("极佳", .green, 1) }
+        if number >= thresholds[1] { return ("良好", .blue, 0.75) }
+        if number >= thresholds[2] { return ("一般", .orange, 0.5) }
+        return ("较差", .red, 0.25)
     }
 }

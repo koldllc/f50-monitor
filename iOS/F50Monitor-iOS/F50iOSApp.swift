@@ -209,11 +209,25 @@ struct ContentView: View {
                 .badge(fetcher.status.smsUnreadCount > 0 ? fetcher.status.smsUnreadCount : 0)
                 .tag(1)
 
+            NavigationStack {
+                F50DeviceControlView(fetcher: fetcher)
+            }
+            .tabItem {
+                Label("控制", systemImage: "switch.2")
+            }
+            .tag(2)
+
+            ToolsView(fetcher: fetcher)
+                .tabItem {
+                    Label("工具", systemImage: "wrench.and.screwdriver.fill")
+                }
+                .tag(3)
+
             SettingsView(fetcher: fetcher)
                 .tabItem {
                     Label("设置", systemImage: "gearshape.fill")
                 }
-                .tag(2)
+                .tag(4)
         }
         .tint(Color.blue)
     }

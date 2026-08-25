@@ -18,10 +18,6 @@ struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var isInitialized = false
     @State private var isShowingFeedback = false
-    @State private var isShowingFileShareHelp = false
-    @State private var isShowingFileShare = false
-    @State private var isShowingSMS = false
-    @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
 
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
@@ -118,18 +114,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        F50DeviceControlView(fetcher: fetcher)
-                    } label: {
-                        Label("设备控制", systemImage: "switch.2")
-                    }
-                } header: {
-                    Text("设备管理")
-                } footer: {
-                    Text("移动数据、APN / DNS、Wi-Fi 客户端、网络模式、频段锁定、基站锁定与重启。")
-                }
-
-                Section {
                     Picker("前台自动刷新频率", selection: $tempInterval) {
                         Text("1 秒").tag(1.0)
                         Text("3 秒（推荐节能）").tag(3.0)
@@ -140,50 +124,6 @@ struct SettingsView: View {
                     Text("刷新与节能")
                 } footer: {
                     Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
-                }
-
-                Section {
-                    NavigationLink {
-                        SignalLabView(fetcher: fetcher)
-                    } label: {
-                        networkToolLabel(
-                            title: "Signal Lab",
-                            subtitle: "测试并比较 F50 的最佳摆放位置",
-                            systemImage: "wave.3.right.circle.fill",
-                            color: .blue
-                        )
-                    }
-
-                    NavigationLink {
-                        NetworkDoctorView(fetcher: fetcher)
-                    } label: {
-                        networkToolLabel(
-                            title: "Network Doctor",
-                            subtitle: "分析掉 5G、网络切换和信号异常",
-                            systemImage: "stethoscope.circle.fill",
-                            color: .green
-                        )
-                    }
-                } header: {
-                    Text("网络工具")
-                } footer: {
-                    Text("实验功能仅在打开工具页面时采样，所有分析和测试记录均保留在本机。")
-                }
-
-                Section {
-                    Toggle("启用文件共享功能", isOn: $isFileSharingEnabled)
-
-                    if isFileSharingEnabled {
-                        Button {
-                            openFileShareInFilesApp()
-                        } label: {
-                            Label("在“文件”App 中打开", systemImage: "folder.badge.gearshape")
-                        }
-                    }
-                } header: {
-                    Text("文件共享")
-                } footer: {
-                    Text("通过系统文件选择器在本机与 F50 SMB 共享之间传输文件；此开关不会修改设备端 SMB 设置。")
                 }
 
                 Section("帮助与反馈") {
@@ -231,17 +171,6 @@ struct SettingsView: View {
                     isShowingFeedback = false
                 }
             }
-            .sheet(isPresented: $isShowingFileShare) {
-                IOSFileShareView(fetcher: fetcher)
-            }
-            .sheet(isPresented: $isShowingSMS) {
-                SMSView(fetcher: fetcher)
-            }
-            .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
-                Button("知道了", role: .cancel) {}
-            } message: {
-                Text("打开“文件”App → 右上角更多 → 连接服务器，输入 \(F50Configuration.fileShareURL(from: fetcher.baseURLString)?.absoluteString ?? "smb://192.168.0.1")。")
-            }
             .onAppear {
                 tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
                 tempPassword = fetcher.password
@@ -258,19 +187,81 @@ struct SettingsView: View {
         }
     }
 
+}
+
+struct ToolsView: View {
+    @ObservedObject var fetcher: F50Fetcher
+    @State private var isShowingFileShareHelp = false
+    @State private var isShowingFileShare = false
+    @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    NavigationLink {
+                        SignalLabView(fetcher: fetcher)
+                    } label: {
+                        networkToolLabel(title: "Signal Lab", subtitle: "测试并比较 F50 的最佳摆放位置", systemImage: "wave.3.right.circle.fill", color: .blue)
+                    }
+
+                    NavigationLink {
+                        NetworkDoctorView(fetcher: fetcher)
+                    } label: {
+                        networkToolLabel(title: "Network Doctor", subtitle: "分析掉 5G、网络切换和信号异常", systemImage: "stethoscope.circle.fill", color: .green)
+                    }
+                } header: {
+                    Text("网络工具")
+                } footer: {
+                    Text("实验功能仅在打开工具页面时采样，所有分析和测试记录均保留在本机。")
+                }
+
+                Section {
+                    Toggle("启用文件共享功能", isOn: $isFileSharingEnabled)
+                    if isFileSharingEnabled {
+                        Button {
+                            openFileShareInFilesApp()
+                        } label: {
+                            Label("在“文件”App 中打开", systemImage: "folder.badge.gearshape")
+                        }
+                        Button {
+                            isShowingFileShare = true
+                        } label: {
+                            Label("管理 F50 文件", systemImage: "folder.fill")
+                        }
+                    }
+                } header: {
+                    Text("文件共享")
+                } footer: {
+                    Text("通过系统文件选择器在本机与 F50 SMB 共享之间传输文件；此开关不会修改设备端 SMB 设置。")
+                }
+            }
+            .navigationTitle("工具")
+            .sheet(isPresented: $isShowingFileShare) {
+                IOSFileShareView(fetcher: fetcher)
+            }
+            .alert("在“文件”App 中连接 F50", isPresented: $isShowingFileShareHelp) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text("打开“文件”App → 右上角更多 → 连接服务器，输入 \(F50Configuration.fileShareURL(from: fetcher.baseURLString)?.absoluteString ?? "smb://192.168.0.1")。")
+            }
+        }
+    }
+
     private func openFileShareInFilesApp() {
         guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
         UIApplication.shared.open(url) { supported in
             if !supported { isShowingFileShareHelp = true }
         }
     }
+}
 
-    private func networkToolLabel(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        color: Color
-    ) -> some View {
+private func networkToolLabel(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    color: Color
+) -> some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 24))
@@ -295,7 +286,6 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 2)
-    }
 }
 
 private struct IOSFilePickerRequest: Identifiable {
