@@ -2561,8 +2561,10 @@ public class F50Fetcher: ObservableObject {
                     return
                 }
 
-                let pwdHash1 = self.sha256(self.password)
-                let pwdHash2 = self.sha256(pwdHash1 + ld).uppercased()
+                let pwdHash2 = F50ResponseParser.calculateLoginPasswordHash(
+                    tokenOrPassword: self.password,
+                    ld: ld
+                )
 
                 guard let loginURL = URL(string: "\(hostOnly)/goform/goform_set_cmd_process") else {
                     completion(false)

@@ -648,6 +648,7 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(hashFromRaw, hashFromPreHashed)
         XCTAssertEqual(hashFromRaw.count, 64)
         XCTAssertEqual(hashFromRaw, hashFromRaw.uppercased())
+        XCTAssertEqual(hashFromRaw, "760C9222A068723B076EBC7A23F6AA45630F21BAB361E3261376F96AE2878583")
     }
 
     func testFormatSMSTime() {

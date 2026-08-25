@@ -474,7 +474,7 @@ enum F50ResponseParser {
         let trimmed = tokenOrPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         let isSha256Hex = trimmed.count == 64 &&
             trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: "0123456789abcdefABCDEF").inverted) == nil
-        let pwdHash1 = isSha256Hex ? trimmed.lowercased() : sha256Hex(trimmed).lowercased()
+        let pwdHash1 = isSha256Hex ? trimmed.uppercased() : sha256Hex(trimmed).uppercased()
         return sha256Hex(pwdHash1 + ld).uppercased()
     }
 
