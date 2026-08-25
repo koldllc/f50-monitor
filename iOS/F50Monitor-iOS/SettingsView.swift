@@ -119,16 +119,14 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink {
-                        F50DeviceControlView(fetcher: fetcher) {
-                            isShowingSMS = true
-                        }
+                        F50DeviceControlView(fetcher: fetcher)
                     } label: {
                         Label("设备控制", systemImage: "switch.2")
                     }
                 } header: {
                     Text("设备管理")
                 } footer: {
-                    Text("移动数据、APN / DNS、Wi-Fi 客户端、SMS、网络模式、Band Lock、Cell Lock 与重启。")
+                    Text("移动数据、APN / DNS、Wi-Fi 客户端、网络模式、Band Lock、Cell Lock 与重启。")
                 }
 
                 Section {

@@ -222,12 +222,10 @@ public final class F50DeviceControlModel: ObservableObject {
 
 public struct F50DeviceControlView: View {
     @StateObject private var model: F50DeviceControlModel
-    private let onOpenSMS: () -> Void
     @State private var pendingReboot = false
 
-    public init(fetcher: F50Fetcher, onOpenSMS: @escaping () -> Void = {}) {
+    public init(fetcher: F50Fetcher) {
         _model = StateObject(wrappedValue: F50DeviceControlModel(fetcher: fetcher))
-        self.onOpenSMS = onOpenSMS
     }
 
     public var body: some View {
@@ -254,10 +252,9 @@ public struct F50DeviceControlView: View {
                 NavigationLink("APN 与 DNS") {
                     F50APNControlView(model: model)
                 }
-                NavigationLink("Wi-Fi 客户端与踢设备") {
+                NavigationLink("Wi-Fi 客户端") {
                     F50WiFiClientControlView(model: model)
                 }
-                Button("SMS") { onOpenSMS() }
             }
 
             Section("高级蜂窝控制") {

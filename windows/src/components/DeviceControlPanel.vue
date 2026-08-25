@@ -26,11 +26,10 @@
       </section>
 
       <section>
-        <h3>Wi-Fi 客户端 / 踢设备</h3><div v-if="!controls.clients.length" class="empty">暂无客户端</div>
+        <h3>Wi-Fi 客户端</h3><div v-if="!controls.clients.length" class="empty">暂无客户端</div>
         <div v-for="client in controls.clients" :key="`${client.macAddress}-${client.isBlocked}`" class="client"><div><b>{{ client.name || '未知设备' }}</b><small>{{ client.ipAddress }} {{ client.macAddress }}</small></div><button :class="{ danger: !client.isBlocked }" :disabled="busy" @click="toggleClient(client)">{{ client.isBlocked ? '解除' : '踢出' }}</button></div>
       </section>
 
-      <section><h3>SMS</h3><button @click="$emit('openSMS')">打开短信</button></section>
       <section><h3>Band Lock</h3><input v-model.trim="controls.lteBands" placeholder="4G Band，例如 1,3,8" /><input v-model.trim="controls.nrBands" placeholder="5G Band，例如 41,78" /><div class="actions"><button :disabled="busy" @click="setBands(false)">应用锁频</button><button class="danger" :disabled="busy" @click="setBands(true)">解除全部</button></div></section>
       <section><h3>Cell Lock</h3><div class="two-columns"><select v-model="cell.is5G"><option :value="true">5G</option><option :value="false">4G</option></select><input v-model.number="cell.pci" type="number" placeholder="PCI" /></div><input v-model.number="cell.earfcn" type="number" placeholder="EARFCN / NR-ARFCN" /><div class="actions"><button :disabled="busy || cell.pci === '' || cell.earfcn === ''" @click="lockCell">应用锁站</button><button class="danger" :disabled="busy" @click="unlockCells">解除全部</button></div></section>
       <section><h3>设备电源</h3><button class="danger" :disabled="busy" @click="reboot">重启设备</button></section>
@@ -43,7 +42,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { invokePlatform } from '../stores/f50Store.js';
-defineEmits(['close', 'openSMS']);
+defineEmits(['close']);
 const busy = ref(false), message = ref(''), messageType = ref('success');
 const controls = reactive({ mobileDataEnabled: false, networkMode: 'WL_AND_5G', lteBands: '', nrBands: '', clients: [], apn: { index: 0, isAutomatic: true, profileName: '', apn: '', username: '', password: '', authentication: 'none', pdpType: 'IPv4v6', primaryDNS: '', secondaryDNS: '' } });
 const cell = reactive({ is5G: true, pci: '', earfcn: '' });
