@@ -19,6 +19,8 @@ public struct SettingsView: View {
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
     @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
+    @State private var isUpdatingFileSharing = false
+    @State private var fileSharingErrorMessage: String?
     
     init(
         fetcher: F50Fetcher,
@@ -113,9 +115,24 @@ public struct SettingsView: View {
 
                     Spacer()
 
-                    Toggle("", isOn: $isFileSharingEnabled)
+                    Toggle("", isOn: Binding(
+                        get: { isFileSharingEnabled },
+                        set: { updateFileSharing(to: $0) }
+                    ))
                         .labelsHidden()
                         .toggleStyle(.switch)
+                        .disabled(isUpdatingFileSharing)
+                }
+
+                if isUpdatingFileSharing {
+                    ProgressView("正在同步设备设置…")
+                        .controlSize(.small)
+                        .font(.system(size: 10))
+                } else if let fileSharingErrorMessage {
+                    Text(fileSharingErrorMessage)
+                        .font(.system(size: 10))
+                        .foregroundColor(F50Theme.red)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if isFileSharingEnabled {
@@ -467,6 +484,9 @@ public struct SettingsView: View {
             launchAtLogin.refresh()
             screenMirroringManager.checkDependencies()
         }
+        .task {
+            await refreshFileSharingState()
+        }
         .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
             Button("允许并下载") {
                 screenMirroringManager.downloadAndInstallStandaloneDependencies()
@@ -474,6 +494,36 @@ public struct SettingsView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
+        }
+    }
+
+    @MainActor
+    private func refreshFileSharingState() async {
+        isUpdatingFileSharing = true
+        defer { isUpdatingFileSharing = false }
+        do {
+            isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
+            fileSharingErrorMessage = nil
+        } catch {
+            fileSharingErrorMessage = "无法读取设备文件共享状态：\(error.localizedDescription)"
+        }
+    }
+
+    private func updateFileSharing(to enabled: Bool) {
+        let previousValue = isFileSharingEnabled
+        isFileSharingEnabled = enabled
+        isUpdatingFileSharing = true
+        fileSharingErrorMessage = nil
+
+        Task { @MainActor in
+            defer { isUpdatingFileSharing = false }
+            do {
+                try await fetcher.setSambaEnabled(enabled)
+                isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
+            } catch {
+                isFileSharingEnabled = previousValue
+                fileSharingErrorMessage = "无法修改设备文件共享状态：\(error.localizedDescription)"
+            }
         }
     }
 }

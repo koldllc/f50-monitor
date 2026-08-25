@@ -3080,6 +3080,47 @@ public class F50Fetcher: ObservableObject {
         ])
     }
 
+    public func fetchSambaEnabled() async throws -> Bool {
+        guard !isDemoMode else { throw F50DeviceControlError.demoMode }
+
+        let backend = DeviceControlBackend.router(cookie: nil)
+        let payload: [String: Any]
+        if let publicPayload = try? await controlGetPayload(commands: "samba_switch", backend: backend),
+           publicPayload["samba_switch"] != nil {
+            payload = publicPayload
+        } else {
+            let cookie = try await controlLogin(backend: backend)
+            payload = try await controlGetPayload(
+                commands: "samba_switch",
+                backend: .router(cookie: cookie)
+            )
+        }
+
+        switch stringValue(payload["samba_switch"]).lowercased() {
+        case "1", "on", "enabled", "true":
+            return true
+        case "0", "off", "disabled", "false":
+            return false
+        default:
+            throw F50DeviceControlError.invalidResponse
+        }
+    }
+
+    public func setSambaEnabled(_ enabled: Bool) async throws {
+        guard !isDemoMode else { throw F50DeviceControlError.demoMode }
+
+        let cookie = try await controlLogin(backend: .router(cookie: nil))
+        let result = try await controlPost([
+            "goformId": "SAMBA_SETTING",
+            "samba_switch": enabled ? "1" : "0"
+        ], backend: .router(cookie: cookie))
+        guard controlSucceeded(result) else {
+            throw F50DeviceControlError.rejected(
+                firstString(result, keys: ["error", "message", "msg"], fallback: "设备拒绝了文件共享设置")
+            )
+        }
+    }
+
     public func saveAPNSettings(_ settings: F50APNSettings) async throws {
         guard !settings.profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !settings.apn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

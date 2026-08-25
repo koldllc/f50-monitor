@@ -193,6 +193,8 @@ struct ToolsView: View {
     @ObservedObject var fetcher: F50Fetcher
     @State private var isShowingFileShareHelp = false
     @AppStorage(IOSFileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
+    @State private var isUpdatingFileSharing = false
+    @State private var fileSharingErrorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -216,7 +218,11 @@ struct ToolsView: View {
                 }
 
                 Section {
-                    Toggle("启用文件共享功能", isOn: $isFileSharingEnabled)
+                    Toggle("启用文件共享功能", isOn: Binding(
+                        get: { isFileSharingEnabled },
+                        set: { updateFileSharing(to: $0) }
+                    ))
+                    .disabled(isUpdatingFileSharing)
                     if isFileSharingEnabled {
                         Button {
                             openFileShareInFilesApp()
@@ -227,7 +233,15 @@ struct ToolsView: View {
                 } header: {
                     Text("文件共享")
                 } footer: {
-                    Text("通过系统文件选择器在本机与 F50 SMB 共享之间传输文件；此开关不会修改设备端 SMB 设置。")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("此开关与 F50 后台的 SMB 文件共享设置同步。")
+                        if isUpdatingFileSharing {
+                            Text("正在同步设备设置…")
+                        } else if let fileSharingErrorMessage {
+                            Text(fileSharingErrorMessage)
+                                .foregroundColor(.red)
+                        }
+                    }
                 }
             }
             .navigationTitle("工具")
@@ -235,6 +249,39 @@ struct ToolsView: View {
                 Button("知道了", role: .cancel) {}
             } message: {
                 Text("打开“文件”App → 右上角更多 → 连接服务器，输入 \(F50Configuration.fileShareURL(from: fetcher.baseURLString)?.absoluteString ?? "smb://192.168.0.1")。")
+            }
+            .task {
+                await refreshFileSharingState()
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshFileSharingState() async {
+        isUpdatingFileSharing = true
+        defer { isUpdatingFileSharing = false }
+        do {
+            isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
+            fileSharingErrorMessage = nil
+        } catch {
+            fileSharingErrorMessage = "无法读取设备文件共享状态：\(error.localizedDescription)"
+        }
+    }
+
+    private func updateFileSharing(to enabled: Bool) {
+        let previousValue = isFileSharingEnabled
+        isFileSharingEnabled = enabled
+        isUpdatingFileSharing = true
+        fileSharingErrorMessage = nil
+
+        Task { @MainActor in
+            defer { isUpdatingFileSharing = false }
+            do {
+                try await fetcher.setSambaEnabled(enabled)
+                isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
+            } catch {
+                isFileSharingEnabled = previousValue
+                fileSharingErrorMessage = "无法修改设备文件共享状态：\(error.localizedDescription)"
             }
         }
     }
