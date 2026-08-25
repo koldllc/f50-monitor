@@ -92,6 +92,7 @@ public struct F50DeviceControlSnapshot: Sendable {
     public var accessControlMode: String
     public var lockedLTEBands: Set<Int>
     public var lockedNRBands: Set<Int>
+    public var currentCell: F50NeighborCell?
     public var neighborCells: [F50NeighborCell]
 
     public init(
@@ -102,6 +103,7 @@ public struct F50DeviceControlSnapshot: Sendable {
         accessControlMode: String = "2",
         lockedLTEBands: Set<Int> = [],
         lockedNRBands: Set<Int> = [],
+        currentCell: F50NeighborCell? = nil,
         neighborCells: [F50NeighborCell] = []
     ) {
         self.isMobileDataEnabled = isMobileDataEnabled
@@ -111,6 +113,7 @@ public struct F50DeviceControlSnapshot: Sendable {
         self.accessControlMode = accessControlMode
         self.lockedLTEBands = lockedLTEBands
         self.lockedNRBands = lockedNRBands
+        self.currentCell = currentCell
         self.neighborCells = neighborCells
     }
 }
@@ -500,31 +503,21 @@ private struct F50CellLockView: View {
 
     var body: some View {
         Form {
+            Section("当前基站") {
+                if let currentCell = model.snapshot.currentCell {
+                    selectableCellRow(currentCell, prefix: "当前")
+                } else {
+                    Text("未读取到当前基站信息，请刷新设备控制后重试。")
+                        .foregroundStyle(.secondary)
+                }
+            }
             Section("已扫描基站") {
                 if model.snapshot.neighborCells.isEmpty {
                     Text("未读取到扫描结果，请刷新设备控制后重试。")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.snapshot.neighborCells) { cell in
-                        Button {
-                            selectedCell = cell
-                        } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("\(cell.radioTitle) \(cell.bandTitle) · PCI \(cell.pci)")
-                                        .fontWeight(.medium)
-                                    Text("EARFCN \(cell.earfcn) · RSRP \(cell.rsrp) · RSRQ \(cell.rsrq) · SINR \(cell.sinr)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if selectedCell == cell {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
+                        selectableCellRow(cell)
                     }
                 }
             }
@@ -549,5 +542,27 @@ private struct F50CellLockView: View {
         } message: {
             Text("错误的小区参数可能导致设备无信号。")
         }
+    }
+
+    private func selectableCellRow(_ cell: F50NeighborCell, prefix: String? = nil) -> some View {
+        Button {
+            selectedCell = cell
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(prefix.map { "\($0) · " } ?? "")\(cell.radioTitle) \(cell.bandTitle) · PCI \(cell.pci)")
+                        .fontWeight(.medium)
+                    Text("EARFCN \(cell.earfcn) · RSRP \(cell.rsrp) · RSRQ \(cell.rsrq) · SINR \(cell.sinr)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if selectedCell == cell {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.tint)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

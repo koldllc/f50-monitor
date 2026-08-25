@@ -2923,7 +2923,7 @@ public class F50Fetcher: ObservableObject {
     public func fetchDeviceControlSnapshot() async throws -> F50DeviceControlSnapshot {
         guard !isDemoMode else { throw F50DeviceControlError.demoMode }
         let commands = [
-            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock", "neighbor_cell_info",
+            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock", "network_information", "neighbor_cell_info",
             "station_list", "lan_station_list", "queryDeviceAccessControlList", "hostNameList",
             "apn_Current_index", "apn_mode", "apn_m_profile_name", "profile_name", "profile_name_ui",
             "apn_wan_apn", "apn_ppp_username", "apn_ppp_passwd", "apn_ppp_auth_mode", "apn_pdp_type",
@@ -2970,7 +2970,52 @@ public class F50Fetcher: ObservableObject {
             accessControlMode: firstString(payload, keys: ["AclMode"], fallback: "2"),
             lockedLTEBands: parseBands(payload["lte_band_lock"]),
             lockedNRBands: parseBands(payload["nr_band_lock"]),
+            currentCell: parseCurrentCell(payload),
             neighborCells: parseNeighborCells(payload["neighbor_cell_info"])
+        )
+    }
+
+    private func parseCurrentCell(_ payload: [String: Any]) -> F50NeighborCell? {
+        if let cell = makeCell(
+            from: payload,
+            bandKeys: ["Nr_bands", "nr_bands", "Z5g_CELLINFO_band", "ZCELLINFO_band"],
+            earfcnKeys: ["Nr_fcn", "nr_fcn", "nr_arfcn", "nrarfcn"],
+            pciKeys: ["Nr_pci", "nr_pci", "nr5g_pci", "Z5g_CELLINFO_pci"],
+            rsrpKeys: ["Nr_signal_strength", "nr_rsrp", "Z5g_rsrp"],
+            rsrqKeys: ["Nr_rsrq", "nr_rsrq", "Z5g_rsrq"],
+            sinrKeys: ["Nr_snr", "nr_snr", "Z5g_snr"],
+            is5G: true
+        ) {
+            return cell
+        }
+        return makeCell(
+            from: payload,
+            bandKeys: ["Lte_bands", "lte_bands", "lte_ca_pcell_band", "wan_active_band"],
+            earfcnKeys: ["Lte_fcn", "lte_fcn", "lte_earfcn", "lte_ca_pcell_freq"],
+            pciKeys: ["Lte_pci", "lte_pci", "lte_ca_pcell_pci"],
+            rsrpKeys: ["Lte_signal_strength", "lte_rsrp"],
+            rsrqKeys: ["Lte_rsrq", "lte_rsrq"],
+            sinrKeys: ["Lte_snr", "lte_snr"],
+            is5G: false
+        )
+    }
+
+    private func makeCell(
+        from payload: [String: Any],
+        bandKeys: [String], earfcnKeys: [String], pciKeys: [String],
+        rsrpKeys: [String], rsrqKeys: [String], sinrKeys: [String], is5G: Bool
+    ) -> F50NeighborCell? {
+        let earfcn = intValue(firstString(payload, keys: earfcnKeys))
+        let pci = intValue(firstString(payload, keys: pciKeys))
+        guard earfcn > 0, (0...1007).contains(pci) else { return nil }
+        return F50NeighborCell(
+            band: firstString(payload, keys: bandKeys, fallback: "—"),
+            earfcn: earfcn,
+            pci: pci,
+            rsrp: firstString(payload, keys: rsrpKeys, fallback: "—"),
+            rsrq: firstString(payload, keys: rsrqKeys, fallback: "—"),
+            sinr: firstString(payload, keys: sinrKeys, fallback: "—"),
+            is5G: is5G
         )
     }
 
