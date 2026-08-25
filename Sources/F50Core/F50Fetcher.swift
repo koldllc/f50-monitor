@@ -3159,7 +3159,11 @@ public class F50Fetcher: ObservableObject {
         guard !wa.isEmpty, !cr.isEmpty, !rd.isEmpty else { throw F50DeviceControlError.invalidResponse }
         var form = parameters
         form["isTest"] = "false"
-        form["AD"] = sha256(sha256(wa + cr) + rd)
+        form["AD"] = F50ResponseParser.calculateGoformAD(
+            waInnerVersion: wa,
+            crVersion: cr,
+            rd: rd
+        )
         let request = try controlRequest(
             path: "goform/goform_set_cmd_process", backend: backend, method: "POST", body: formBody(form)
         )

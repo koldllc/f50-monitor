@@ -478,6 +478,11 @@ enum F50ResponseParser {
         return sha256Hex(pwdHash1 + ld).uppercased()
     }
 
+    static func calculateGoformAD(waInnerVersion: String, crVersion: String, rd: String) -> String {
+        let versionHash = sha256Hex(waInnerVersion + crVersion).uppercased()
+        return sha256Hex(versionHash + rd).uppercased()
+    }
+
     /// 格式化短信时间字符串：yy;MM;dd;HH;mm;ss;+TZ
     static func formatSMSTime(date: Date = Date(), timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()

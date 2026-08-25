@@ -651,6 +651,17 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(hashFromRaw, "760C9222A068723B076EBC7A23F6AA45630F21BAB361E3261376F96AE2878583")
     }
 
+    func testCalculateGoformADMatchesUFISHA256Casing() {
+        XCTAssertEqual(
+            F50ResponseParser.calculateGoformAD(
+                waInnerVersion: "1.0",
+                crVersion: "2.0",
+                rd: "1234567890abcdef"
+            ),
+            "C6375DD64C911F1906DE57E41797D8E88391B0A269A3E1822F34AB36FF620298"
+        )
+    }
+
     func testFormatSMSTime() {
         let calendar = Calendar(identifier: .gregorian)
         var components = DateComponents()
