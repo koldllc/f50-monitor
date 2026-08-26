@@ -115,6 +115,44 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    Picker("前台自动刷新频率", selection: $tempInterval) {
+                        Text("1 秒").tag(1.0)
+                        Text("3 秒（推荐节能）").tag(3.0)
+                        Text("5 秒（极简降温）").tag(5.0)
+                        Text("10 秒（超低负载）").tag(10.0)
+                    }
+                } header: {
+                    Text("刷新与节能")
+                } footer: {
+                    Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
+                }
+
+                Section {
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.2.1"
+                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "8"
+                    VStack(spacing: 6) {
+                        Text("F50 Monitor v\(version) (\(build))")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 16) {
+                            Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                                .font(.system(size: 12))
+
+                            Link("隐私政策", destination: URL(string: "https://github.com/koldllc/f50-monitor/blob/main/docs/PRIVACY_POLICY.md")!)
+                                .font(.system(size: 12))
+                        }
+
+                        Text("© 2026 Kold. All rights reserved.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.8))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+                }
+                .listRowBackground(Color.clear)
+
                 Section("诊断与反馈") {
                     Button {
                         diagnoseDataChannels()
@@ -154,44 +192,6 @@ struct SettingsView: View {
                         Label("问题反馈与设备适配", systemImage: "ladybug.fill")
                     }
                 }
-
-                Section {
-                    Picker("前台自动刷新频率", selection: $tempInterval) {
-                        Text("1 秒").tag(1.0)
-                        Text("3 秒（推荐节能）").tag(3.0)
-                        Text("5 秒（极简降温）").tag(5.0)
-                        Text("10 秒（超低负载）").tag(10.0)
-                    }
-                } header: {
-                    Text("刷新与节能")
-                } footer: {
-                    Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
-                }
-
-                Section {
-                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.2.1"
-                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "8"
-                    VStack(spacing: 6) {
-                        Text("F50 Monitor v\(version) (\(build))")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-
-                        HStack(spacing: 16) {
-                            Link("GitHub 项目", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
-                                .font(.system(size: 12))
-
-                            Link("隐私政策", destination: URL(string: "https://github.com/koldllc/f50-monitor/blob/main/docs/PRIVACY_POLICY.md")!)
-                                .font(.system(size: 12))
-                        }
-
-                        Text("© 2026 Kold. All rights reserved.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary.opacity(0.8))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
-                }
-                .listRowBackground(Color.clear)
 
             }
             .navigationTitle("设置")
