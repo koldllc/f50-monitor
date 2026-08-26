@@ -72,6 +72,9 @@ public struct SettingsView: View {
     private let groupTitleFont = Font.system(size: 14, weight: .semibold)
     private let itemTitleFont = Font.system(size: 13, weight: .medium)
     private let descriptionFont = Font.system(size: 11)
+    private let groupSpacing: CGFloat = 16
+    private let rowSpacing: CGFloat = 12
+    private let detailSpacing: CGFloat = 4
     
     public var body: some View {
         VStack(spacing: 0) {
@@ -179,7 +182,7 @@ public struct SettingsView: View {
     }
 
     private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(SettingsGroup.allCases) { group in
                 Button {
                     selectedGroup = group
@@ -222,11 +225,11 @@ public struct SettingsView: View {
     }
 
     private var generalSettings: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("通用")
                 .font(groupTitleFont)
 
-            HStack {
+            VStack(alignment: .leading, spacing: detailSpacing) {
                 HStack {
                     Text("登录时自动启动")
                         .font(itemTitleFont)
@@ -245,17 +248,19 @@ public struct SettingsView: View {
                 if launchAtLogin.requiresApproval {
                     HStack(spacing: 4) {
                         Text("需要在系统设置中允许")
-                            .font(.system(size: 10))
+                            .font(descriptionFont)
+                            .lineSpacing(2)
                             .foregroundColor(.secondary)
                         Button("前往设置") {
                             launchAtLogin.openSystemSettings()
                         }
                         .buttonStyle(.link)
-                        .font(.system(size: 10))
+                        .font(descriptionFont)
                     }
                 } else if let errorMessage = launchAtLogin.errorMessage {
                     Text(errorMessage)
-                        .font(.system(size: 10))
+                        .font(descriptionFont)
+                        .lineSpacing(2)
                         .foregroundColor(F50Theme.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -263,7 +268,7 @@ public struct SettingsView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: rowSpacing) {
                 Text("刷新与显示")
                     .font(groupTitleFont)
 
@@ -301,7 +306,7 @@ public struct SettingsView: View {
     }
 
     private var connectionSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("连接")
                 .font(groupTitleFont)
 
@@ -316,6 +321,7 @@ public struct SettingsView: View {
             if !tempIP.isEmpty && !isIPValid {
                 Text("请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）")
                     .font(descriptionFont)
+                    .lineSpacing(2)
                     .foregroundColor(F50Theme.red)
             }
 
@@ -365,7 +371,7 @@ public struct SettingsView: View {
     }
 
     private var fileSharingSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("文件共享")
                 .font(groupTitleFont)
 
@@ -391,6 +397,7 @@ public struct SettingsView: View {
             } else if let fileSharingErrorMessage {
                 Text(fileSharingErrorMessage)
                     .font(descriptionFont)
+                    .lineSpacing(2)
                     .foregroundColor(F50Theme.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -398,11 +405,12 @@ public struct SettingsView: View {
             if isFileSharingEnabled {
                 Divider()
                 HStack {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: detailSpacing) {
                         Text("访问 F50 共享文件")
                             .font(itemTitleFont)
                         Text("在 App 内浏览，支持拖拽上传和下载")
                             .font(descriptionFont)
+                            .lineSpacing(2)
                             .foregroundColor(.secondary)
                     }
 
@@ -419,7 +427,7 @@ public struct SettingsView: View {
     }
 
     private var mirroringSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("无线投屏")
                 .font(groupTitleFont)
 
@@ -435,7 +443,7 @@ public struct SettingsView: View {
                 }
 
                 if screenMirroringManager.isEnabled {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: rowSpacing) {
                         HStack {
                             Text("依赖组件状态：")
                                 .font(itemTitleFont)
@@ -454,9 +462,10 @@ public struct SettingsView: View {
                         }
 
                         if !screenMirroringManager.isDependenciesInstalled {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: detailSpacing) {
                                 Text("未检测到投屏所需组件 (scrcpy 与 ADB)。")
                                     .font(descriptionFont)
+                                    .lineSpacing(2)
                                     .foregroundColor(F50Theme.orange)
 
                                 Button(action: {
@@ -481,6 +490,7 @@ public struct SettingsView: View {
                         if let msg = screenMirroringManager.installStatusMessage ?? screenMirroringManager.statusMessage {
                             Text(msg)
                                 .font(descriptionFont)
+                                .lineSpacing(2)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -490,7 +500,7 @@ public struct SettingsView: View {
     }
 
     private var updateSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("软件更新")
                 .font(groupTitleFont)
 
@@ -506,11 +516,12 @@ public struct SettingsView: View {
                 }
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: detailSpacing) {
                         Text("F50 Monitor v\(updateManager.currentVersion)")
                             .font(itemTitleFont)
                         Text(updateManager.statusText)
                             .font(descriptionFont)
+                            .lineSpacing(2)
                             .foregroundColor(updateManager.availableVersion == nil ? .secondary : F50Theme.green)
                     }
 
@@ -534,13 +545,14 @@ public struct SettingsView: View {
     }
 
     private var diagnosticSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: groupSpacing) {
             Text("诊断与反馈")
                 .font(groupTitleFont)
 
             HStack {
                 Text("检测 80、5555、2333 是否可获取数据")
                     .font(descriptionFont)
+                    .lineSpacing(2)
                     .foregroundColor(.secondary)
                 Spacer()
                 Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
@@ -558,6 +570,7 @@ public struct SettingsView: View {
                         .font(itemTitleFont)
                     Text(result.detail)
                         .font(descriptionFont)
+                        .lineSpacing(2)
                         .foregroundColor(.secondary)
                     Spacer(minLength: 0)
                 }
@@ -566,11 +579,12 @@ public struct SettingsView: View {
             Divider()
 
             HStack {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: detailSpacing) {
                     Text("问题反馈与设备适配")
                         .font(itemTitleFont)
                     Text("提交使用问题、Bug 或新设备适配")
                         .font(descriptionFont)
+                        .lineSpacing(2)
                         .foregroundColor(.secondary)
                 }
 
