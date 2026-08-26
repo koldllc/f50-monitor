@@ -51,16 +51,6 @@ private extension TelemetrySample {
     }
 }
 
-private enum NetworkDoctorMode: String, CaseIterable, Identifiable {
-    case quick
-    case deep
-
-    var id: Self { self }
-    var title: String { self == .quick ? "快速诊断" : "深度诊断" }
-    var duration: TimeInterval { self == .quick ? 120 : 600 }
-    var detail: String { self == .quick ? "2 分钟：检查连接、蜂窝状态与公网质量" : "10 分钟：观察切换、温度与时间关联" }
-}
-
 private struct SignalChartPoint: Identifiable {
     let id = UUID()
     let score: Double
@@ -843,14 +833,13 @@ private final class NetworkDoctorSession: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var progress = 0.0
     @Published private(set) var report: DoctorReport
-    @Published private(set) var mode: NetworkDoctorMode = .quick
 
     private let engine = NetworkInsightEngine()
     private let reportDefaultsKey = "F50_iOS_NetworkDoctorLatestReport_v1"
     private var startedAt: Date?
     private var lastProbeAt = Date.distantPast
     private var probeInFlight = false
-    var duration: TimeInterval { mode.duration }
+    let duration: TimeInterval = 120
 
     init() {
         if let data = UserDefaults.standard.data(forKey: reportDefaultsKey),
@@ -861,9 +850,8 @@ private final class NetworkDoctorSession: ObservableObject {
         }
     }
 
-    func start(with status: F50Status, mode: NetworkDoctorMode = .quick) {
+    func start(with status: F50Status) {
         engine.reset()
-        self.mode = mode
         startedAt = Date()
         isRunning = true
         progress = 0
@@ -948,7 +936,6 @@ struct NetworkDoctorView: View {
     @StateObject private var session = NetworkDoctorSession()
     @State private var exportReport: String?
     @State private var includeSensitiveData = false
-    @State private var selectedMode: NetworkDoctorMode = .quick
     private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -959,7 +946,7 @@ struct NetworkDoctorView: View {
                         .font(.system(size: 42, weight: .semibold))
                         .foregroundStyle(session.isRunning ? .green : .blue)
 
-                    Text(session.isRunning ? "正在记录网络状态" : selectedMode.title)
+                    Text(session.isRunning ? "正在记录网络状态" : "2 分钟诊断")
                         .font(.title3.bold())
 
                     Text(session.isRunning ? "请保持 F50 Monitor 在前台，完成后会自动分析。" : "按时间关联本地管理通道、蜂窝状态与公网连通性，分析网络异常的可能原因。")
@@ -971,14 +958,8 @@ struct NetworkDoctorView: View {
                         ProgressView(value: session.progress)
                         Button("提前结束并分析") { session.finish() }
                     } else {
-                        Picker("诊断模式", selection: $selectedMode) {
-                            ForEach(NetworkDoctorMode.allCases) { mode in
-                                Text("\(mode.title)：\(mode.detail)").tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
                         Button {
-                            session.start(with: fetcher.status, mode: selectedMode)
+                            session.start(with: fetcher.status)
                         } label: {
                             Label("开始诊断", systemImage: "play.fill")
                                 .frame(maxWidth: .infinity)

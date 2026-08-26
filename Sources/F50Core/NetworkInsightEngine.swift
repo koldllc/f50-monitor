@@ -347,7 +347,7 @@ public struct DoctorFinding: Codable, Equatable, Sendable {
 
     private static func defaultRecommendation(for category: DoctorFindingCategory) -> String? {
         switch category {
-        case .insufficientData: return "保持工具页在前台，完成快速或深度诊断后再判断。"
+        case .insufficientData: return "保持工具页在前台，完成 2 分钟诊断后再判断。"
         case .coverage: return "将 F50 移到窗边或较开阔位置后重新诊断。"
         case .interference: return "调整设备朝向和摆放位置，再运行一次诊断对比。"
         case .baseStationSwitching, .frequentSwitching: return "保持设备位置稳定；必要时锁定较稳定的频段后复测。"
