@@ -31,10 +31,11 @@ extension FeedbackCategory {
 
 private struct RouterLoginDiagnosticSheet: View {
     let routerURL: URL?
-    let onSessionReady: (String) -> Void
+    let onSessionReady: (String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var sessionCookie: String? = nil
+    @State private var loginStatus: String? = nil
 
     var body: some View {
         NavigationStack {
@@ -42,6 +43,7 @@ private struct RouterLoginDiagnosticSheet: View {
                 if let routerURL {
                     RouterLoginWebView(url: routerURL) { cookie in
                         sessionCookie = cookie
+                        loginStatus = nil
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
@@ -64,14 +66,22 @@ private struct RouterLoginDiagnosticSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                if let loginStatus {
+                    Text(loginStatus)
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                }
+
                 Button("已完成登录，继续诊断") {
-                    if let sessionCookie {
-                        onSessionReady(sessionCookie)
-                        dismiss()
+                    guard let sessionCookie, !sessionCookie.isEmpty else {
+                        loginStatus = "未检测到登录会话，请完成登录后重试。"
+                        return
                     }
+                    onSessionReady(sessionCookie)
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(sessionCookie == nil)
+                .disabled(routerURL == nil)
             }
             .padding()
             .navigationTitle("原厂后台登录")
@@ -99,13 +109,14 @@ private struct RouterLoginWebView: UIViewRepresentable {
     let url: URL
     let onCookieChanged: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCookieChanged: onCookieChanged) }
+    func makeCoordinator() -> Coordinator { Coordinator(host: url.host ?? "", onCookieChanged: onCookieChanged) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
+        context.coordinator.observeCookies(in: configuration.websiteDataStore.httpCookieStore)
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -117,13 +128,14 @@ private struct RouterLoginWebView: NSViewRepresentable {
     let url: URL
     let onCookieChanged: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCookieChanged: onCookieChanged) }
+    func makeCoordinator() -> Coordinator { Coordinator(host: url.host ?? "", onCookieChanged: onCookieChanged) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
+        context.coordinator.observeCookies(in: configuration.websiteDataStore.httpCookieStore)
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -132,17 +144,38 @@ private struct RouterLoginWebView: NSViewRepresentable {
 }
 #endif
 
-private final class Coordinator: NSObject, WKNavigationDelegate {
+private final class Coordinator: NSObject, WKNavigationDelegate, WKHTTPCookieStoreObserver {
+    private let host: String
     private let onCookieChanged: (String) -> Void
+    private weak var cookieStore: WKHTTPCookieStore?
 
-    init(onCookieChanged: @escaping (String) -> Void) {
+    init(host: String, onCookieChanged: @escaping (String) -> Void) {
+        self.host = host
         self.onCookieChanged = onCookieChanged
     }
 
+    deinit {
+        cookieStore?.remove(self)
+    }
+
+    func observeCookies(in cookieStore: WKHTTPCookieStore) {
+        self.cookieStore = cookieStore
+        cookieStore.add(self)
+    }
+
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        publishCookies(from: cookieStore)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let host = webView.url?.host else { return }
-        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-            let matchingCookies = cookies.filter { $0.domain == host || $0.domain == ".\(host)" }
+        publishCookies(from: webView.configuration.websiteDataStore.httpCookieStore)
+    }
+
+    private func publishCookies(from cookieStore: WKHTTPCookieStore) {
+        guard !host.isEmpty else { return }
+        cookieStore.getAllCookies { [weak self] cookies in
+            guard let self else { return }
+            let matchingCookies = cookies.filter { $0.domain == self.host || $0.domain == ".\(self.host)" }
             guard !matchingCookies.isEmpty else { return }
             let header = matchingCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             DispatchQueue.main.async {
@@ -158,8 +191,6 @@ public struct DeviceFeedbackView: View {
     @ObservedObject var fetcher: F50Fetcher
     var onClose: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     @State private var selectedCategory: FeedbackCategory = .deviceAdaptation
     @State private var deviceModel: String = ""
     @State private var contact: String = ""
@@ -170,19 +201,14 @@ public struct DeviceFeedbackView: View {
 
     #if os(iOS)
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
-    @State private var showCategoryPickerSheet: Bool = false
     #endif
 
     @State private var isProcessing: Bool = false
     @State private var probeProgress: Double = 0.0
     @State private var probeStatusText: String = ""
-    @State private var report: DeviceDiagnosticReport? = nil
-    @State private var showDetails: Bool = false
-    @State private var showPrivacyInfo: Bool = false
     @State private var submitSuccess: Bool = false
     @State private var statusFeedbackMessage: String? = nil
     @State private var createdIssueURL: String? = nil
-    @State private var showCopiedToast: Bool = false
     @State private var showRouterLoginDiagnostic = false
     @State private var routerLoginSessionCookie: String? = nil
 
@@ -206,7 +232,7 @@ public struct DeviceFeedbackView: View {
                 routerURL: routerLoginURL,
                 onSessionReady: { cookie in
                     routerLoginSessionCookie = cookie
-                    statusFeedbackMessage = "已获取网页登录会话；提交时将用该会话探测接口。"
+                    statusFeedbackMessage = "已获取网页登录会话。"
                 }
             )
         }
@@ -221,34 +247,20 @@ public struct DeviceFeedbackView: View {
     #if os(iOS)
     private var iOSBody: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // 1. 顶部说明卡片
-                        privacyBannerCard
-
-                        // 2. 反馈类型选择与快捷提示
-                        categorySelectionCard
-
-                        // 3. 表单信息输入 (设备型号必填、联系方式选填、详细描述必填)
-                        formFieldsCard
-
-                        // 4. 截图附加卡片 (iOS 原生相册选择)
-                        screenshotCardiOS
-
-                        // 5. 诊断探测与提交卡片
-                        submitAndProgressCard
-
-                        // 6. 脱敏诊断快照与预览
-                        diagnosticPreviewCard
-
-                        Spacer(minLength: 40)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
+            Form {
+                Section("反馈内容") {
+                    categorySelectionCard
+                    formFieldsCard
                 }
-                .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+
+                Section("附件") {
+                    screenshotCardiOS
+                }
+
+                Section {
+                    submitAndProgressCard
+                }
+            }
                 .navigationTitle("问题反馈与设备适配")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -270,371 +282,67 @@ public struct DeviceFeedbackView: View {
                         .fontWeight(.semibold)
                     }
                 }
-                .sheet(isPresented: $showCategoryPickerSheet) {
-                    categoryPickerSheetView
-                }
-
-                // 复制成功浮动提示
-                if showCopiedToast {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(F50Theme.green)
-                        Text("已复制到剪贴板")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(F50Theme.cardBackground(for: colorScheme))
-                            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 3)
-                    )
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
         }
     }
 
     // MARK: iOS Subviews
 
-    private var privacyBannerCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(F50Theme.blue)
-
-                Text("数据安全与隐私保护")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showPrivacyInfo.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(showPrivacyInfo ? "收起" : "说明")
-                        Image(systemName: showPrivacyInfo ? "chevron.up" : "chevron.down")
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(F50Theme.blue)
-                }
-            }
-
-            Text("点击发送时，App 将自动对当前连接网关进行只读探测并采集设备型号与指标。")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-
-            if showPrivacyInfo {
-                VStack(alignment: .leading, spacing: 4) {
-                    Divider().padding(.vertical, 2)
-                    Label("后台登录口令、Token、Wi-Fi 密钥已全量掩码 (******)", systemImage: "checkmark.shield")
-                    Label("短信正文与敏感内容已自动过滤脱敏", systemImage: "checkmark.shield")
-                    Label("MAC 地址与 IMEI 串号已做中间隐藏掩码", systemImage: "checkmark.shield")
-                }
-                .font(.system(size: 11.5))
-                .foregroundColor(.secondary)
-                .transition(.opacity)
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(F50Theme.cardBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
-                )
-        )
-    }
-
     private var categorySelectionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("反馈类型", systemImage: "square.grid.2x2")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.primary)
-                Spacer()
-                Text("点击更换")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-            }
-
-            Button {
-                showCategoryPickerSheet = true
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(selectedCategory.accentColor.opacity(0.15))
-                            .frame(width: 38, height: 38)
-                        Image(systemName: selectedCategory.iconName)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(selectedCategory.accentColor)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(selectedCategory.rawValue)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.primary)
-                        Text(selectedCategory.placeholderHint)
-                            .font(.system(size: 11.5))
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary.opacity(0.6))
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(F50Theme.controlBackground(for: colorScheme))
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(F50Theme.cardBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
-                )
-        )
-    }
-
-    private var categoryPickerSheetView: some View {
-        NavigationStack {
-            List {
-                Section("选择符合您遇到的问题类型") {
-                    ForEach(FeedbackCategory.allCases) { category in
-                        Button {
-                            selectedCategory = category
-                            showCategoryPickerSheet = false
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle()
-                                        .fill(category.accentColor.opacity(0.15))
-                                        .frame(width: 34, height: 34)
-                                    Image(systemName: category.iconName)
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(category.accentColor)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(category.rawValue)
-                                        .font(.system(size: 14.5, weight: .semibold))
-                                        .foregroundColor(.primary)
-                                    Text(category.placeholderHint)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                if selectedCategory == category {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(F50Theme.blue)
-                                        .font(.system(size: 18))
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("选择反馈类型")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
-                        showCategoryPickerSheet = false
-                    }
-                }
+        Picker("反馈类型", selection: $selectedCategory) {
+            ForEach(FeedbackCategory.allCases) { category in
+                Label(category.rawValue, systemImage: category.iconName)
+                    .tag(category)
             }
         }
-        .presentationDetents([.medium, .large])
+        .pickerStyle(.menu)
     }
 
+    @ViewBuilder
     private var formFieldsCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // 设备型号 (必填)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label("设备品牌与型号", systemImage: "cpu")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Text("(必填)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(F50Theme.blue)
-
-                    Spacer()
-
-                    if !deviceModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(F50Theme.green)
-                    }
-                }
-
-                HStack {
-                    TextField("例如：中兴 F50 / F30 Pro / 华为 CPE / 展锐 MiFi", text: $deviceModel)
-                        .font(.system(size: 14))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(isProcessing)
-
-                    if !deviceModel.isEmpty {
-                        Button {
-                            deviceModel = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.system(size: 14))
-                        }
-                    }
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(F50Theme.controlBackground(for: colorScheme))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(
-                                    !deviceModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                        ? F50Theme.blue.opacity(0.3)
-                                        : Color.clear,
-                                    lineWidth: 1
-                                )
-                        )
-                )
-            }
-
-            // 联系方式
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label("联系方式", systemImage: "person.crop.circle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Spacer()
-                    Text("选填，便于跟进")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-
-                HStack {
-                    TextField("微信 / QQ / 邮箱 / GitHub ID", text: $contact)
-                        .font(.system(size: 14))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(isProcessing)
-
-                    if !contact.isEmpty {
-                        Button {
-                            contact = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                                .font(.system(size: 14))
-                        }
-                    }
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(F50Theme.controlBackground(for: colorScheme))
-                )
-            }
-
-            // 详细描述 (必填)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label("详细问题描述", systemImage: "pencil.and.outline")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.primary)
-
-                    Text("(必填)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(F50Theme.blue)
-
-                    Spacer()
-
-                    let count = userNotes.trimmingCharacters(in: .whitespacesAndNewlines).count
-                    Text(count >= 4 ? "\(count) 字" : "\(count)/4 字")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(count >= 4 ? F50Theme.green : .secondary)
-                }
-
-                ZStack(alignment: .topLeading) {
-                    if userNotes.isEmpty {
-                        Text(selectedCategory.placeholderHint)
-                            .font(.system(size: 13.5))
-                            .foregroundColor(.secondary.opacity(0.6))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 10)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $userNotes)
-                        .font(.system(size: 13.5))
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .frame(minHeight: 100)
-                        .disabled(isProcessing)
-                }
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(F50Theme.controlBackground(for: colorScheme))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(
-                                    userNotes.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4
-                                        ? F50Theme.blue.opacity(0.3)
-                                        : Color.clear,
-                                    lineWidth: 1
-                                )
-                        )
-                )
-            }
+        HStack {
+            Text("设备型号（必填）")
+                .foregroundColor(.primary)
+                .fixedSize()
+            Spacer(minLength: 12)
+            TextField("必填", text: $deviceModel)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .disabled(isProcessing)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(F50Theme.cardBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
-                )
-        )
+
+        HStack {
+            Text("联系方式")
+                .foregroundColor(.primary)
+                .fixedSize()
+            Spacer(minLength: 12)
+            TextField("选填", text: $contact)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .disabled(isProcessing)
+        }
+
+        HStack(alignment: .top) {
+            Text("问题描述")
+                .foregroundColor(.primary)
+                .fixedSize()
+            TextEditor(text: $userNotes)
+                .frame(minHeight: 88)
+                .disabled(isProcessing)
+        }
     }
 
     private var screenshotCardiOS: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("问题截图", systemImage: "photo")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Text("选填，自动压缩上限 220 KB")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+        Group {
+            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                HStack {
+                    Text("问题截图")
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text(attachedImage == nil ? "选填" : "更换")
+                        .foregroundColor(.secondary)
+                }
             }
 
             if let img = attachedImage {
@@ -650,88 +358,21 @@ public struct DeviceFeedbackView: View {
                                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                         )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("已选择 1 张截图")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.primary)
-                        Text(String(format: "压缩后大小: %.1f KB", attachedImageSizeKB))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
+                    Text("已选择 1 张截图")
 
                     Spacer()
 
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Text("更换")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(F50Theme.blue)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(F50Theme.blue.opacity(0.12))
-                            )
-                    }
-
                     Button {
-                        withAnimation {
-                            attachedImage = nil
-                            attachedImageBase64 = nil
-                            attachedImageSizeKB = 0.0
-                            selectedPhotoItem = nil
-                        }
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        attachedImage = nil
+                        attachedImageBase64 = nil
+                        attachedImageSizeKB = 0.0
+                        selectedPhotoItem = nil
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 14))
-                            .foregroundColor(F50Theme.red)
-                            .padding(8)
-                            .background(
-                                Circle().fill(F50Theme.red.opacity(0.1))
-                            )
                     }
                 }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(F50Theme.controlBackground(for: colorScheme))
-                )
-            } else {
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "photo.badge.plus")
-                            .font(.system(size: 16))
-                        Text("从相册选择截图")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(F50Theme.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(F50Theme.blue.opacity(0.08))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                                    .foregroundColor(F50Theme.blue.opacity(0.3))
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
             }
-
-            Text("截图会随反馈原样上传，请勿包含密码、短信正文或其他敏感信息。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(F50Theme.cardBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
-                )
-        )
         .onChange(of: selectedPhotoItem) { newItem in
             loadSelectedPhoto(newItem)
         }
@@ -751,9 +392,7 @@ public struct DeviceFeedbackView: View {
                             .foregroundColor(F50Theme.green)
                     }
 
-                    Text(fetcher.isDemoMode
-                        ? "本次演示仅在本机完成，未发送任何数据。"
-                        : "开发者已收到您的脱敏接口诊断快照，将尽快跟进适配与修复。非常感谢您的支持！")
+                    Text(fetcher.isDemoMode ? "本次演示仅在本机完成。" : "开发者将尽快跟进处理。")
                         .font(.system(size: 12.5))
                         .foregroundColor(.secondary)
 
@@ -768,12 +407,6 @@ public struct DeviceFeedbackView: View {
                                 Image(systemName: "arrow.up.right")
                                     .font(.system(size: 11))
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(F50Theme.blue.opacity(0.12))
-                            )
                             .foregroundColor(F50Theme.blue)
                         }
                     }
@@ -805,15 +438,6 @@ public struct DeviceFeedbackView: View {
                         .tint(F50Theme.green)
                     }
                 }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(F50Theme.green.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(F50Theme.green.opacity(0.3), lineWidth: 1)
-                        )
-                )
             } else {
                 // 进行中进度展示
                 if isProcessing {
@@ -833,11 +457,6 @@ public struct DeviceFeedbackView: View {
                         ProgressView(value: probeProgress, total: 1.0)
                             .tint(F50Theme.blue)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(F50Theme.blue.opacity(0.08))
-                    )
                 }
 
                 // 主发送按钮
@@ -849,29 +468,15 @@ public struct DeviceFeedbackView: View {
                     HStack(spacing: 8) {
                         if isProcessing {
                             ProgressView()
-                                .tint(.white)
                                 .controlSize(.small)
                         } else {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 14, weight: .bold))
                         }
-                        Text(isProcessing ? "正在抓取并提交..." : "一键抓取并发送反馈")
-                            .font(.system(size: 15, weight: .bold))
+                        Text(isProcessing ? "正在提交..." : "提交反馈")
                     }
-                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(
-                                isProcessing
-                                    ? F50Theme.blue.opacity(0.6)
-                                    : F50Theme.blue
-                            )
-                            .shadow(color: F50Theme.blue.opacity(0.3), radius: 6, x: 0, y: 3)
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
                 .disabled(isProcessing)
 
                 // 错误信息展示
@@ -885,11 +490,6 @@ public struct DeviceFeedbackView: View {
                             .foregroundColor(F50Theme.orange)
                         Spacer()
                     }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(F50Theme.orange.opacity(0.1))
-                    )
                 }
             }
         }
@@ -901,78 +501,12 @@ public struct DeviceFeedbackView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: routerLoginSessionCookie == nil ? "lock.open" : "checkmark.shield.fill")
-                Text(routerLoginSessionCookie == nil ? "登录原厂后台后增强诊断（可选）" : "已获取网页登录会话，将用于增强诊断")
+                Text(routerLoginSessionCookie == nil ? "登录原厂后台（可选）" : "已获取网页登录会话")
             }
-            .font(.system(size: 12.5, weight: .semibold))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.borderedProminent)
         .disabled(isProcessing || routerLoginURL == nil)
-    }
-
-    private var diagnosticPreviewCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("本地诊断报告与脱敏快照", systemImage: "doc.text.magnifyingglass")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                if let rep = report {
-                    Button {
-                        copyReportToClipboard(rep)
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "doc.on.doc")
-                            Text("复制报告")
-                        }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(F50Theme.blue)
-                    }
-                }
-            }
-
-            if let rep = report {
-                DisclosureGroup(
-                    isExpanded: $showDetails,
-                    content: {
-                        ScrollView {
-                            Text(rep.toMarkdown())
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                        }
-                        .frame(maxHeight: 180)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(F50Theme.controlBackground(for: colorScheme))
-                        )
-                        .padding(.top, 6)
-                    },
-                    label: {
-                        Text("展开查看脱敏 Markdown 数据 (\(rep.endpoints.count) 个接口探测)")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                )
-            } else {
-                Text("提交反馈时将自动对网关接口进行探测并生成诊断报告。")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(.secondary.opacity(0.8))
-            }
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(F50Theme.cardBackground(for: colorScheme))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(F50Theme.cardBorder(for: colorScheme), lineWidth: 1)
-                )
-        )
     }
 
     private func loadSelectedPhoto(_ item: PhotosPickerItem?) {
@@ -1022,10 +556,12 @@ public struct DeviceFeedbackView: View {
             ScrollView(showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 10) {
                     // 1. 反馈类型选择
-                    VStack(alignment: .leading, spacing: 6) {
+                    HStack {
                         Text("反馈类型")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
+
+                        Spacer()
 
                         Picker("", selection: $selectedCategory) {
                             ForEach(FeedbackCategory.allCases) { category in
@@ -1035,7 +571,7 @@ public struct DeviceFeedbackView: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: 190, alignment: .trailing)
                     }
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
@@ -1045,7 +581,7 @@ public struct DeviceFeedbackView: View {
                         // 设备型号 (必填)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("设备品牌与型号 (必填)")
+                                Text("设备型号（必填）")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(.secondary)
                                 Spacer()
@@ -1055,7 +591,7 @@ public struct DeviceFeedbackView: View {
                                         .foregroundColor(F50Theme.green)
                                 }
                             }
-                            TextField("例如：中兴 F50 / F30 Pro / 华为 5G CPE / 展锐 MiFi", text: $deviceModel)
+                            TextField("必填", text: $deviceModel)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
                                 .disabled(isProcessing)
@@ -1063,10 +599,10 @@ public struct DeviceFeedbackView: View {
 
                         // 联系方式
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("您的联系方式 (选填)")
+                            Text("联系方式")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(.secondary)
-                            TextField("微信 / QQ / 邮箱，方便开发者沟通跟进", text: $contact)
+                            TextField("选填", text: $contact)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
                                 .disabled(isProcessing)
@@ -1075,12 +611,12 @@ public struct DeviceFeedbackView: View {
                         // 详细描述 (必填)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text("详细问题描述 (必填)")
+                                Text("问题描述")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(.secondary)
                                 Spacer()
                                 let count = userNotes.trimmingCharacters(in: .whitespacesAndNewlines).count
-                                Text(count >= 4 ? "\(count) 字" : "\(count)/4 字")
+                                Text(count >= 4 ? "\(count) 字" : "至少 4 字")
                                     .font(.system(size: 10, design: .monospaced))
                                     .foregroundColor(count >= 4 ? F50Theme.green : .secondary)
                             }
@@ -1095,7 +631,7 @@ public struct DeviceFeedbackView: View {
                                 .disabled(isProcessing)
 
                             if userNotes.isEmpty {
-                                Text(selectedCategory.placeholderHint)
+                                Text("请描述问题现象或操作步骤")
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary.opacity(0.8))
                                     .lineLimit(2)
@@ -1157,9 +693,6 @@ public struct DeviceFeedbackView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
                         }
 
-                        Text("截图会随反馈原样上传，请勿包含密码、短信正文或其他敏感信息。")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
                     }
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
@@ -1198,9 +731,7 @@ public struct DeviceFeedbackView: View {
                                     .foregroundColor(F50Theme.green)
                             }
 
-                            Text(fetcher.isDemoMode
-                                ? "本次演示仅在本机完成，未发送任何数据。"
-                                : "开发者已收到您的反馈及脱敏诊断数据并将跟进处理，感谢支持！")
+                            Text(fetcher.isDemoMode ? "本次演示仅在本机完成。" : "开发者将尽快跟进处理。")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
 
@@ -1235,7 +766,7 @@ public struct DeviceFeedbackView: View {
                             showRouterLoginDiagnostic = true
                         } label: {
                             Label(
-                                routerLoginSessionCookie == nil ? "登录原厂后台后增强诊断（可选）" : "已获取网页登录会话，将用于增强诊断",
+                                routerLoginSessionCookie == nil ? "登录原厂后台（可选）" : "已获取网页登录会话",
                                 systemImage: routerLoginSessionCookie == nil ? "lock.open" : "checkmark.shield.fill"
                             )
                             .font(.system(size: 11))
@@ -1271,38 +802,6 @@ public struct DeviceFeedbackView: View {
                         .padding(.horizontal, 4)
                     }
 
-                    // 诊断报告与备份
-                    if let rep = report {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("本地诊断结果")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(.secondary)
-
-                                Spacer()
-
-                                Button("复制诊断报告") {
-                                    copyReportToClipboard(rep)
-                                }
-                                .font(.system(size: 11))
-                                .buttonStyle(.plain)
-                                .foregroundColor(F50Theme.blue)
-                            }
-
-                            DisclosureGroup("预览脱敏诊断数据", isExpanded: $showDetails) {
-                                TextEditor(text: .constant(rep.toMarkdown()))
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .frame(height: 120)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(Color.secondary.opacity(0.2))
-                                    )
-                            }
-                            .font(.system(size: 11))
-                        }
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-                    }
                 }
                 .padding(.horizontal, 2)
             }
@@ -1475,7 +974,6 @@ public struct DeviceFeedbackView: View {
             }
 
             await MainActor.run {
-                self.report = reportResult
                 self.probeProgress = 0.9
                 self.probeStatusText = "正在提交反馈数据..."
             }
@@ -1513,23 +1011,4 @@ public struct DeviceFeedbackView: View {
         }
     }
 
-    private func copyReportToClipboard(_ report: DeviceDiagnosticReport) {
-        #if os(macOS)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(report.toMarkdown(), forType: .string)
-        #elseif os(iOS)
-        UIPasteboard.general.string = report.toMarkdown()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        withAnimation {
-            showCopiedToast = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation {
-                showCopiedToast = false
-            }
-        }
-        #endif
-        statusFeedbackMessage = "诊断报告已复制到剪贴板！"
-    }
 }

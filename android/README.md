@@ -45,7 +45,7 @@ GET /api/v1/capabilities
 adb shell run-as com.kold.f50.monitor.android cat shared_prefs/f50_agent.xml
 ```
 
-令牌会在首次访问时随机生成并保存在应用私有目录，首选在 Android 设置页查看 LAN API 配对信息。`adb shell run-as ...` 只适用于 debuggable 的 debug APK。`8787` API 保持只读；移动数据、APN / DNS、客户端、SMS、网络模式、Band / Cell Lock 与重启仅通过应用本机的 typed bridge 暴露，不提供任意 shell、AT 或 goform 透传。
+令牌会在首次访问时随机生成并保存在应用私有目录，首选在 Android 设置页查看 LAN API 配对信息。`adb shell run-as ...` 只适用于 debuggable 的 debug APK。`8787` API 保持只读；移动数据、APN、客户端、SMS、网络模式、Band / Cell Lock 与重启仅通过应用本机的 typed bridge 暴露，不提供任意 shell、AT 或 goform 透传。
 
 ## 当前限制
 

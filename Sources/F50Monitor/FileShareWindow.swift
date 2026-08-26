@@ -288,10 +288,6 @@ private struct FileShareView: View {
             }
             .disabled(manager.currentDirectory == nil || manager.isTransferring)
 
-            Button("Finder") {
-                manager.revealInFinder()
-            }
-            .disabled(manager.currentDirectory == nil)
         }
         .buttonStyle(.bordered)
         .padding(12)

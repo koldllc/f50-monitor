@@ -21,6 +21,8 @@ public struct SettingsView: View {
     @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
     @State private var isUpdatingFileSharing = false
     @State private var fileSharingErrorMessage: String?
+    @State private var isDiagnosingChannels = false
+    @State private var channelDiagnosticResults: [DataChannelDiagnosticResult] = []
     
     init(
         fetcher: F50Fetcher,
@@ -105,6 +107,39 @@ public struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             VStack(alignment: .leading, spacing: 8) {
+                Text("数据通道诊断")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Text("检测 80、5555、2333 是否可获取数据")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
+                        diagnoseDataChannels()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isDiagnosingChannels)
+                }
+
+                ForEach(channelDiagnosticResults) { result in
+                    HStack(spacing: 6) {
+                        Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(result.isAvailable ? F50Theme.green : F50Theme.red)
+                        Text(result.name)
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(result.detail)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text("文件共享")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
@@ -153,11 +188,6 @@ public struct SettingsView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(F50Theme.blue)
 
-                        Button("Finder") {
-                            guard let url = F50Configuration.fileShareURL(from: fetcher.baseURLString) else { return }
-                            NSWorkspace.shared.open(url)
-                        }
-                        .buttonStyle(.bordered)
                     }
                 }
             }
@@ -494,6 +524,15 @@ public struct SettingsView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
+        }
+    }
+
+    private func diagnoseDataChannels() {
+        isDiagnosingChannels = true
+        channelDiagnosticResults = []
+        Task { @MainActor in
+            channelDiagnosticResults = await fetcher.diagnoseDataChannels()
+            isDiagnosingChannels = false
         }
     }
 

@@ -153,6 +153,9 @@ class RuntimeState(private val context: Context) {
                 "set_network_mode" -> success {
                     deviceController.setNetworkMode(config, JSONObject(argsJson).optString("mode"))
                 }
+                "save_wifi" -> success {
+                    deviceController.saveWiFi(config, JSONObject(argsJson).optJSONObject("wifi") ?: JSONObject(argsJson))
+                }
                 "save_apn" -> success {
                     deviceController.saveApn(config, JSONObject(argsJson).optJSONObject("apn") ?: JSONObject(argsJson))
                 }

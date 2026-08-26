@@ -19,6 +19,8 @@ class DeviceController {
     @Synchronized
     fun snapshot(config: F50Config): JSONObject {
         val payload = get(config, CONTROL_FIELDS)
+        val accessPoints = runCatching { get(config, "queryAccessPointInfo").optJSONArray("ResponseList") }.getOrNull()
+        val wifiModule = runCatching { get(config, "queryWiFiModuleSwitch") }.getOrNull()
         val clients = JSONArray()
         appendClients(clients, payload.optJSONArray("station_list"), false, false)
         appendClients(clients, payload.optJSONArray("lan_station_list"), true, false)
@@ -41,6 +43,54 @@ class DeviceController {
             val ppp = payload.optString("ppp_status").lowercase()
             put("mobileDataEnabled", ppp !in setOf("ppp_disconnected", "disconnected", "disconnect", "0", "off"))
             put("networkMode", payload.optString("net_select", "WL_AND_5G"))
+            val wifiSwitch = first(wifiModule ?: payload, "WiFiModuleSwitch", "queryWiFiModuleSwitch")
+            val chip24Enabled = (0 until (accessPoints?.length() ?: 0)).asSequence()
+                .mapNotNull { accessPoints?.optJSONObject(it) }
+                .firstOrNull { it.optInt("ChipIndex") == 0 && it.optInt("AccessPointIndex") == 0 }
+                ?.optString("AccessPointSwitchStatus") == "1"
+            val chip5Enabled = (0 until (accessPoints?.length() ?: 0)).asSequence()
+                .mapNotNull { accessPoints?.optJSONObject(it) }
+                .firstOrNull { it.optInt("ChipIndex") == 1 && it.optInt("AccessPointIndex") == 0 }
+                ?.optString("AccessPointSwitchStatus") == "1"
+            val radioMode = when {
+                wifiSwitch.lowercase() in setOf("0", "off", "disabled", "false") -> "0"
+                chip5Enabled && !chip24Enabled -> "2"
+                chip24Enabled -> "1"
+                payload.optString("wifi_onoff_state").lowercase() in setOf("0", "off", "disabled", "false") -> "0"
+                payload.optString("wifi_chip2_ssid1_switch_onoff") == "1" &&
+                    payload.optString("wifi_chip1_ssid1_switch_onoff") != "1" -> "2"
+                else -> "1"
+            }
+            val preferredChipIndex = if (radioMode == "2") 1 else 0
+            val accessPoint = (0 until (accessPoints?.length() ?: 0)).asSequence()
+                .mapNotNull { accessPoints?.optJSONObject(it) }
+                .firstOrNull { it.optInt("ChipIndex") == preferredChipIndex && it.optInt("AccessPointIndex") == 0 }
+                ?: (0 until (accessPoints?.length() ?: 0)).asSequence()
+                    .mapNotNull { accessPoints?.optJSONObject(it) }
+                    .firstOrNull { it.optInt("AccessPointIndex") == 0 }
+            val accessPointPassword = accessPoint?.optString("Password").orEmpty()
+            val encodedPassword = accessPointPassword.ifBlank { payload.optString("WPAPSK1_encode") }
+            val decodedPassword = encodedPassword.takeIf { it.isNotBlank() }?.let { value ->
+                runCatching { String(Base64.decode(value, Base64.DEFAULT), Charsets.UTF_8) }.getOrNull()
+                    ?.takeIf { decoded -> '\uFFFD' !in decoded && decoded.none { it.isISOControl() } }
+            }
+            val wifiPassword = decodedPassword
+                ?: accessPointPassword.ifBlank { payload.optString("WPAPSK1") }
+            val chipSsidKey = if (radioMode == "2") "wifi_chip2_ssid1_ssid" else "wifi_chip1_ssid1_ssid"
+            val chipMaximumKey = if (radioMode == "2") "wifi_chip2_ssid1_max_access_num" else "wifi_chip1_ssid1_max_access_num"
+            put("wifi", JSONObject().apply {
+                put("radioMode", radioMode)
+                put("ssid", accessPoint?.optString("SSID")?.takeIf { it.isNotBlank() } ?: first(payload, "SSID1", chipSsidKey))
+                put("broadcastsSSID", (accessPoint?.optString("ApBroadcastDisabled") ?: payload.optString("HideSSID")) != "1")
+                put("securityMode", accessPoint?.optString("AuthMode")?.takeIf { it.isNotBlank() } ?: payload.optString("AuthMode", "WPA2PSK"))
+                put("password", wifiPassword)
+                put("maximumClients", (accessPoint?.optInt("ApMaxStationNumber", -1)?.takeIf { it > 0 }
+                    ?: payload.optInt("MAX_Access_num", payload.optInt(chipMaximumKey, 10))).coerceIn(1, 32))
+                put("usesEncodedPassword", decodedPassword != null)
+                put("noForwarding", accessPoint?.optString("ApIsolate")?.takeIf { it.isNotBlank() }
+                    ?: payload.optString("NoForwarding", "0"))
+                put("qrCodeDisplaySwitch", payload.optString("qrcode_display_switch", "1"))
+            })
             put("lteBands", payload.optString("lte_band_lock"))
             put("nrBands", payload.optString("nr_band_lock"))
             put("clients", clients)
@@ -54,8 +104,6 @@ class DeviceController {
                 put("password", first(payload, "apn_ppp_passwd", "ppp_passwd_ui"))
                 put("authentication", first(payload, "apn_ppp_auth_mode", "ppp_auth_mode_ui").ifBlank { "none" })
                 put("pdpType", first(payload, "apn_pdp_type", "pdp_type_ui").ifBlank { "IPv4v6" })
-                put("primaryDNS", first(payload, "prefer_dns_manual", "prefer_dns_manual_ui"))
-                put("secondaryDNS", first(payload, "standby_dns_manual", "standby_dns_manual_ui"))
             })
         }
     }
@@ -72,6 +120,54 @@ class DeviceController {
     }
 
     @Synchronized
+    fun saveWiFi(config: F50Config, wifi: JSONObject) {
+        val ssid = wifi.optString("ssid").trim()
+        val radioMode = wifi.optString("radioMode", "2")
+        val securityMode = wifi.optString("securityMode", "WPA2PSK")
+        val password = wifi.optString("password")
+        val maximumClients = wifi.optInt("maximumClients", 10)
+        require(radioMode in WIFI_RADIO_MODES) { "不支持的 Wi-Fi 工作频段" }
+        if (radioMode == "0") {
+            set(config, mapOf(
+                "goformId" to "switchWiFiModule",
+                "SwitchOption" to radioMode
+            ))
+            return
+        }
+        val chipEnum = if (radioMode == "2") "chip2" else "chip1"
+        val chipIndex = if (radioMode == "2") "1" else "0"
+        require(ssid.isNotBlank() && ssid.toByteArray(Charsets.UTF_8).size <= 32) { "网络名称须为 1～32 字节" }
+        require(securityMode in WIFI_SECURITY_MODES) { "不支持的 Wi-Fi 安全模式" }
+        require(maximumClients in 1..32) { "最大接入数须为 1～32" }
+        require(securityMode == "OPEN" || password.toByteArray(Charsets.UTF_8).size in 8..63) {
+            "Wi-Fi 密码须为 8～63 个字符"
+        }
+        val parameters = mutableMapOf(
+            "goformId" to "setAccessPointInfo",
+            "ChipIndex" to chipIndex,
+            "AccessPointIndex" to "0",
+            "AccessPointSwitchStatus" to "1",
+            "SSID" to ssid,
+            "ApMaxStationNumber" to maximumClients.toString(),
+            "ApIsolate" to wifi.optString("noForwarding", "0"),
+            "AuthMode" to securityMode,
+            "ApBroadcastDisabled" to if (wifi.optBoolean("broadcastsSSID", true)) "0" else "1",
+            "EncrypType" to if (securityMode == "OPEN") "NONE" else "CCMP"
+        )
+        if (securityMode != "OPEN") {
+            parameters["Password"] = if (wifi.optBoolean("usesEncodedPassword")) {
+                Base64.encodeToString(password.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            } else password
+        }
+        set(config, parameters)
+        set(config, mapOf(
+            "goformId" to "switchWiFiChip",
+            "ChipEnum" to chipEnum,
+            "GuestEnable" to "0"
+        ))
+    }
+
+    @Synchronized
     fun saveApn(config: F50Config, apn: JSONObject) {
         val profileName = apn.optString("profileName").trim()
         val apnName = apn.optString("apn").trim()
@@ -81,8 +177,6 @@ class DeviceController {
         val pdp = apn.optString("pdpType", "IPv4v6")
         require(auth in setOf("none", "chap", "pap")) { "鉴权方式无效" }
         require(pdp in setOf("IP", "IPv6", "IPv4v6")) { "PDP 类型无效" }
-        val primaryDns = apn.optString("primaryDNS").trim()
-        val secondaryDns = apn.optString("secondaryDNS").trim()
         val parameters = mutableMapOf(
             "goformId" to "APN_PROC_EX", "apn_mode" to "manual", "apn_action" to "save",
             "profile_name" to profileName, "index" to index, "wan_dial" to "*99#", "apn_wan_dial" to "*99#",
@@ -91,16 +185,13 @@ class DeviceController {
             "apn_wan_apn" to apnName, "wan_apn" to apnName,
             "apn_ppp_auth_mode" to auth, "ppp_auth_mode" to auth,
             "apn_ppp_username" to apn.optString("username"), "ppp_username" to apn.optString("username"),
-            "apn_ppp_passwd" to apn.optString("password"), "ppp_passwd" to apn.optString("password"),
-            "dns_mode" to if (primaryDns.isEmpty() && secondaryDns.isEmpty()) "auto" else "manual",
-            "prefer_dns_manual" to primaryDns, "standby_dns_manual" to secondaryDns
+            "apn_ppp_passwd" to apn.optString("password"), "ppp_passwd" to apn.optString("password")
         )
         if (pdp != "IP") parameters.putAll(mapOf(
             "apn_ipv6_wan_apn" to apnName, "ipv6_wan_apn" to apnName,
-            "apn_ipv6_ppp_auth_mode" to auth, "ipv6_ppp_auth_mode" to auth,
-            "apn_ipv6_ppp_username" to apn.optString("username"), "ipv6_ppp_username" to apn.optString("username"),
-            "apn_ipv6_ppp_passwd" to apn.optString("password"), "ipv6_ppp_passwd" to apn.optString("password"),
-            "ipv6_dns_mode" to "auto", "ipv6_prefer_dns_manual" to "", "ipv6_standby_dns_manual" to ""
+                "apn_ipv6_ppp_auth_mode" to auth, "ipv6_ppp_auth_mode" to auth,
+                "apn_ipv6_ppp_username" to apn.optString("username"), "ipv6_ppp_username" to apn.optString("username"),
+                "apn_ipv6_ppp_passwd" to apn.optString("password"), "ipv6_ppp_passwd" to apn.optString("password")
         ))
         set(config, parameters)
         set(config, mapOf(
@@ -350,11 +441,13 @@ class DeviceController {
 
     companion object {
         private val NETWORK_MODES = setOf("WL_AND_5G", "LTE_AND_5G", "Only_5G", "WCDMA_AND_LTE", "Only_LTE", "Only_WCDMA")
+        private val WIFI_RADIO_MODES = setOf("0", "1", "2")
+        private val WIFI_SECURITY_MODES = setOf("OPEN", "WPA2PSK", "WPAPSKWPA2PSK")
         private val MAC_REGEX = Regex("^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$")
         private const val SUPPORTED_LTE = "1,3,5,8,34,38,39,40,41"
         private const val SUPPORTED_NR = "1,5,8,28,41,78"
         private const val UFI_LOCAL_API = "http://127.0.0.1:8080/api"
         private const val KANO_SIGN_KEY = "minikano_kOyXz0Ciz4V7wR0IeKmJFYFQ20jd"
-        private const val CONTROL_FIELDS = "ppp_status,net_select,lte_band_lock,nr_band_lock,station_list,lan_station_list,queryDeviceAccessControlList,hostNameList,apn_Current_index,apn_mode,apn_m_profile_name,profile_name,profile_name_ui,apn_wan_apn,apn_ppp_username,apn_ppp_passwd,apn_ppp_auth_mode,apn_pdp_type,dns_mode,prefer_dns_manual,standby_dns_manual"
+        private const val CONTROL_FIELDS = "ppp_status,net_select,queryWiFiModuleSwitch,wifi_onoff_state,wifi_chip1_ssid1_switch_onoff,wifi_chip2_ssid1_switch_onoff,SSID1,wifi_chip1_ssid1_ssid,wifi_chip2_ssid1_ssid,HideSSID,AuthMode,EncrypType,WPAPSK1,WPAPSK1_encode,MAX_Access_num,wifi_chip1_ssid1_max_access_num,wifi_chip2_ssid1_max_access_num,NoForwarding,qrcode_display_switch,lte_band_lock,nr_band_lock,station_list,lan_station_list,queryDeviceAccessControlList,hostNameList,apn_Current_index,apn_mode,apn_m_profile_name,profile_name,profile_name_ui,apn_wan_apn,apn_ppp_username,apn_ppp_passwd,apn_ppp_auth_mode,apn_pdp_type"
     }
 }

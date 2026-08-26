@@ -22,31 +22,31 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">设备品牌与型号 (选填)</label>
+          <label class="form-label">设备型号（必填）</label>
           <input
             v-model="deviceModel"
             type="text"
-            placeholder="例如：中兴 F50 / F30 Pro / 华为 5G CPE"
+            placeholder="必填"
             :disabled="isSubmitting"
           />
         </div>
 
         <div class="form-group">
-          <label class="form-label">您的联系方式 (选填)</label>
+          <label class="form-label">联系方式</label>
           <input
             v-model="contact"
             type="text"
-            placeholder="微信 / QQ / 邮箱"
+            placeholder="选填"
             :disabled="isSubmitting"
           />
         </div>
 
-        <div class="form-group">
-          <label class="form-label">详细问题描述 (必填，至少 4 字)</label>
+        <div class="form-group description-group">
+          <label class="form-label">问题描述</label>
           <textarea
             v-model="userNotes"
             rows="3"
-            placeholder="请详细描述触发问题的操作步骤、提示信息或异常现象..."
+            placeholder="请描述问题现象或操作步骤"
             :disabled="isSubmitting"
           ></textarea>
         </div>
@@ -65,8 +65,8 @@
 
       <div class="modal-footer">
         <button class="btn-cancel" @click="handleClose" :disabled="isSubmitting">取消</button>
-        <button class="btn-submit" @click="handleSubmit" :disabled="isSubmitting || userNotes.trim().length < 4">
-          {{ isSubmitting ? '正在抓取诊断并提交...' : '一键抓取并发送反馈' }}
+        <button class="btn-submit" @click="handleSubmit" :disabled="isSubmitting || !deviceModel.trim() || userNotes.trim().length < 4">
+          {{ isSubmitting ? '正在提交...' : '提交反馈' }}
         </button>
       </div>
     </div>
@@ -100,8 +100,13 @@ function handleClose() {
 }
 
 async function handleSubmit() {
+  if (!deviceModel.value.trim()) {
+    errorMessage.value = '请填写设备型号。';
+    return;
+  }
+
   if (userNotes.value.trim().length < 4) {
-    errorMessage.value = '请在「详细问题描述」中至少输入 4 个字符以提供复现说明。';
+    errorMessage.value = '请至少输入 4 个字。';
     return;
   }
 
@@ -182,23 +187,33 @@ async function handleSubmit() {
 
 .form-group {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 12px;
 }
 
 .form-label {
+  flex: 0 0 72px;
   font-size: 11px;
   font-weight: 600;
   color: #666;
 }
 
 input[type="text"], select, textarea {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid #ddd;
   font-size: 12px;
   box-sizing: border-box;
+}
+
+.description-group {
+  align-items: flex-start;
+}
+
+.description-group .form-label {
+  padding-top: 7px;
 }
 
 .status-box {

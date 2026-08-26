@@ -19,6 +19,15 @@ final class F50NetworkDelegate: NSObject, URLSessionDelegate {
     }
 }
 
+public struct DataChannelDiagnosticResult: Identifiable, Sendable {
+    public let port: Int
+    public let name: String
+    public let isAvailable: Bool
+    public let detail: String
+
+    public var id: Int { port }
+}
+
 @MainActor
 public class F50Fetcher: ObservableObject {
     private let session: URLSession = {
@@ -170,6 +179,15 @@ public class F50Fetcher: ObservableObject {
 
     public var currentSessionCookie: String? {
         return sessionCookie
+    }
+
+    /// 分别验证 Router HTTP、ADB Shell 与 UFI API 能否返回可用数据；不修改当前连接状态。
+    public func diagnoseDataChannels() async -> [DataChannelDiagnosticResult] {
+        let endpoints = connectionEndpoints(from: baseURLString.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")))
+        let router = await diagnoseRouterChannel(baseURL: endpoints.routerBaseURL)
+        let adb = await diagnoseADBChannel(host: URL(string: endpoints.routerBaseURL)?.host ?? "192.168.0.1")
+        let ufi = await diagnoseUFIChannel(baseURL: endpoints.ufiBaseURL)
+        return [router, adb, ufi]
     }
 
     // Network throughput tracking
@@ -1237,6 +1255,69 @@ public class F50Fetcher: ObservableObject {
 
     private func connectionEndpoints(from cleanBase: String) -> (routerBaseURL: String, ufiBaseURL: String) {
         F50Configuration.resolveEndpoints(from: cleanBase)
+    }
+
+    private func diagnoseRouterChannel(baseURL: String) async -> DataChannelDiagnosticResult {
+        let commands = "Language,network_type,signalbar,ppp_status"
+        guard let url = URL(string: "\(baseURL)/goform/goform_get_cmd_process?multi_data=1&isTest=false&cmd=\(commands)") else {
+            return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: false, detail: "接口地址无效")
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 4.0
+        request.setValue("\(baseURL)/index.html", forHTTPHeaderField: "Referer")
+        if let sessionCookie, !sessionCookie.isEmpty {
+            request.setValue(sessionCookie, forHTTPHeaderField: "Cookie")
+        }
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: false, detail: "非 HTTP 响应")
+            }
+            guard http.statusCode == 200 else {
+                return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: false, detail: "HTTP \(http.statusCode)")
+            }
+            guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  F50ResponseParser.isRouterStatusPayload(payload) else {
+                return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: false, detail: "HTTP 200，但未返回有效状态数据")
+            }
+            return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: true, detail: "可读取有效状态数据")
+        } catch {
+            return DataChannelDiagnosticResult(port: 80, name: "80 Router", isAvailable: false, detail: error.localizedDescription)
+        }
+    }
+
+    private func diagnoseADBChannel(host: String) async -> DataChannelDiagnosticResult {
+        guard let output = await ADBHardwareFetcher.executeShell(
+            host: host,
+            port: 5555,
+            command: "printf F50_CHANNEL_OK",
+            timeoutSec: 4.0
+        ), output.contains("F50_CHANNEL_OK") else {
+            return DataChannelDiagnosticResult(port: 5555, name: "5555 ADB", isAvailable: false, detail: "无法执行 ADB Shell 读取")
+        }
+        return DataChannelDiagnosticResult(port: 5555, name: "5555 ADB", isAvailable: true, detail: "可通过 ADB Shell 获取数据")
+    }
+
+    private func diagnoseUFIChannel(baseURL: String) async -> DataChannelDiagnosticResult {
+        guard let url = URL(string: "\(baseURL)/api/baseDeviceInfo") else {
+            return DataChannelDiagnosticResult(port: 2333, name: "2333 UFI", isAvailable: false, detail: "接口地址无效")
+        }
+        for token in candidateTokens() {
+            do {
+                let (data, response) = try await session.data(for: signedUFIRequest(url: url, token: token))
+                guard let http = response as? HTTPURLResponse else { continue }
+                guard http.statusCode == 200 else { continue }
+                guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                let content = (payload["data"] as? [String: Any]) ?? (payload["result"] as? [String: Any]) ?? payload
+                if !content.isEmpty, content["error"] == nil {
+                    return DataChannelDiagnosticResult(port: 2333, name: "2333 UFI", isAvailable: true, detail: "可读取设备信息")
+                }
+            } catch {
+                continue
+            }
+        }
+        return DataChannelDiagnosticResult(port: 2333, name: "2333 UFI", isAvailable: false, detail: "无法读取有效设备信息")
     }
 
     private func handleRouterFailure(
@@ -2923,19 +3004,81 @@ public class F50Fetcher: ObservableObject {
     public func fetchDeviceControlSnapshot() async throws -> F50DeviceControlSnapshot {
         guard !isDemoMode else { throw F50DeviceControlError.demoMode }
         let commands = [
-            "ppp_status", "net_select", "lte_band_lock", "nr_band_lock", "network_information", "neighbor_cell_info",
+            "ppp_status", "net_select", "usb_network_protocal", "lte_band_lock", "nr_band_lock", "network_information", "neighbor_cell_info",
+            "queryWiFiModuleSwitch", "wifi_onoff_state", "wifi_chip1_ssid1_switch_onoff", "wifi_chip2_ssid1_switch_onoff",
+            "SSID1", "wifi_chip1_ssid1_ssid", "wifi_chip2_ssid1_ssid", "HideSSID", "AuthMode", "EncrypType",
+            "WPAPSK1", "WPAPSK1_encode", "MAX_Access_num", "wifi_chip1_ssid1_max_access_num", "wifi_chip2_ssid1_max_access_num",
+            "NoForwarding", "qrcode_display_switch",
             "station_list", "lan_station_list", "queryDeviceAccessControlList", "hostNameList",
             "apn_Current_index", "apn_mode", "apn_m_profile_name", "profile_name", "profile_name_ui",
             "apn_wan_apn", "apn_ppp_username", "apn_ppp_passwd", "apn_ppp_auth_mode", "apn_pdp_type",
-            "dns_mode", "prefer_dns_manual", "standby_dns_manual",
-            "data_volume_limit_switch", "data_volume_clear_switch", "data_volume_clear_date",
-            "data_volume_limit_size", "data_volume_limit_unit", "data_volume_limit_percentage"
+            "data_volume_limit_switch", "data_volume_limit_unit", "data_volume_limit_size",
+            "data_volume_alert_percent", "monthly_tx_bytes", "monthly_rx_bytes", "monthly_time",
+            "wan_auto_clear_flow_data_switch", "traffic_clear_date"
         ].joined(separator: ",")
         let payload = try await controlGet(commands: commands)
+        let accessPointPayload = try? await controlGet(commands: "queryAccessPointInfo")
+        let wifiModulePayload = try? await controlGet(commands: "queryWiFiModuleSwitch")
 
         let ppp = stringValue(payload["ppp_status"]).lowercased()
         let isMobileDataEnabled = !["ppp_disconnected", "disconnected", "disconnect", "0", "off"].contains(ppp)
         let mode = F50NetworkMode(rawValue: stringValue(payload["net_select"])) ?? .automatic
+        let usbNetworkProtocol = F50USBNetworkProtocol(rawValue: stringValue(payload["usb_network_protocal"])) ?? .automatic
+        let wifiSwitch = firstString(
+            wifiModulePayload ?? payload,
+            keys: ["WiFiModuleSwitch", "queryWiFiModuleSwitch"]
+        )
+        let accessPoints = accessPointPayload?["ResponseList"] as? [[String: Any]] ?? []
+        let chip24AccessPoint = accessPoints.first {
+            intValue($0["ChipIndex"]) == 0 && intValue($0["AccessPointIndex"]) == 0
+        }
+        let chip5AccessPoint = accessPoints.first {
+            intValue($0["ChipIndex"]) == 1 && intValue($0["AccessPointIndex"]) == 0
+        }
+        let legacyChip24Switch = stringValue(payload["wifi_chip1_ssid1_switch_onoff"])
+        let legacyChip5Switch = stringValue(payload["wifi_chip2_ssid1_switch_onoff"])
+        let chip24Enabled = chip24AccessPoint.map { stringValue($0["AccessPointSwitchStatus"]) == "1" }
+            ?? (legacyChip24Switch.isEmpty ? nil : legacyChip24Switch == "1")
+        let chip5Enabled = chip5AccessPoint.map { stringValue($0["AccessPointSwitchStatus"]) == "1" }
+            ?? (legacyChip5Switch.isEmpty ? nil : legacyChip5Switch == "1")
+        let wifiRadioMode = F50WiFiRadioMode.resolve(
+            moduleSwitch: wifiSwitch.isEmpty ? stringValue(payload["wifi_onoff_state"]) : wifiSwitch,
+            chip24Enabled: chip24Enabled,
+            chip5Enabled: chip5Enabled
+        )
+        let preferredChipIndex = wifiRadioMode == .only5GHz ? 1 : 0
+        let accessPoint = accessPoints.first {
+            intValue($0["ChipIndex"]) == preferredChipIndex && intValue($0["AccessPointIndex"]) == 0
+        } ?? accessPoints.first { intValue($0["AccessPointIndex"]) == 0 }
+        let accessPointPassword = firstString(accessPoint ?? [:], keys: ["Password"])
+        let encodedWiFiPassword = accessPointPassword.isEmpty
+            ? stringValue(payload["WPAPSK1_encode"])
+            : accessPointPassword
+        let decodedWiFiPassword = Data(base64Encoded: encodedWiFiPassword)
+            .flatMap { String(data: $0, encoding: .utf8) }
+        let selectedChipSSIDKey = wifiRadioMode == .only5GHz
+            ? "wifi_chip2_ssid1_ssid"
+            : "wifi_chip1_ssid1_ssid"
+        let selectedChipMaximumKey = wifiRadioMode == .only5GHz
+            ? "wifi_chip2_ssid1_max_access_num"
+            : "wifi_chip1_ssid1_max_access_num"
+        let reportedMaximumClients = intValue(
+            accessPoint?["ApMaxStationNumber"] ?? payload["MAX_Access_num"] ?? payload[selectedChipMaximumKey]
+        )
+        let wifi = F50WiFiSettings(
+            radioMode: wifiRadioMode,
+            ssid: firstString(accessPoint ?? payload, keys: ["SSID", "SSID1", selectedChipSSIDKey]),
+            broadcastsSSID: firstString(accessPoint ?? payload, keys: ["ApBroadcastDisabled", "HideSSID"]) != "1",
+            securityMode: F50WiFiSecurityMode(
+                rawValue: firstString(accessPoint ?? payload, keys: ["AuthMode"])
+            ) ?? .wpa2AES,
+            password: decodedWiFiPassword
+                ?? (!accessPointPassword.isEmpty ? accessPointPassword : stringValue(payload["WPAPSK1"])),
+            maximumClients: (1...32).contains(reportedMaximumClients) ? reportedMaximumClients : 10,
+            usesEncodedPassword: decodedWiFiPassword != nil,
+            noForwarding: firstString(accessPoint ?? payload, keys: ["ApIsolate", "NoForwarding"], fallback: "0"),
+            qrCodeDisplaySwitch: firstString(payload, keys: ["qrcode_display_switch"], fallback: "1")
+        )
         let apn = F50APNSettings(
             index: intValue(payload["apn_Current_index"] ?? payload["index"]),
             profileName: firstString(payload, keys: ["apn_m_profile_name", "profile_name", "profile_name_ui"]),
@@ -2944,22 +3087,40 @@ public class F50Fetcher: ObservableObject {
             password: firstString(payload, keys: ["apn_ppp_passwd", "ppp_passwd_ui"]),
             authentication: firstString(payload, keys: ["apn_ppp_auth_mode", "ppp_auth_mode_ui"], fallback: "none"),
             pdpType: firstString(payload, keys: ["apn_pdp_type", "pdp_type_ui"], fallback: "IPv4v6"),
-            primaryDNS: firstString(payload, keys: ["prefer_dns_manual", "prefer_dns_manual_ui"]),
-            secondaryDNS: firstString(payload, keys: ["standby_dns_manual", "standby_dns_manual_ui"]),
             isAutomatic: stringValue(payload["apn_mode"]).lowercased() != "manual"
         )
-        let clearDay = intValue(payload["data_volume_clear_date"])
-        let reminderPercentage = intValue(payload["data_volume_limit_percentage"])
+        let clearDay = intValue(payload["traffic_clear_date"])
+        let reminderPercentage = intValue(payload["data_volume_alert_percent"])
+        let limitParts = stringValue(payload["data_volume_limit_size"]).split(separator: "_", maxSplits: 1)
+        let limit = limitParts.first.flatMap { Int($0) } ?? intValue(payload["data_volume_limit_size"])
+        let reportedUnit = stringValue(payload["data_volume_limit_unit"]).uppercased()
         let trafficUnit: F50TrafficUnit
-        switch stringValue(payload["data_volume_limit_unit"]).uppercased() {
+        switch reportedUnit {
         case "0", "MB", "M": trafficUnit = .megabytes
-        default: trafficUnit = .gigabytes
+        case "1", "GB", "G": trafficUnit = .gigabytes
+        default:
+            // Router 80 会把套餐值编码为“额度_倍率”，例如 205_1024 表示 205 GB。
+            trafficUnit = limitParts.dropFirst().first == "1024" ? .gigabytes : .megabytes
         }
+        let monthlyRx = UInt64(stringValue(payload["monthly_rx_bytes"])) ?? 0
+        let monthlyTx = UInt64(stringValue(payload["monthly_tx_bytes"])) ?? 0
+        let monitoredUsedBytes = monthlyRx + monthlyTx > 0
+            ? monthlyRx + monthlyTx
+            : (status.packageTotal > 0 ? status.packageTotal : status.monthlyTotal)
+        let usedUnitDivisor = trafficUnit == .gigabytes
+            ? 1024.0 * 1024.0 * 1024.0
+            : 1024.0 * 1024.0
+        let used = Double(monitoredUsedBytes) / usedUnitDivisor
+        let effectiveClearDay = (1...31).contains(clearDay)
+            ? clearDay
+            : ((1...31).contains(status.trafficResetDay) ? status.trafficResetDay : 1)
         let trafficManagement = F50TrafficManagementSettings(
             isEnabled: stringValue(payload["data_volume_limit_switch"]) == "1",
-            clearsAutomatically: stringValue(payload["data_volume_clear_switch"]) != "0",
-            clearDay: (1...31).contains(clearDay) ? clearDay : 1,
-            limit: max(0, intValue(payload["data_volume_limit_size"])),
+            clearsAutomatically: ["1", "on", "true"].contains(stringValue(payload["wan_auto_clear_flow_data_switch"]).lowercased()),
+            clearDay: effectiveClearDay,
+            used: max(0, used),
+            usedUnit: trafficUnit,
+            limit: max(0, limit),
             unit: trafficUnit,
             reminderPercentage: (1...100).contains(reminderPercentage) ? reminderPercentage : 90
         )
@@ -2982,6 +3143,8 @@ public class F50Fetcher: ObservableObject {
         return F50DeviceControlSnapshot(
             isMobileDataEnabled: isMobileDataEnabled,
             networkMode: mode,
+            usbNetworkProtocol: usbNetworkProtocol,
+            wifi: wifi,
             apn: apn,
             trafficManagement: trafficManagement,
             clients: clients.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending },
@@ -3080,6 +3243,60 @@ public class F50Fetcher: ObservableObject {
         ])
     }
 
+    public func setUSBNetworkProtocol(_ usbProtocol: F50USBNetworkProtocol) async throws {
+        try await controlSet([
+            "goformId": "SET_USB_NETWORK_PROTOCAL",
+            "usb_network_protocal": usbProtocol.rawValue
+        ])
+    }
+
+    public func saveWiFiSettings(_ settings: F50WiFiSettings) async throws {
+        if settings.radioMode == .off {
+            try await controlSet([
+                "goformId": "switchWiFiModule",
+                "SwitchOption": settings.radioMode.rawValue
+            ])
+            return
+        }
+        guard let chipEnum = settings.radioMode.firmwareChipEnum,
+              let chipIndex = settings.radioMode.firmwareChipIndex else {
+            throw F50DeviceControlError.rejected("不支持的 Wi-Fi 工作频段")
+        }
+        let ssid = settings.ssid.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ssid.isEmpty, ssid.utf8.count <= 32,
+              (1...32).contains(settings.maximumClients) else {
+            throw F50DeviceControlError.rejected("请输入 1～32 字节的网络名称，并设置 1～32 台最大接入数")
+        }
+        if settings.securityMode != .open,
+           !(8...63).contains(settings.password.utf8.count) {
+            throw F50DeviceControlError.rejected("Wi-Fi 密码须为 8～63 个字符")
+        }
+
+        var parameters = [
+            "goformId": "setAccessPointInfo",
+            "ChipIndex": chipIndex,
+            "AccessPointIndex": "0",
+            "AccessPointSwitchStatus": "1",
+            "SSID": ssid,
+            "ApMaxStationNumber": String(settings.maximumClients),
+            "ApIsolate": settings.noForwarding,
+            "AuthMode": settings.securityMode.rawValue,
+            "ApBroadcastDisabled": settings.broadcastsSSID ? "0" : "1",
+            "EncrypType": settings.securityMode == .open ? "NONE" : "CCMP"
+        ]
+        if settings.securityMode != .open {
+            parameters["Password"] = settings.usesEncodedPassword
+                ? Data(settings.password.utf8).base64EncodedString()
+                : settings.password
+        }
+        try await controlSet(parameters)
+        try await controlSet([
+            "goformId": "switchWiFiChip",
+            "ChipEnum": chipEnum,
+            "GuestEnable": "0"
+        ])
+    }
+
     public func fetchSambaEnabled() async throws -> Bool {
         guard !isDemoMode else { throw F50DeviceControlError.demoMode }
 
@@ -3126,7 +3343,6 @@ public class F50Fetcher: ObservableObject {
               !settings.apn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw F50DeviceControlError.rejected("请填写配置名称与 APN")
         }
-        let dnsMode = settings.primaryDNS.isEmpty && settings.secondaryDNS.isEmpty ? "auto" : "manual"
         var parameters: [String: String] = [
             "goformId": "APN_PROC_EX", "apn_mode": "manual", "apn_action": "save",
             "profile_name": settings.profileName, "index": String(max(0, settings.index)),
@@ -3136,17 +3352,14 @@ public class F50Fetcher: ObservableObject {
             "apn_wan_apn": settings.apn, "wan_apn": settings.apn,
             "apn_ppp_auth_mode": settings.authentication, "ppp_auth_mode": settings.authentication,
             "apn_ppp_username": settings.username, "ppp_username": settings.username,
-            "apn_ppp_passwd": settings.password, "ppp_passwd": settings.password,
-            "dns_mode": dnsMode, "prefer_dns_manual": settings.primaryDNS,
-            "standby_dns_manual": settings.secondaryDNS
+            "apn_ppp_passwd": settings.password, "ppp_passwd": settings.password
         ]
         if settings.pdpType != "IP" {
             parameters.merge([
                 "apn_ipv6_wan_apn": settings.apn, "ipv6_wan_apn": settings.apn,
                 "apn_ipv6_ppp_auth_mode": settings.authentication, "ipv6_ppp_auth_mode": settings.authentication,
                 "apn_ipv6_ppp_username": settings.username, "ipv6_ppp_username": settings.username,
-                "apn_ipv6_ppp_passwd": settings.password, "ipv6_ppp_passwd": settings.password,
-                "ipv6_dns_mode": "auto", "ipv6_prefer_dns_manual": "", "ipv6_standby_dns_manual": ""
+                "apn_ipv6_ppp_passwd": settings.password, "ipv6_ppp_passwd": settings.password
             ]) { _, new in new }
         }
         try await controlSet(parameters)
@@ -3163,17 +3376,39 @@ public class F50Fetcher: ObservableObject {
     public func saveTrafficManagement(_ settings: F50TrafficManagementSettings) async throws {
         guard (1...31).contains(settings.clearDay),
               (1...100).contains(settings.reminderPercentage),
+              settings.used.isFinite, settings.used >= 0,
               !settings.isEnabled || settings.limit > 0 else {
-            throw F50DeviceControlError.rejected("请填写有效的套餐额度、清零日期与提醒比例")
+            throw F50DeviceControlError.rejected("请填写有效的已用流量、套餐额度、清零日期与提醒比例")
+        }
+        let limitMultiplier = settings.unit == .gigabytes ? 1024 : 1
+        var parameters = [
+            "goformId": "DATA_LIMIT_SETTING",
+            "data_volume_limit_switch": settings.isEnabled ? "1" : "0",
+            "wan_auto_clear_flow_data_switch": settings.clearsAutomatically ? "on" : "off",
+            "traffic_clear_date": String(settings.clearDay),
+            "notify_deviceui_enable": "0"
+        ]
+        if settings.isEnabled {
+            parameters.merge([
+                "data_volume_limit_unit": "data",
+                "data_volume_limit_size": "\(settings.limit)_\(limitMultiplier)",
+                "data_volume_alert_percent": String(settings.reminderPercentage)
+            ]) { _, new in new }
+        }
+        try await controlSet(parameters)
+
+        // UFI 前端将输入值换算为字节后再提交 FLOW_CALIBRATION_MANUAL。
+        let unitMultiplier = settings.usedUnit == .gigabytes ? 1024.0 : 1.0
+        let calibrationBytes = settings.used * unitMultiplier * 1024.0 * 1024.0
+        guard calibrationBytes < Double(UInt64.max) else {
+            throw F50DeviceControlError.rejected("已用流量过大")
         }
         try await controlSet([
-            "goformId": "SET_DATA_LIMIT",
-            "data_volume_limit_switch": settings.isEnabled ? "1" : "0",
-            "data_volume_clear_switch": settings.clearsAutomatically ? "1" : "0",
-            "data_volume_clear_date": String(settings.clearDay),
-            "data_volume_limit_size": String(settings.limit),
-            "data_volume_limit_unit": settings.unit.rawValue,
-            "data_volume_limit_percentage": String(settings.reminderPercentage)
+            "goformId": "FLOW_CALIBRATION_MANUAL",
+            "calibration_way": "data",
+            "time": "0",
+            // 原厂 UFI 前端使用 toFixed(0)，设备端不能接受 Swift Double 的 ".0" 后缀。
+            "data": String(UInt64(calibrationBytes.rounded()))
         ])
     }
 
@@ -3236,13 +3471,17 @@ public class F50Fetcher: ObservableObject {
 
         if let cookie = try? await controlLogin(backend: .router(cookie: nil)),
            let payload = try? await controlGetPayload(commands: commands, backend: .router(cookie: cookie)),
-           expectedKeys.contains(where: { payload[$0] != nil }) {
+           expectedKeys.contains(where: { payload[$0] != nil })
+            || payload["ResponseList"] != nil
+            || payload["WiFiModuleSwitch"] != nil {
             return payload
         }
 
         for token in candidateTokens() {
             if let payload = try? await controlGetPayload(commands: commands, backend: .ufi(token: token, cookie: nil)),
-               expectedKeys.contains(where: { payload[$0] != nil }) {
+               expectedKeys.contains(where: { payload[$0] != nil })
+                || payload["ResponseList"] != nil
+                || payload["WiFiModuleSwitch"] != nil {
                 return payload
             }
         }

@@ -18,6 +18,8 @@ struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var isInitialized = false
     @State private var isShowingFeedback = false
+    @State private var isDiagnosingChannels = false
+    @State private var channelDiagnosticResults: [DataChannelDiagnosticResult] = []
 
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
@@ -113,6 +115,40 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("数据通道诊断") {
+                    Button {
+                        diagnoseDataChannels()
+                    } label: {
+                        HStack {
+                            Label(isDiagnosingChannels ? "正在检测…" : "检测数据通道", systemImage: "stethoscope")
+                            Spacer()
+                            if isDiagnosingChannels {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isDiagnosingChannels)
+
+                    if channelDiagnosticResults.isEmpty {
+                        Text("验证 80 Router、5555 ADB、2333 UFI 能否返回有效数据。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(channelDiagnosticResults) { result in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(result.isAvailable ? .green : .red)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(result.name)
+                                    Text(result.detail)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Picker("前台自动刷新频率", selection: $tempInterval) {
                         Text("1 秒").tag(1.0)
@@ -159,11 +195,6 @@ struct SettingsView: View {
                 }
                 .listRowBackground(Color.clear)
 
-                Section {
-                    Toggle("开启演示模式 (Demo Mode)", isOn: $fetcher.isDemoMode)
-                } header: {
-                    Text("演示与审核")
-                }
             }
             .navigationTitle("设置")
             .sheet(isPresented: $isShowingFeedback) {
@@ -184,6 +215,15 @@ struct SettingsView: View {
             .onChange(of: tempPassword) { _ in autoSave() }
             .onChange(of: tempUFIToken) { _ in autoSave() }
             .onChange(of: tempInterval) { _ in autoSave() }
+        }
+    }
+
+    private func diagnoseDataChannels() {
+        isDiagnosingChannels = true
+        channelDiagnosticResults = []
+        Task { @MainActor in
+            channelDiagnosticResults = await fetcher.diagnoseDataChannels()
+            isDiagnosingChannels = false
         }
     }
 
