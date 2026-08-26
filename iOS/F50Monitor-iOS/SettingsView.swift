@@ -247,7 +247,7 @@ struct ToolsView: View {
                     NavigationLink {
                         SignalLabView(fetcher: fetcher)
                     } label: {
-                        networkToolLabel(title: "Signal Lab", subtitle: "测试并比较 F50 的最佳摆放位置", systemImage: "wave.3.right.circle.fill", color: .blue)
+                        networkToolLabel(title: "Spot Insight", subtitle: "测试并比较 F50 的最佳摆放位置", systemImage: "wave.3.right.circle.fill", color: .blue)
                     }
 
                     NavigationLink {

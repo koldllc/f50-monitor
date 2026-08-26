@@ -209,6 +209,7 @@ public struct LocationReport: Codable, Equatable, Sendable {
     public let deviceIdentifier: String?
     public let networkType: String?
     public let band: String?
+    public let pci: String?
     public let durationSeconds: Double?
     public let observedDurationSeconds: Double?
     public let validSampleCount: Int?
@@ -218,8 +219,9 @@ public struct LocationReport: Codable, Equatable, Sendable {
     public let averageSNR: Double?
     public let averageRSRQ: Double?
     public let switchRatePerMinute: Double?
+    public let placementPhotoFilename: String?
 
-    public init(name: String, sampleCount: Int, score: Int, averageLatencyMilliseconds: Double?, averagePacketLossPercent: Double?, averageDownloadBytesPerSecond: Double, averageUploadBytesPerSecond: Double, fiveGOnlineRate: Double, switchCount: Int, testedAt: Date? = nil, deviceIdentifier: String? = nil, networkType: String? = nil, band: String? = nil, durationSeconds: Double? = nil, observedDurationSeconds: Double? = nil, validSampleCount: Int? = nil, scoreVersion: Int? = nil, stabilityScore: Int? = nil, averageRSRP: Double? = nil, averageSNR: Double? = nil, averageRSRQ: Double? = nil, switchRatePerMinute: Double? = nil) {
+    public init(name: String, sampleCount: Int, score: Int, averageLatencyMilliseconds: Double?, averagePacketLossPercent: Double?, averageDownloadBytesPerSecond: Double, averageUploadBytesPerSecond: Double, fiveGOnlineRate: Double, switchCount: Int, testedAt: Date? = nil, deviceIdentifier: String? = nil, networkType: String? = nil, band: String? = nil, pci: String? = nil, durationSeconds: Double? = nil, observedDurationSeconds: Double? = nil, validSampleCount: Int? = nil, scoreVersion: Int? = nil, stabilityScore: Int? = nil, averageRSRP: Double? = nil, averageSNR: Double? = nil, averageRSRQ: Double? = nil, switchRatePerMinute: Double? = nil, placementPhotoFilename: String? = nil) {
         self.name = name
         self.sampleCount = sampleCount
         self.score = min(100, max(0, score))
@@ -233,6 +235,7 @@ public struct LocationReport: Codable, Equatable, Sendable {
         self.deviceIdentifier = deviceIdentifier
         self.networkType = networkType
         self.band = band
+        self.pci = pci
         self.durationSeconds = durationSeconds
         self.observedDurationSeconds = observedDurationSeconds
         self.validSampleCount = validSampleCount
@@ -242,6 +245,7 @@ public struct LocationReport: Codable, Equatable, Sendable {
         self.averageSNR = averageSNR
         self.averageRSRQ = averageRSRQ
         self.switchRatePerMinute = switchRatePerMinute
+        self.placementPhotoFilename = placementPhotoFilename
     }
 
     public func isComparable(deviceIdentifier: String, durationSeconds: Double) -> Bool {
@@ -517,6 +521,7 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             deviceIdentifier: deviceIdentifier,
             networkType: mostFrequent(onlineSamples.map(\.networkType)),
             band: mostFrequent(onlineSamples.compactMap(\.band)),
+            pci: mostFrequent(onlineSamples.compactMap(\.pci)),
             durationSeconds: durationSeconds,
             observedDurationSeconds: measuredDuration,
             validSampleCount: onlineSamples.count,

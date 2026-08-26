@@ -965,8 +965,8 @@ private struct F50CellLockView: View {
                         .truncationMode(.tail)
                     HStack(spacing: 8) {
                         signalMetric("RSRP", value: cell.rsrp, thresholds: [-85, -95, -105])
-                        signalMetric("RSRQ", value: cell.rsrq, thresholds: [-10, -15, -20])
                         signalMetric("SINR", value: cell.sinr, thresholds: [20, 13, 3])
+                        signalMetric("RSRQ", value: cell.rsrq, thresholds: [-10, -15, -20])
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

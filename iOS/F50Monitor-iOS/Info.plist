@@ -33,6 +33,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要访问本地网络以连接您的中兴 F50/V50 随身 WiFi 设备（192.168.0.1），用于读取信号、流量与短信数据。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Spot Deep Insight 完成后需要拍摄设备摆放位置，以便关联本次测试结果。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>允许将 Spot Insight 分享图保存到您的照片图库。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

@@ -1,6 +1,7 @@
 import AudioToolbox
 import Combine
 import F50Core
+import Photos
 import SwiftUI
 import UIKit
 
@@ -55,22 +56,31 @@ private struct SignalChartPoint: Identifiable {
     let isStablePhase: Bool
 }
 
+private enum DeepInsightResultSort: String, CaseIterable, Identifiable {
+    case score = "按分数"
+    case time = "按时间"
+
+    var id: Self { self }
+}
+
 @MainActor
 private final class SignalLabSession: ObservableObject {
     @Published private(set) var insight: LiveSignalInsight
     @Published private(set) var locations: [LocationReport] = []
     @Published private(set) var isTesting = false
+    @Published private(set) var isExtending = false
     @Published private(set) var progress = 0.0
-    @Published var locationName = "窗边"
-    @Published var duration: TimeInterval = 30
-    @Published var soundEnabled = true
+    @Published private(set) var pendingReport: LocationReport?
+    @Published var pendingLocationName = ""
     @Published private(set) var recentPoints: [SignalChartPoint] = []
     @Published private(set) var resultMessage: String?
 
     private let engine = NetworkInsightEngine()
     private let locationsDefaultsKey = "F50_iOS_SignalLabLocations_v1"
+    private let placementPhotoDirectory = "F50SpotInsightPlacementPhotos"
     private let warmupDuration: TimeInterval = 5
     private let maximumExtension: TimeInterval = 60
+    let duration: TimeInterval = 30
     let minimumValidSampleCount = 8
     private var locationSamples: [TelemetrySample] = []
     private var startedAt: Date?
@@ -103,16 +113,9 @@ private final class SignalLabSession: ObservableObject {
 
     func configure(deviceIdentifier: String) {
         activeDeviceIdentifier = deviceIdentifier
-        if let lockedDuration = locations.first(where: {
-            $0.deviceIdentifier == deviceIdentifier && $0.scoreVersion == LocationReport.currentScoreVersion
-        })?.durationSeconds {
-            duration = lockedDuration
-        }
     }
 
     func start(with status: F50Status, deviceIdentifier: String) {
-        let cleanName = locationName.trimmingCharacters(in: .whitespacesAndNewlines)
-        locationName = cleanName.isEmpty ? "位置 \(locations.count + 1)" : cleanName
         activeDeviceIdentifier = deviceIdentifier
         engine.reset()
         locationSamples.removeAll(keepingCapacity: true)
@@ -120,6 +123,7 @@ private final class SignalLabSession: ObservableObject {
         resultMessage = nil
         startedAt = Date()
         progress = 0
+        isExtending = false
         nextSoundAt = .distantPast
         isTesting = true
         receive(status)
@@ -128,8 +132,7 @@ private final class SignalLabSession: ObservableObject {
     func tick(at now: Date = Date()) {
         guard isTesting else { return }
         updateProgress(at: now)
-        guard soundEnabled,
-              elapsed(at: now) >= warmupDuration,
+        guard elapsed(at: now) >= warmupDuration,
               now >= nextSoundAt,
               insight.score.confidence >= 0.5
         else { return }
@@ -142,24 +145,19 @@ private final class SignalLabSession: ObservableObject {
     func finish() {
         guard isTesting else { return }
         isTesting = false
+        isExtending = false
         progress = 1
         let stableSamples = validStableSamples
         if stableSamples.count >= minimumValidSampleCount {
             let observedDuration = max(1, elapsed(at: Date()) - warmupDuration)
-            let report = engine.makeLocationReport(
-                name: locationName,
+            pendingReport = engine.makeLocationReport(
+                name: "",
                 samples: stableSamples,
                 deviceIdentifier: activeDeviceIdentifier,
                 durationSeconds: duration,
                 observedDurationSeconds: observedDuration
             )
-            locations.removeAll {
-                $0.name == report.name
-                    && $0.isComparable(deviceIdentifier: activeDeviceIdentifier, durationSeconds: duration)
-            }
-            locations.append(report)
-            persistLocations()
-            resultMessage = "已保存 \(stableSamples.count) 个有效样本"
+            pendingLocationName = ""
         } else {
             resultMessage = "有效样本仅 \(stableSamples.count)/\(minimumValidSampleCount)，本次结果未保存"
         }
@@ -170,22 +168,80 @@ private final class SignalLabSession: ObservableObject {
     func cancel() {
         guard isTesting else { return }
         isTesting = false
+        isExtending = false
         progress = 0
         locationSamples.removeAll()
         startedAt = nil
         resultMessage = "已取消本次测试"
     }
 
-    func removeLocations(at offsets: IndexSet) {
-        let sorted = comparison.locations
-        let reports = offsets.compactMap { sorted.indices.contains($0) ? sorted[$0] : nil }
+    func savePendingResult(photo: UIImage?) -> String {
+        let name = pendingLocationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let report = pendingReport, !name.isEmpty else { return "请输入位置名称" }
+
+        let photoFilename: String?
+        if let photo {
+            guard let data = photo.jpegData(compressionQuality: 0.82) else { return "摆放位置照片无法处理" }
+            let filename = "\(UUID().uuidString).jpg"
+            do {
+                try FileManager.default.createDirectory(at: placementPhotoDirectoryURL, withIntermediateDirectories: true)
+                try data.write(to: placementPhotoDirectoryURL.appendingPathComponent(filename), options: .atomic)
+                photoFilename = filename
+            } catch {
+                return "摆放位置照片未能写入"
+            }
+        } else {
+            photoFilename = nil
+        }
+
+        let savedReport = LocationReport(
+            name: name, sampleCount: report.sampleCount, score: report.score,
+            averageLatencyMilliseconds: report.averageLatencyMilliseconds,
+            averagePacketLossPercent: report.averagePacketLossPercent,
+            averageDownloadBytesPerSecond: report.averageDownloadBytesPerSecond,
+            averageUploadBytesPerSecond: report.averageUploadBytesPerSecond,
+            fiveGOnlineRate: report.fiveGOnlineRate, switchCount: report.switchCount,
+            testedAt: report.testedAt, deviceIdentifier: report.deviceIdentifier,
+            networkType: report.networkType, band: report.band, pci: report.pci,
+            durationSeconds: report.durationSeconds, observedDurationSeconds: report.observedDurationSeconds,
+            validSampleCount: report.validSampleCount, scoreVersion: report.scoreVersion,
+            stabilityScore: report.stabilityScore, averageRSRP: report.averageRSRP,
+            averageSNR: report.averageSNR, averageRSRQ: report.averageRSRQ,
+            switchRatePerMinute: report.switchRatePerMinute, placementPhotoFilename: photoFilename
+        )
+        let replacedReports = locations.filter {
+            $0.name == savedReport.name
+                && $0.isComparable(deviceIdentifier: activeDeviceIdentifier, durationSeconds: duration)
+        }
+        removePlacementPhotos(for: replacedReports)
+        locations.removeAll { replacedReports.contains($0) }
+        locations.append(savedReport)
+        persistLocations()
+        pendingReport = nil
+        pendingLocationName = ""
+        return photoFilename == nil ? "Deep Insight 结果已保存" : "Deep Insight 结果和摆放位置照片已保存"
+    }
+
+    func discardPendingResult() {
+        pendingReport = nil
+        pendingLocationName = ""
+    }
+
+    func removeLocations(_ reports: [LocationReport]) {
+        removePlacementPhotos(for: reports)
         locations.removeAll { reports.contains($0) }
         persistLocations()
+    }
+
+    func placementPhoto(for report: LocationReport) -> UIImage? {
+        guard let filename = report.placementPhotoFilename else { return nil }
+        return UIImage(contentsOfFile: placementPhotoDirectoryURL.appendingPathComponent(filename).path)
     }
 
     func removeIncompatibleLocations(at offsets: IndexSet) {
         let sorted = incompatibleLocations
         let reports = offsets.compactMap { sorted.indices.contains($0) ? sorted[$0] : nil }
+        removePlacementPhotos(for: reports)
         locations.removeAll { reports.contains($0) }
         persistLocations()
     }
@@ -202,11 +258,7 @@ private final class SignalLabSession: ObservableObject {
         }
     }
 
-    var isDurationLocked: Bool { !comparableLocations.isEmpty }
     var validSampleCount: Int { validStableSamples.count }
-    var isWarmingUp: Bool { isTesting && elapsed(at: Date()) < warmupDuration }
-    var warmupRemaining: Int { max(0, Int(ceil(warmupDuration - elapsed(at: Date())))) }
-    var isExtending: Bool { isTesting && elapsed(at: Date()) >= duration }
 
     private var validStableSamples: [TelemetrySample] {
         guard let startedAt else { return [] }
@@ -222,6 +274,7 @@ private final class SignalLabSession: ObservableObject {
         guard let startedAt else { return }
         progress = min(1, max(0, now.timeIntervalSince(startedAt) / duration))
         let elapsed = now.timeIntervalSince(startedAt)
+        isExtending = elapsed >= duration && validSampleCount < minimumValidSampleCount
         if elapsed >= duration, validSampleCount >= minimumValidSampleCount {
             finish()
         } else if elapsed >= duration + maximumExtension {
@@ -238,36 +291,52 @@ private final class SignalLabSession: ObservableObject {
         guard let data = try? JSONEncoder().encode(locations) else { return }
         UserDefaults.standard.set(data, forKey: locationsDefaultsKey)
     }
+
+    private var placementPhotoDirectoryURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent(placementPhotoDirectory, isDirectory: true)
+    }
+
+    private func removePlacementPhotos(for reports: [LocationReport]) {
+        for filename in Set(reports.compactMap(\.placementPhotoFilename)) {
+            try? FileManager.default.removeItem(at: placementPhotoDirectoryURL.appendingPathComponent(filename))
+        }
+    }
 }
 
 struct SignalLabView: View {
     @ObservedObject var fetcher: F50Fetcher
     @StateObject private var session = SignalLabSession()
     @State private var shareImage: UIImage?
+    @State private var placementPhoto: UIImage?
+    @State private var previewPlacementPhoto: UIImage?
+    @State private var saveMessage: String?
+    @State private var resultSort: DeepInsightResultSort = .score
     private let clock = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
         List {
             Section {
                 VStack(spacing: 10) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(session.insight.score.value)")
-                            .font(.system(size: 72, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(scoreColor)
-                        Text("分")
-                            .font(.title3.weight(.semibold))
+                    VStack(spacing: 8) {
+                        Text("实时评分")
+                            .font(.headline)
                             .foregroundStyle(.secondary)
-                        Image(systemName: trendSymbol)
-                            .font(.title2.bold())
-                            .foregroundStyle(trendColor)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(session.insight.score.value)")
+                                .font(.system(size: 72, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(scoreColor)
+                            Text("分")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                        }
+                        .frame(width: 136)
+                        ProgressView(value: Double(session.insight.score.value), total: 100)
+                            .tint(scoreColor)
+                            .frame(width: 136)
                     }
-
-                    Text(session.insight.recommendation)
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-
-                    ProgressView(value: Double(session.insight.score.value), total: 100)
-                        .tint(scoreColor)
+                    .padding(.bottom, 4)
 
                     HStack(spacing: 8) {
                         scoreChip("信号强度", session.insight.score.strengthScore)
@@ -283,94 +352,53 @@ struct SignalLabView: View {
                         metric("RSRQ", fetcher.status.rsrq)
                     }
 
-                    HStack(spacing: 8) {
-                        Label(fetcher.status.networkType, systemImage: "antenna.radiowaves.left.and.right")
-                        if !fetcher.status.currentBands.isEmpty {
-                            Text(fetcher.status.currentBands)
+                    VStack(spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(fetcher.status.networkType)
+                            if !fetcher.status.currentBands.isEmpty {
+                                Text(fetcher.status.currentBands)
+                            }
+                            if let pci = fetcher.status.pci {
+                                Text("PCI \(pci)")
+                            }
                         }
-                        if let pci = fetcher.status.pci {
-                            Text("PCI \(pci)")
-                        }
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                    if fetcher.status.cellId != nil || fetcher.status.tac != nil {
-                        HStack(spacing: 10) {
-                            if let cellId = fetcher.status.cellId { Text("Cell ID \(cellId)") }
-                            if let tac = fetcher.status.tac { Text("TAC \(tac)") }
-                        }
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    }
 
-                    if let source = fetcher.status.cellIdentitySource {
-                        Text("小区来源：\(source)")
+                        Text(dataQualityText)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(session.insight.score.isStale ? .orange : .secondary)
                     }
+                    .padding(.top, 4)
 
-                    Text(dataQualityText)
-                        .font(.caption2)
-                        .foregroundStyle(session.insight.score.isStale ? .orange : .secondary)
-
-                    if !session.recentPoints.isEmpty {
-                        SignalTrendChart(points: session.recentPoints)
-                            .frame(height: 112)
-                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-            } footer: {
-                Text("评分依据最近采集的 RSRP、SINR/SNR 与 RSRQ；指标缺失或数据陈旧时会降低可信度。固件未提供 PCI、Cell ID 或 TAC 时不会推测。")
             }
 
             Section {
-                TextField("位置名称", text: $session.locationName)
-                    .disabled(session.isTesting)
-
-                HStack {
-                    ForEach(["窗边", "桌面", "阳台"], id: \.self) { name in
-                        Button(name) { session.locationName = name }
-                            .buttonStyle(.bordered)
-                            .disabled(session.isTesting)
-                    }
-                }
-
-                Picker("测试时长", selection: $session.duration) {
-                    Text("30 秒").tag(30.0)
-                    Text("60 秒").tag(60.0)
-                }
-                .pickerStyle(.segmented)
-                .disabled(session.isTesting || session.isDurationLocked)
-
-                Toggle("声音与触觉提示", isOn: $session.soundEnabled)
-
                 if session.isTesting {
-                    ProgressView(value: session.progress)
-                    if session.isWarmingUp {
-                        Label("请保持设备静止，\(session.warmupRemaining) 秒后开始采样", systemImage: "hourglass")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if session.isExtending {
-                        Text("有效样本 \(session.validSampleCount)/\(session.minimumValidSampleCount) · 正在延长采样")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
-                    } else {
-                        Text("有效样本 \(session.validSampleCount)/\(session.minimumValidSampleCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    VStack(spacing: 14) {
+                        SignalTrendChart(points: session.recentPoints)
+                            .frame(height: 112)
+                        ProgressView(value: session.progress)
+                        if session.isExtending {
+                            Text("数据不足，正在延长采样")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("取消测试", role: .destructive) { session.cancel() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .frame(maxWidth: .infinity)
                     }
-
-                    Button("提前结束并保存") { session.finish() }
-                        .disabled(session.validSampleCount < session.minimumValidSampleCount)
-                    Button("取消测试", role: .cancel) { session.cancel() }
+                    .listRowSeparator(.hidden)
                 } else {
                     Button {
                         session.start(with: fetcher.status, deviceIdentifier: deviceIdentifier)
                     } label: {
-                        Label("开始测试当前位置", systemImage: "location.fill")
-                            .frame(maxWidth: .infinity)
+                        Text("开始 Spot Deep Insight")
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(session.insight.score.confidence < 0.5)
@@ -382,36 +410,94 @@ struct SignalLabView: View {
                         .foregroundStyle(resultMessage.contains("已保存") ? .green : .secondary)
                 }
             } header: {
-                Text("找信号最佳位置")
-            } footer: {
-                Text(session.isDurationLocked
-                    ? "本组已锁定为 \(Int(session.duration)) 秒测试；活动速率仅供参考，不参与位置排名。"
-                    : "首个结果会锁定本组测试时长；活动速率仅供参考，不参与位置排名，也不会主动下载测速文件。")
+                Text("Spot Deep Insight")
             }
 
             if !session.comparableLocations.isEmpty {
                 Section {
-                    ForEach(session.comparison.locations, id: \.name) { location in
-                        LocationResultRow(location: location, isBest: location.name == session.comparison.bestLocationName)
-                    }
-                    .onDelete(perform: session.removeLocations)
-
-                    if session.comparableLocations.count >= 2 {
-                        Button {
-                            shareImage = SignalShareRenderer.render(session.comparison)
-                        } label: {
-                            Label("生成并分享测试图", systemImage: "square.and.arrow.up")
+                    ForEach(displayedLocations, id: \.name) { location in
+                        LocationResultRow(
+                            location: location,
+                            placementPhoto: session.placementPhoto(for: location),
+                            rankMedal: rankMedal(for: location)
+                        ) {
+                            previewPlacementPhoto = $0
                         }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    session.removeLocations([location])
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                }
+                                .tint(.red)
+                                .accessibilityLabel("删除")
+                                Button {
+                                    shareImage = SignalShareRenderer.render(
+                                        location: location,
+                                        placementPhoto: session.placementPhoto(for: location)
+                                    )
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.caption)
+                                }
+                                .tint(.blue)
+                                .accessibilityLabel("分享")
+                            }
+                    }
+                    .onDelete { offsets in
+                        session.removeLocations(offsets.compactMap { index in
+                            displayedLocations.indices.contains(index) ? displayedLocations[index] : nil
+                        })
                     }
                 } header: {
-                    Text(session.comparison.bestLocationName.map { "最佳位置：\($0)" } ?? "位置结果")
+                    HStack {
+                        Text("Deep Insight 结果")
+                        Spacer()
+                        Menu {
+                            Picker("排序", selection: $resultSort) {
+                                ForEach(DeepInsightResultSort.allCases) { sort in
+                                    Text(sort.rawValue).tag(sort)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("结果排序：\(resultSort.rawValue)")
+                    }
                 }
             }
 
             if !session.incompatibleLocations.isEmpty {
                 Section {
                     ForEach(session.incompatibleLocations.indices, id: \.self) { index in
-                        LocationResultRow(location: session.incompatibleLocations[index], isBest: false)
+                        let location = session.incompatibleLocations[index]
+                        LocationResultRow(location: location, placementPhoto: session.placementPhoto(for: location), rankMedal: nil) {
+                            previewPlacementPhoto = $0
+                        }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    session.removeIncompatibleLocations(at: IndexSet(integer: index))
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.caption)
+                                }
+                                .tint(.red)
+                                .accessibilityLabel("删除")
+                                Button {
+                                    shareImage = SignalShareRenderer.render(
+                                        location: location,
+                                        placementPhoto: session.placementPhoto(for: location)
+                                    )
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.caption)
+                                }
+                                .tint(.blue)
+                                .accessibilityLabel("分享")
+                            }
                     }
                     .onDelete(perform: session.removeIncompatibleLocations)
                 } header: {
@@ -420,8 +506,14 @@ struct SignalLabView: View {
                     Text("旧算法、其他设备或不同时长的结果不会与当前测试混排。")
                 }
             }
+
+            Section("评分说明") {
+                Text("评分依据最近采集的 RSRP、SINR/SNR 与 RSRQ；指标缺失或数据陈旧时会降低可信度。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .navigationTitle("Signal Lab")
+        .navigationTitle("Spot Insight")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             session.configure(deviceIdentifier: deviceIdentifier)
@@ -429,12 +521,45 @@ struct SignalLabView: View {
         }
         .onReceive(fetcher.$status) { session.receive($0) }
         .onReceive(clock) { session.tick(at: $0) }
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { shareImage != nil },
             set: { if !$0 { shareImage = nil } }
         )) {
             if let shareImage {
-                ActivityViewController(items: [shareImage])
+                SignalSharePreview(image: shareImage)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { session.pendingReport != nil },
+            set: {
+                if !$0 {
+                    session.discardPendingResult()
+                    placementPhoto = nil
+                }
+            }
+        )) {
+            DeepInsightSaveSheet(
+                locationName: $session.pendingLocationName,
+                photo: $placementPhoto
+            ) {
+                saveMessage = session.savePendingResult(photo: placementPhoto)
+                placementPhoto = nil
+            }
+        }
+        .alert("Deep Insight", isPresented: Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(saveMessage ?? "")
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { previewPlacementPhoto != nil },
+            set: { if !$0 { previewPlacementPhoto = nil } }
+        )) {
+            if let previewPlacementPhoto {
+                PlacementPhotoPreview(photo: previewPlacementPhoto)
             }
         }
     }
@@ -443,29 +568,33 @@ struct SignalLabView: View {
         F50Configuration.displayAddress(from: fetcher.baseURLString)
     }
 
+    private var displayedLocations: [LocationReport] {
+        switch resultSort {
+        case .score:
+            return session.comparison.locations
+        case .time:
+            return session.comparableLocations.sorted {
+                ($0.testedAt ?? .distantPast) > ($1.testedAt ?? .distantPast)
+            }
+        }
+    }
+
+    private func rankMedal(for location: LocationReport) -> String? {
+        guard let index = session.comparison.locations.firstIndex(of: location) else { return nil }
+        switch index {
+        case 0: return "🥇"
+        case 1: return "🥈"
+        case 2: return "🥉"
+        default: return nil
+        }
+    }
+
     private var scoreColor: Color {
         switch session.insight.score.value {
         case 80...: return .green
         case 60...: return .blue
         case 40...: return .orange
         default: return .red
-        }
-    }
-
-    private var trendSymbol: String {
-        switch session.insight.trend {
-        case .up: return "arrow.up.right"
-        case .down: return "arrow.down.right"
-        case .stable: return "arrow.right"
-        case .insufficient: return "ellipsis"
-        }
-    }
-
-    private var trendColor: Color {
-        switch session.insight.trend {
-        case .up: return .green
-        case .down: return .orange
-        case .stable, .insufficient: return .secondary
         }
     }
 
@@ -482,20 +611,28 @@ struct SignalLabView: View {
             Text(title).font(.caption2).foregroundStyle(.secondary)
             Text(value.map { String($0) } ?? "--")
                 .font(.subheadline.bold().monospacedDigit())
+            ProgressView(value: Double(value ?? 0), total: 100)
+                .tint(scoreIndicatorColor(value))
+                .frame(width: 42)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 7)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    private func scoreIndicatorColor(_ value: Int?) -> Color {
+        switch value ?? 0 {
+        case 80...: return .green
+        case 60...: return .blue
+        case 40...: return .orange
+        default: return .red
+        }
+    }
+
     private var dataQualityText: String {
         let confidence = Int((session.insight.score.confidence * 100).rounded())
         let sources = Int((session.insight.score.sourceCoverage * 100).rounded())
-        let sourceNames = [fetcher.status.rsrpSource, fetcher.status.snrSource, fetcher.status.rsrqSource]
-            .compactMap { $0 }
-            .joined(separator: " / ")
-        let suffix = sourceNames.isEmpty ? "来源未标记" : sourceNames
-        return "可信度 \(confidence)% · 来源完整度 \(sources)% · \(suffix)"
+        return "可信度 \(confidence)% · 来源完整度 \(sources)%"
     }
 }
 
@@ -582,49 +719,109 @@ private struct SignalTrendChart: View {
 
 private struct LocationResultRow: View {
     let location: LocationReport
-    let isBest: Bool
+    let placementPhoto: UIImage?
+    let rankMedal: String?
+    let onPhotoTap: (UIImage) -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill((isBest ? Color.green : .secondary).opacity(0.12))
-                Text("\(location.score)")
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(isBest ? .green : .primary)
-            }
-            .frame(width: 48, height: 48)
-
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .bottom, spacing: 10) {
+            VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text(location.name).font(.headline)
-                    if isBest {
-                        Text("最佳").font(.caption2.bold()).foregroundStyle(.green)
+                    if let rankMedal {
+                        Text(rankMedal)
+                            .accessibilityLabel("第 \(rankMedal == "🥇" ? 1 : rankMedal == "🥈" ? 2 : 3) 名")
                     }
+                    Spacer()
+                    Text("\(location.score) 分")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .foregroundStyle(scoreColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(scoreColor.opacity(0.12), in: Capsule())
                 }
-                Text("5G \(Int((location.fiveGOnlineRate * 100).rounded()))% · 切换 \(location.switchCount) 次")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("活动速率 ↓ \(F50Status.formatSpeed(location.averageDownloadBytesPerSecond))  ↑ \(F50Status.formatSpeed(location.averageUploadBytesPerSecond))")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
                 if let testedAt = location.testedAt {
-                    Text("\(testedAt.formatted(date: .abbreviated, time: .shortened)) · \(location.networkType ?? "未知制式")\(location.band.map { " · \($0)" } ?? "")")
+                    Text(testedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                if let validSampleCount = location.validSampleCount, let duration = location.durationSeconds {
-                    let observed = location.observedDurationSeconds.map { " · 实采 \(Int($0)) 秒" } ?? ""
-                    Text("协议 \(Int(duration)) 秒\(observed) · \(validSampleCount) 个有效样本 · 算法 v\(location.scoreVersion ?? 1)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                Text(networkIdentity)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    signalMetric("RSRP", value: location.averageRSRP, thresholds: [-85, -95, -105])
+                    signalMetric("SINR", value: location.averageSNR, thresholds: [20, 13, 3])
+                    signalMetric("RSRQ", value: location.averageRSRQ, thresholds: [-10, -15, -20])
                 }
-                if let deviceIdentifier = location.deviceIdentifier {
-                    Text("设备 \(deviceIdentifier)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let placementPhoto {
+                Button { onPhotoTap(placementPhoto) } label: {
+                    Image(uiImage: placementPhoto)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: thumbnailWidth(for: placementPhoto), height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("查看摆放位置照片")
+                .layoutPriority(1)
+            } else {
+                Color.clear
+                    .frame(width: 64, height: 64)
+                    .layoutPriority(1)
             }
         }
+    }
+
+    private var networkIdentity: String {
+        let values = [location.networkType, location.band, location.pci.map { "PCI \($0)" }]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        return values.isEmpty ? "网络信息不可用" : values.joined(separator: " ・ ")
+    }
+
+    private var scoreColor: Color {
+        switch location.score {
+        case 80...: return .green
+        case 60...: return .blue
+        case 40...: return .orange
+        default: return .red
+        }
+    }
+
+    private func thumbnailWidth(for photo: UIImage) -> CGFloat {
+        guard photo.size.height > 0 else { return 64 }
+        return 64 * photo.size.width / photo.size.height
+    }
+
+    private func signalMetric(_ title: String, value: Double?, thresholds: [Double]) -> some View {
+        let quality = signalQuality(value, thresholds: thresholds)
+        return HStack(spacing: 4) {
+            Text(title).foregroundStyle(.secondary)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(quality.color)
+                .frame(width: CGFloat(24 * quality.ratio), height: 3)
+                .frame(width: 24, alignment: .leading)
+            Text(value.map { String(format: "%.0f", $0) } ?? "--")
+                .foregroundStyle(quality.color)
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .font(.caption2.weight(.medium))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func signalQuality(_ value: Double?, thresholds: [Double]) -> (color: Color, ratio: Double) {
+        guard let value else { return (.secondary, 0) }
+        if value >= thresholds[0] { return (.green, 1) }
+        if value >= thresholds[1] { return (.blue, 0.75) }
+        if value >= thresholds[2] { return (.orange, 0.5) }
+        return (.red, 0.25)
     }
 }
 
@@ -885,10 +1082,14 @@ private struct DoctorSummaryRow: View {
 
 @MainActor
 private enum SignalShareRenderer {
-    static func render(_ comparison: LocationComparison) -> UIImage? {
+    static func render(location: LocationReport, placementPhoto: UIImage?) -> UIImage? {
+        let width: CGFloat = 540
+        let photoHeight = placementPhoto.map { image in
+            min(900, max(600, width * image.size.height / image.size.width))
+        } ?? 720
         let renderer = ImageRenderer(
-            content: SignalShareCard(comparison: comparison)
-                .frame(width: 540, height: 720)
+            content: SignalShareCard(location: location, placementPhoto: placementPhoto, panelHeight: photoHeight * 0.2)
+                .frame(width: width, height: photoHeight)
         )
         renderer.scale = 2
         return renderer.uiImage
@@ -896,49 +1097,356 @@ private enum SignalShareRenderer {
 }
 
 private struct SignalShareCard: View {
-    let comparison: LocationComparison
+    let location: LocationReport
+    let placementPhoto: UIImage?
+    let panelHeight: CGFloat
 
     var body: some View {
         ZStack {
             Color(red: 0.035, green: 0.055, blue: 0.075)
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("F50 SIGNAL TEST")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+            if let placementPhoto {
+                Image(uiImage: placementPhoto)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            LinearGradient(
+                colors: [.black.opacity(0.44), .clear, .black.opacity(0.66)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("F50 MONITOR")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.72))
+                    Text("SPOT DEEP INSIGHT")
+                        .font(.system(size: 21, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.cyan)
-                    Text("最佳位置：\(comparison.bestLocationName ?? "--")")
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                    Text(location.name)
+                        .font(.system(size: 42, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                }
-
-                VStack(spacing: 14) {
-                    ForEach(comparison.locations, id: \.name) { location in
-                        HStack {
-                            Text(location.name).font(.title3.bold())
-                            Spacer()
-                            Text("\(location.score) 分")
-                                .font(.title2.bold().monospacedDigit())
-                                .foregroundStyle(location.name == comparison.bestLocationName ? Color.cyan : .white)
-                        }
-                        .padding(18)
-                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-                    }
-                }
-
-                if let improvement = comparison.downloadImprovementPercent, improvement > 0 {
-                    Text("活动下载速率 +\(Int(improvement.rounded()))%")
-                        .font(.title2.bold().monospacedDigit())
-                        .foregroundStyle(Color.cyan)
+                    Text(testedAtText)
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.8))
+                    Text(networkIdentity)
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.8))
                 }
 
                 Spacer()
-                Text("本地测试 · 未包含主动公网测速")
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.55))
+
+                HStack(alignment: .bottom, spacing: 16) {
+                    scoreModule
+                    GeometryReader { proxy in
+                        let columnWidth = proxy.size.width / 3
+                        ZStack {
+                            HStack(spacing: 0) {
+                                shareMetric("RSRP", location.averageRSRP, thresholds: [-85, -95, -105])
+                                    .frame(width: columnWidth)
+                                shareMetric("SINR", location.averageSNR, thresholds: [20, 13, 3])
+                                    .frame(width: columnWidth)
+                                shareMetric("RSRQ", location.averageRSRQ, thresholds: [-10, -15, -20])
+                                    .frame(width: columnWidth)
+                            }
+                            Rectangle()
+                                .fill(.white.opacity(0.2))
+                                .frame(width: 1, height: 58)
+                                .position(x: columnWidth, y: proxy.size.height / 2)
+                            Rectangle()
+                                .fill(.white.opacity(0.2))
+                                .frame(width: 1, height: 58)
+                                .position(x: columnWidth * 2, y: proxy.size.height / 2)
+                        }
+                    }
+                    .frame(height: 62)
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .frame(height: panelHeight)
+                .background {
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(.black.opacity(0.14))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(.white.opacity(0.28), lineWidth: 1)
+                        }
+                }
             }
-            .padding(42)
+            .padding(28)
         }
         .environment(\.colorScheme, .dark)
+    }
+
+    private var scoreModule: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("综合评分")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.72))
+                .lineLimit(1)
+            Text("\(location.score)")
+                .font(.system(size: 72, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(scoreColor)
+            shareIndicator(value: Double(location.score) / 100, color: scoreColor)
+        }
+        .frame(width: 145, alignment: .leading)
+    }
+
+    private var testedAtText: String {
+        location.testedAt?.formatted(date: .abbreviated, time: .shortened) ?? ""
+    }
+
+    private var networkIdentity: String {
+        [location.networkType, location.band, location.pci.map { "PCI \($0)" }]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ・ ")
+    }
+
+    private var scoreColor: Color {
+        switch location.score {
+        case 80...: return .green
+        case 60...: return .blue
+        case 40...: return .orange
+        default: return .red
+        }
+    }
+
+    private func shareMetric(_ title: String, _ value: Double?, thresholds: [Double]) -> some View {
+        let quality = signalQuality(value, thresholds: thresholds)
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.72))
+            Text(value.map { String(format: "%.0f", $0) } ?? "--")
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.white)
+            shareIndicator(value: quality.ratio, color: quality.color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+    }
+
+    private func shareIndicator(value: Double, color: Color) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.16))
+                Capsule()
+                    .fill(color)
+                    .frame(width: max(4, proxy.size.width * min(1, max(0, value))))
+            }
+        }
+        .frame(height: 5)
+    }
+
+    private func signalQuality(_ value: Double?, thresholds: [Double]) -> (color: Color, ratio: Double) {
+        guard let value else { return (.secondary, 0) }
+        if value >= thresholds[0] { return (.green, 1) }
+        if value >= thresholds[1] { return (.blue, 0.75) }
+        if value >= thresholds[2] { return (.orange, 0.5) }
+        return (.red, 0.25)
+    }
+}
+
+private struct PlacementPhotoPreview: View {
+    let photo: UIImage
+    @Environment(\.dismiss) private var dismiss
+    @State private var dragOffset: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Image(uiImage: photo)
+                .resizable()
+                .scaledToFit()
+                .padding()
+                .offset(y: dragOffset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            dragOffset = max(0, value.translation.height)
+                        }
+                        .onEnded { value in
+                            if value.translation.height > 120 {
+                                dismiss()
+                            } else {
+                                withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 }
+                            }
+                        }
+                )
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white)
+                    .padding()
+            }
+            .accessibilityLabel("关闭照片预览")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+    }
+}
+
+private struct SignalSharePreview: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+    @State private var isSharing = false
+    @State private var saveMessage: String?
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(.horizontal)
+                .padding(.bottom, 110)
+            VStack {
+                HStack {
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel("关闭分享预览")
+                }
+                .padding()
+                Spacer()
+                HStack(spacing: 12) {
+                    Button { saveToPhotoLibrary() } label: {
+                        Label("保存", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button { isSharing = true } label: {
+                        Label("分享", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .background(.ultraThinMaterial)
+            }
+        }
+        .sheet(isPresented: $isSharing) {
+            ActivityViewController(items: [image])
+        }
+        .alert("保存分享图", isPresented: Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(saveMessage ?? "")
+        }
+    }
+
+    private func saveToPhotoLibrary() {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                DispatchQueue.main.async { saveMessage = "未获照片图库写入权限" }
+                return
+            }
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            } completionHandler: { success, _ in
+                DispatchQueue.main.async {
+                    saveMessage = success ? "已保存到照片图库" : "保存失败，请稍后重试"
+                }
+            }
+        }
+    }
+}
+
+private struct DeepInsightSaveSheet: View {
+    @Binding var locationName: String
+    @Binding var photo: UIImage?
+    let save: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var isCameraPresented = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("位置名称") {
+                    TextField("例如：书桌右侧", text: $locationName)
+                        .textInputAutocapitalization(.never)
+                }
+
+                Section("摆放位置照片（可选）") {
+                    if let photo {
+                        Image(uiImage: photo)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    Button(photo == nil ? "拍摄摆放位置" : "重新拍摄") {
+                        isCameraPresented = true
+                    }
+                }
+            }
+            .navigationTitle("保存 Deep Insight")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save() }
+                        .disabled(locationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $isCameraPresented) {
+            PlacementCameraPicker { image in
+                if let image { photo = image }
+                isCameraPresented = false
+            }
+            .ignoresSafeArea()
+        }
+    }
+}
+
+private struct PlacementCameraPicker: UIViewControllerRepresentable {
+    let completion: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        private let completion: (UIImage?) -> Void
+
+        init(completion: @escaping (UIImage?) -> Void) {
+            self.completion = completion
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            completion(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            completion(nil)
+        }
     }
 }
 
