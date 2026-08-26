@@ -23,6 +23,7 @@ public struct SettingsView: View {
     @State private var fileSharingErrorMessage: String?
     @State private var isDiagnosingChannels = false
     @State private var channelDiagnosticResults: [DataChannelDiagnosticResult] = []
+    @State private var selectedGroup: SettingsGroup = .general
     
     init(
         fetcher: F50Fetcher,
@@ -45,9 +46,35 @@ public struct SettingsView: View {
     private var isIPValid: Bool {
         F50Configuration.isValidAddress(tempIP)
     }
+
+    private enum SettingsGroup: String, CaseIterable, Identifiable {
+        case general = "通用"
+        case connection = "连接"
+        case sharing = "文件共享"
+        case mirroring = "无线投屏"
+        case updates = "软件更新"
+        case diagnostics = "诊断与反馈"
+
+        var id: Self { self }
+
+        var icon: String {
+            switch self {
+            case .general: "gearshape"
+            case .connection: "network"
+            case .sharing: "folder"
+            case .mirroring: "rectangle.on.rectangle"
+            case .updates: "arrow.down.circle"
+            case .diagnostics: "stethoscope"
+            }
+        }
+    }
+
+    private let groupTitleFont = Font.system(size: 14, weight: .semibold)
+    private let itemTitleFont = Font.system(size: 13, weight: .medium)
+    private let descriptionFont = Font.system(size: 11)
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             HStack {
                 Button(action: onClose) {
                     Label("返回", systemImage: "chevron.left")
@@ -59,20 +86,150 @@ public struct SettingsView: View {
                 Spacer()
 
                 Text("设置")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
 
                 Spacer()
 
                 Color.clear
                     .frame(width: 48, height: 1)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 0) {
+                settingsSidebar
+                    .frame(width: 148)
+                    .padding(10)
+
+                Divider()
+
+                ScrollView {
+                    selectedSettings
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                }
+            }
+            .frame(height: 420)
+
+            Divider()
+
+            HStack {
+                Text("© 2026 Kold. All rights reserved.")
+                    .font(descriptionFont)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Link("GitHub 项目链接", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
+                    .font(descriptionFont)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            HStack {
+                Button("使用默认值") {
+                    tempIP = "192.168.0.1"
+                    tempPassword = F50Configuration.defaultCredential
+                    tempUFIToken = F50Configuration.defaultCredential
+                    tempInterval = F50Configuration.defaultRefreshInterval
+                    tempDisplayMode = .speeds
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("保存") {
+                    let finalURL = F50Configuration.normalizeBaseURL(tempIP)
+                    fetcher.applyConfiguration(
+                        baseURL: finalURL,
+                        password: tempPassword,
+                        ufiToken: tempUFIToken,
+                        refreshInterval: tempInterval,
+                        displayMode: tempDisplayMode
+                    )
+                    onClose()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(F50Theme.blue)
+                .disabled(!isIPValid)
+            }
+            .padding(16)
+        }
+        .frame(width: 680)
+        .onAppear {
+            tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
+            tempPassword = fetcher.password
+            tempUFIToken = fetcher.ufiToken
+            tempInterval = fetcher.refreshInterval
+            tempDisplayMode = fetcher.displayMode
+            launchAtLogin.refresh()
+            screenMirroringManager.checkDependencies()
+        }
+        .task {
+            await refreshFileSharingState()
+        }
+        .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
+            Button("允许并下载") {
+                screenMirroringManager.downloadAndInstallStandaloneDependencies()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
+        }
+    }
+
+    private var settingsSidebar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(SettingsGroup.allCases) { group in
+                Button {
+                    selectedGroup = group
+                } label: {
+                    Label(group.rawValue, systemImage: group.icon)
+                        .font(itemTitleFont)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(selectedGroup == group ? .primary : .secondary)
+                .background {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selectedGroup == group ? F50Theme.blue.opacity(0.14) : .clear)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedSettings: some View {
+        switch selectedGroup {
+        case .general:
+            generalSettings
+        case .connection:
+            connectionSettings
+        case .sharing:
+            fileSharingSettings
+        case .mirroring:
+            mirroringSettings
+        case .updates:
+            updateSettings
+        case .diagnostics:
+            diagnosticSettings
+        }
+    }
+
+    private var generalSettings: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("通用")
+                .font(groupTitleFont)
+
+            HStack {
                 HStack {
                     Text("登录时自动启动")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(itemTitleFont)
 
                     Spacer()
 
@@ -103,213 +260,16 @@ public struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("诊断与反馈")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    Text("检测 80、5555、2333 是否可获取数据")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
-                        diagnoseDataChannels()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isDiagnosingChannels)
-                }
-
-                ForEach(channelDiagnosticResults) { result in
-                    HStack(spacing: 6) {
-                        Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(result.isAvailable ? F50Theme.green : F50Theme.red)
-                        Text(result.name)
-                            .font(.system(size: 11, weight: .semibold))
-                        Text(result.detail)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
-
-                Divider()
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("问题反馈与设备适配")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("提交使用问题、Bug 或新设备适配")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("去反馈") {
-                        onOpenFeedback()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("文件共享")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    Text("启用文件共享功能")
-                        .font(.system(size: 12, weight: .semibold))
-
-                    Spacer()
-
-                    Toggle("", isOn: Binding(
-                        get: { isFileSharingEnabled },
-                        set: { updateFileSharing(to: $0) }
-                    ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .disabled(isUpdatingFileSharing)
-                }
-
-                if isUpdatingFileSharing {
-                    ProgressView("正在同步设备设置…")
-                        .controlSize(.small)
-                        .font(.system(size: 10))
-                } else if let fileSharingErrorMessage {
-                    Text(fileSharingErrorMessage)
-                        .font(.system(size: 10))
-                        .foregroundColor(F50Theme.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if isFileSharingEnabled {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("访问 F50 共享文件")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("在 App 内浏览，支持拖拽上传和下载")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Button("打开") {
-                            onOpenFileShare()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(F50Theme.blue)
-
-                    }
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+            Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("连接设置")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                // 1. 设备 IP / 域名
-                HStack {
-                    Text("设备 IP / 域名")
-                        .font(.system(size: 12, weight: .semibold))
-                        .fixedSize()
-                    Spacer(minLength: 12)
-                    TextField("192.168.0.1 或域名", text: $tempIP)
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.trailing)
-                        .font(.system(size: 12))
-                        .frame(width: 170)
-                }
-
-                if !tempIP.isEmpty && !isIPValid {
-                    Text("请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）")
-                        .font(.system(size: 10))
-                        .foregroundColor(F50Theme.red)
-                }
-
-                // 2. 中兴后台口令
-                HStack {
-                    Text("中兴后台口令")
-                        .font(.system(size: 12, weight: .semibold))
-                        .fixedSize()
-                    Spacer(minLength: 12)
-                    HStack(spacing: 4) {
-                        if isPasswordVisible {
-                            TextField("例如 admin", text: $tempPassword)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                                .font(.system(size: 12))
-                        } else {
-                            SecureField("例如 admin", text: $tempPassword)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                                .font(.system(size: 12))
-                        }
-
-                        Button {
-                            isPasswordVisible.toggle()
-                        } label: {
-                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .frame(width: 170)
-                }
-
-                // 3. UFI后台口令
-                HStack {
-                    Text("UFI后台口令")
-                        .font(.system(size: 12, weight: .semibold))
-                        .fixedSize()
-                    Spacer(minLength: 12)
-                    HStack(spacing: 4) {
-                        if isUFITokenVisible {
-                            TextField("可选", text: $tempUFIToken)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                                .font(.system(size: 12))
-                        } else {
-                            SecureField("可选", text: $tempUFIToken)
-                                .textFieldStyle(.roundedBorder)
-                                .multilineTextAlignment(.trailing)
-                                .font(.system(size: 12))
-                        }
-
-                        Button {
-                            isUFITokenVisible.toggle()
-                        } label: {
-                            Image(systemName: isUFITokenVisible ? "eye.slash" : "eye")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .frame(width: 170)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("刷新与显示（节能优化）")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
+                Text("刷新与显示")
+                    .font(groupTitleFont)
 
                 HStack {
                     Text("自动刷新频率")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(itemTitleFont)
                     Spacer()
                     Picker("", selection: $tempInterval) {
                         Text("1 秒").tag(1.0)
@@ -323,7 +283,7 @@ public struct SettingsView: View {
 
                 HStack {
                     Text("菜单栏显示模式")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(itemTitleFont)
                     Spacer()
                     Picker("", selection: $tempDisplayMode) {
                         ForEach(MenuBarDisplayMode.allCases) { mode in
@@ -337,17 +297,135 @@ public struct SettingsView: View {
                     }
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("无线投屏 (scrcpy)")
-                    .font(.system(size: 11, weight: .semibold))
+    private var connectionSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("连接")
+                .font(groupTitleFont)
+
+            settingField("设备 IP / 域名") {
+                TextField("192.168.0.1 或域名", text: $tempIP)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .font(itemTitleFont)
+                    .frame(width: 220)
+            }
+
+            if !tempIP.isEmpty && !isIPValid {
+                Text("请输入正确的 IP 地址或域名（例如 192.168.0.1 或 f50.example.com）")
+                    .font(descriptionFont)
+                    .foregroundColor(F50Theme.red)
+            }
+
+            settingField("中兴后台口令") {
+                credentialField(isVisible: $isPasswordVisible, placeholder: "例如 admin", text: $tempPassword)
+            }
+
+            settingField("UFI 后台口令") {
+                credentialField(isVisible: $isUFITokenVisible, placeholder: "可选", text: $tempUFIToken)
+            }
+        }
+    }
+
+    private func settingField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack {
+            Text(title)
+                .font(itemTitleFont)
+            Spacer(minLength: 16)
+            content()
+        }
+    }
+
+    private func credentialField(isVisible: Binding<Bool>, placeholder: String, text: Binding<String>) -> some View {
+        HStack(spacing: 4) {
+            if isVisible.wrappedValue {
+                TextField(placeholder, text: text)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .font(itemTitleFont)
+            } else {
+                SecureField(placeholder, text: text)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .font(itemTitleFont)
+            }
+
+            Button {
+                isVisible.wrappedValue.toggle()
+            } label: {
+                Image(systemName: isVisible.wrappedValue ? "eye.slash" : "eye")
+                    .font(itemTitleFont)
                     .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(width: 220)
+    }
+
+    private var fileSharingSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("文件共享")
+                .font(groupTitleFont)
+
+            HStack {
+                Text("启用文件共享功能")
+                    .font(itemTitleFont)
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { isFileSharingEnabled },
+                    set: { updateFileSharing(to: $0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(isUpdatingFileSharing)
+            }
+
+            if isUpdatingFileSharing {
+                ProgressView("正在同步设备设置…")
+                    .controlSize(.small)
+                    .font(descriptionFont)
+            } else if let fileSharingErrorMessage {
+                Text(fileSharingErrorMessage)
+                    .font(descriptionFont)
+                    .foregroundColor(F50Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if isFileSharingEnabled {
+                Divider()
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("访问 F50 共享文件")
+                            .font(itemTitleFont)
+                        Text("在 App 内浏览，支持拖拽上传和下载")
+                            .font(descriptionFont)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("打开") {
+                        onOpenFileShare()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(F50Theme.blue)
+                }
+            }
+        }
+    }
+
+    private var mirroringSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("无线投屏")
+                .font(groupTitleFont)
 
                 HStack {
                     Text("启用无线投屏功能")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(itemTitleFont)
 
                     Spacer()
 
@@ -360,7 +438,7 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("依赖组件状态：")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(itemTitleFont)
                                 .foregroundColor(.secondary)
                             
                             Spacer()
@@ -368,17 +446,17 @@ public struct SettingsView: View {
                             HStack(spacing: 8) {
                                 Label("adb", systemImage: screenMirroringManager.hasAdb ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .foregroundColor(screenMirroringManager.hasAdb ? F50Theme.green : F50Theme.red)
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(descriptionFont.weight(.semibold))
                                 Label("scrcpy", systemImage: screenMirroringManager.hasScrcpy ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .foregroundColor(screenMirroringManager.hasScrcpy ? F50Theme.green : F50Theme.red)
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(descriptionFont.weight(.semibold))
                             }
                         }
 
                         if !screenMirroringManager.isDependenciesInstalled {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("未检测到投屏所需组件 (scrcpy 与 ADB)。")
-                                    .font(.system(size: 10))
+                                    .font(descriptionFont)
                                     .foregroundColor(F50Theme.orange)
 
                                 Button(action: {
@@ -392,7 +470,7 @@ public struct SettingsView: View {
                                         }
                                         Text(screenMirroringManager.isDownloadingDependencies ? "正在下载配置中..." : "一键自动下载并配置组件")
                                     }
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(itemTitleFont)
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(F50Theme.blue)
@@ -402,26 +480,23 @@ public struct SettingsView: View {
 
                         if let msg = screenMirroringManager.installStatusMessage ?? screenMirroringManager.statusMessage {
                             Text(msg)
-                                .font(.system(size: 10))
+                                .font(descriptionFont)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("软件更新")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
+    private var updateSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("软件更新")
+                .font(groupTitleFont)
 
                 HStack {
                     Text("自动下载并安装新版本")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(itemTitleFont)
 
                     Spacer()
 
@@ -433,9 +508,9 @@ public struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("F50 Monitor v\(updateManager.currentVersion)")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(itemTitleFont)
                         Text(updateManager.statusText)
-                            .font(.system(size: 10))
+                            .font(descriptionFont)
                             .foregroundColor(updateManager.availableVersion == nil ? .secondary : F50Theme.green)
                     }
 
@@ -456,68 +531,56 @@ public struct SettingsView: View {
                 }
                 .disabled(updateManager.isBusy)
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
+    }
+
+    private var diagnosticSettings: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("诊断与反馈")
+                .font(groupTitleFont)
 
             HStack {
-                Text("© 2026 Kold. All rights reserved.")
-                    .font(.system(size: 10))
+                Text("检测 80、5555、2333 是否可获取数据")
+                    .font(descriptionFont)
                     .foregroundColor(.secondary)
                 Spacer()
-                Link("GitHub 项目链接", destination: URL(string: "https://github.com/koldllc/f50-monitor")!)
-                    .font(.system(size: 10))
-            }
-
-            HStack {
-                Button("使用默认值") {
-                    tempIP = "192.168.0.1"
-                    tempPassword = F50Configuration.defaultCredential
-                    tempUFIToken = F50Configuration.defaultCredential
-                    tempInterval = F50Configuration.defaultRefreshInterval
-                    tempDisplayMode = .speeds
+                Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
+                    diagnoseDataChannels()
                 }
                 .buttonStyle(.bordered)
+                .disabled(isDiagnosingChannels)
+            }
+
+            ForEach(channelDiagnosticResults) { result in
+                HStack(spacing: 6) {
+                    Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(result.isAvailable ? F50Theme.green : F50Theme.red)
+                    Text(result.name)
+                        .font(itemTitleFont)
+                    Text(result.detail)
+                        .font(descriptionFont)
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 0)
+                }
+            }
+
+            Divider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("问题反馈与设备适配")
+                        .font(itemTitleFont)
+                    Text("提交使用问题、Bug 或新设备适配")
+                        .font(descriptionFont)
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
-                Button("保存") {
-                    let finalURL = F50Configuration.normalizeBaseURL(tempIP)
-                    fetcher.applyConfiguration(
-                        baseURL: finalURL,
-                        password: tempPassword,
-                        ufiToken: tempUFIToken,
-                        refreshInterval: tempInterval,
-                        displayMode: tempDisplayMode
-                    )
-                    onClose()
+                Button("去反馈") {
+                    onOpenFeedback()
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(F50Theme.blue)
-                .disabled(!isIPValid)
+                .buttonStyle(.bordered)
             }
-        }
-        .padding(16)
-        .frame(width: 380)
-        .fixedSize(horizontal: false, vertical: true)
-        .onAppear {
-            tempIP = F50Configuration.displayAddress(from: fetcher.baseURLString)
-            tempPassword = fetcher.password
-            tempUFIToken = fetcher.ufiToken
-            tempInterval = fetcher.refreshInterval
-            tempDisplayMode = fetcher.displayMode
-            launchAtLogin.refresh()
-            screenMirroringManager.checkDependencies()
-        }
-        .task {
-            await refreshFileSharingState()
-        }
-        .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
-            Button("允许并下载") {
-                screenMirroringManager.downloadAndInstallStandaloneDependencies()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("无线投屏功能需要依赖官方独立组件包 (scrcpy + ADB)。\n\n点击“允许并下载”将自动在线下载并配置独立组件（无需安装 Homebrew 或终端操作）。")
         }
     }
 
