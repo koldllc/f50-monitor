@@ -144,9 +144,6 @@ struct SettingsView: View {
                                 .font(.system(size: 12))
                         }
 
-                        Text("© 2026 Kold. All rights reserved.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary.opacity(0.8))
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
@@ -192,6 +189,15 @@ struct SettingsView: View {
                         Label("问题反馈与设备适配", systemImage: "ladybug.fill")
                     }
                 }
+
+                Section {
+                    Text("© 2026 Kold. All rights reserved.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.8))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                }
+                .listRowBackground(Color.clear)
 
             }
             .navigationTitle("设置")
