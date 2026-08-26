@@ -549,7 +549,7 @@ public struct SettingsView: View {
             Text("诊断与反馈")
                 .font(groupTitleFont)
 
-            VStack(alignment: .leading, spacing: rowSpacing) {
+            VStack(alignment: .leading, spacing: detailSpacing) {
                 Text("数据端口诊断")
                     .font(itemTitleFont)
 
