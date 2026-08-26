@@ -14,7 +14,7 @@ private extension String {
 }
 
 private extension TelemetrySample {
-    init(status: F50Status, timestamp: Date = Date(), latencyMilliseconds: Double? = nil, packetLossPercent: Double? = nil) {
+    init(status: F50Status, timestamp: Date = Date(), latencyMilliseconds: Double? = nil, packetLossPercent: Double? = nil, publicProbeAttemptCount: Int? = nil, publicProbeSuccessCount: Int? = nil, publicProbeMedianLatencyMilliseconds: Double? = nil) {
         let cellularConnected: Bool?
         switch status.pppStatus {
         case "已连接": cellularConnected = true
@@ -34,6 +34,9 @@ private extension TelemetrySample {
             downloadBytesPerSecond: status.dlSpeed,
             uploadBytesPerSecond: status.ulSpeed,
             latencyMilliseconds: latencyMilliseconds,
+            publicProbeAttemptCount: publicProbeAttemptCount,
+            publicProbeSuccessCount: publicProbeSuccessCount,
+            publicProbeMedianLatencyMilliseconds: publicProbeMedianLatencyMilliseconds,
             packetLossPercent: packetLossPercent,
             pci: status.pci,
             cellId: status.cellId,
@@ -46,6 +49,16 @@ private extension TelemetrySample {
             localConnectionError: status.isOnline ? nil : status.errorMessage
         )
     }
+}
+
+private enum NetworkDoctorMode: String, CaseIterable, Identifiable {
+    case quick
+    case deep
+
+    var id: Self { self }
+    var title: String { self == .quick ? "快速诊断" : "深度诊断" }
+    var duration: TimeInterval { self == .quick ? 120 : 600 }
+    var detail: String { self == .quick ? "2 分钟：检查连接、蜂窝状态与公网质量" : "10 分钟：观察切换、温度与时间关联" }
 }
 
 private struct SignalChartPoint: Identifiable {
@@ -830,13 +843,14 @@ private final class NetworkDoctorSession: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var progress = 0.0
     @Published private(set) var report: DoctorReport
+    @Published private(set) var mode: NetworkDoctorMode = .quick
 
     private let engine = NetworkInsightEngine()
     private let reportDefaultsKey = "F50_iOS_NetworkDoctorLatestReport_v1"
     private var startedAt: Date?
     private var lastProbeAt = Date.distantPast
     private var probeInFlight = false
-    let duration: TimeInterval = 600
+    var duration: TimeInterval { mode.duration }
 
     init() {
         if let data = UserDefaults.standard.data(forKey: reportDefaultsKey),
@@ -847,8 +861,9 @@ private final class NetworkDoctorSession: ObservableObject {
         }
     }
 
-    func start(with status: F50Status) {
+    func start(with status: F50Status, mode: NetworkDoctorMode = .quick) {
         engine.reset()
+        self.mode = mode
         startedAt = Date()
         isRunning = true
         progress = 0
@@ -873,9 +888,15 @@ private final class NetworkDoctorSession: ObservableObject {
         lastProbeAt = now
         defer { probeInFlight = false }
 
-        var measuredLatency: Double?
-        for address in ["https://cp.cloudflare.com/generate_204", "https://captive.apple.com/hotspot-detect.html"] {
-            guard let url = URL(string: address) else { continue }
+        var latencies: [Double] = []
+        var attempts = 0
+        var successes = 0
+        let endpoints = ["https://cp.cloudflare.com/generate_204", "https://captive.apple.com/hotspot-detect.html"]
+        for index in 0..<3 {
+            guard var components = URLComponents(string: endpoints[index % endpoints.count]) else { continue }
+            components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "f50_probe", value: "\(Date().timeIntervalSince1970)-\(index)")]
+            guard let url = components.url else { continue }
+            attempts += 1
             var request = URLRequest(url: url)
             request.timeoutInterval = 4
             request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -884,10 +905,25 @@ private final class NetworkDoctorSession: ObservableObject {
                   let httpResponse = response as? HTTPURLResponse,
                   (200...399).contains(httpResponse.statusCode)
             else { continue }
-            measuredLatency = Date().timeIntervalSince(started) * 1_000
-            break
+            successes += 1
+            latencies.append(Date().timeIntervalSince(started) * 1_000)
         }
-        receive(status, at: Date(), latencyMilliseconds: measuredLatency, packetLossPercent: measuredLatency == nil ? 100 : 0)
+        let sortedLatencies = latencies.sorted()
+        let median: Double?
+        if sortedLatencies.isEmpty {
+            median = nil
+        } else if sortedLatencies.count.isMultiple(of: 2) {
+            let middle = sortedLatencies.count / 2
+            median = (sortedLatencies[middle - 1] + sortedLatencies[middle]) / 2
+        } else {
+            median = sortedLatencies[sortedLatencies.count / 2]
+        }
+        let probeTime = Date()
+        let fallback = TelemetrySample(status: status, timestamp: probeTime)
+        guard isRunning else { return }
+        _ = engine.mergePublicProbeResult(attempts: attempts, successes: successes, medianLatencyMilliseconds: median, fallbackSample: fallback)
+        report = engine.diagnose()
+        update(at: probeTime)
     }
 
     func finish() {
@@ -898,13 +934,6 @@ private final class NetworkDoctorSession: ObservableObject {
             UserDefaults.standard.set(data, forKey: reportDefaultsKey)
         }
         startedAt = nil
-    }
-
-    private func receive(_ status: F50Status, at now: Date, latencyMilliseconds: Double?, packetLossPercent: Double?) {
-        guard isRunning else { return }
-        _ = engine.append(TelemetrySample(status: status, timestamp: now, latencyMilliseconds: latencyMilliseconds, packetLossPercent: packetLossPercent))
-        report = engine.diagnose()
-        update(at: now)
     }
 
     private func update(at now: Date) {
@@ -919,6 +948,7 @@ struct NetworkDoctorView: View {
     @StateObject private var session = NetworkDoctorSession()
     @State private var exportReport: String?
     @State private var includeSensitiveData = false
+    @State private var selectedMode: NetworkDoctorMode = .quick
     private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -929,10 +959,10 @@ struct NetworkDoctorView: View {
                         .font(.system(size: 42, weight: .semibold))
                         .foregroundStyle(session.isRunning ? .green : .blue)
 
-                    Text(session.isRunning ? "正在记录网络状态" : "10 分钟主动诊断")
+                    Text(session.isRunning ? "正在记录网络状态" : selectedMode.title)
                         .font(.title3.bold())
 
-                    Text(session.isRunning ? "请保持 F50 Monitor 在前台，完成后会自动分析。" : "按时间关联掉线、切换、温度、SINR 波动与丢包，分析网络异常的可能原因。")
+                    Text(session.isRunning ? "请保持 F50 Monitor 在前台，完成后会自动分析。" : "按时间关联本地管理通道、蜂窝状态与公网连通性，分析网络异常的可能原因。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -941,8 +971,14 @@ struct NetworkDoctorView: View {
                         ProgressView(value: session.progress)
                         Button("提前结束并分析") { session.finish() }
                     } else {
+                        Picker("诊断模式", selection: $selectedMode) {
+                            ForEach(NetworkDoctorMode.allCases) { mode in
+                                Text("\(mode.title)：\(mode.detail)").tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
                         Button {
-                            session.start(with: fetcher.status)
+                            session.start(with: fetcher.status, mode: selectedMode)
                         } label: {
                             Label("开始诊断", systemImage: "play.fill")
                                 .frame(maxWidth: .infinity)
@@ -954,12 +990,24 @@ struct NetworkDoctorView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             } footer: {
-                Text("仅在前台采样。每 5 秒发送一次极小的公网连通性请求以估算延迟与丢包，不下载测速文件。")
+                Text("仅在前台采样。每 5 秒最多发送 3 次极小公网请求，记录成功率与成功请求延迟中位数，不下载测速文件。")
             }
 
             if session.report.sampleCount > 0 {
                 Section("诊断摘要") {
                     DoctorSummaryRow(title: "采样", value: "\(session.report.sampleCount) 次")
+                    if let duration = session.report.observedDurationSeconds {
+                        DoctorSummaryRow(title: "有效时长", value: formatDuration(duration))
+                    }
+                    if let coverage = session.report.radioMetricCoverage {
+                        DoctorSummaryRow(title: "无线指标覆盖率", value: "\(Int((coverage * 100).rounded()))%")
+                    }
+                    if let attempts = session.report.publicProbeAttemptCount, attempts > 0 {
+                        let success = session.report.publicProbeSuccessCount ?? 0
+                        DoctorSummaryRow(title: "公网探测成功率", value: "\(success)/\(attempts)（\(Int(((session.report.publicProbeSuccessRate ?? 0) * 100).rounded()))%）")
+                    } else {
+                        DoctorSummaryRow(title: "公网探测", value: "暂无有效样本")
+                    }
                     DoctorSummaryRow(title: "5G 在线率", value: "\(Int((session.report.fiveGOnlineRate * 100).rounded()))%")
                     DoctorSummaryRow(title: "网络切换", value: "\(session.report.switchSummary.total) 次")
                     DoctorSummaryRow(title: "频段/小区变化", value: "\(session.report.cellularChanges?.count ?? 0) 次")
@@ -991,6 +1039,11 @@ struct NetworkDoctorView: View {
                                 Label(evidence, systemImage: "minus.circle")
                                     .font(.caption)
                                     .foregroundStyle(.orange)
+                            }
+                            if let recommendation = finding.actionableRecommendation {
+                                Label("建议：\(recommendation)", systemImage: "arrow.right.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.blue)
                             }
                         }
                         .padding(.vertical, 3)
@@ -1025,7 +1078,10 @@ struct NetworkDoctorView: View {
                     Button {
                         exportReport = session.report.exportMarkdown(
                             deviceAddress: F50Configuration.displayAddress(from: fetcher.baseURLString),
-                            includeSensitiveData: includeSensitiveData
+                            includeSensitiveData: includeSensitiveData,
+                            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                            buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+                            firmwareVersion: fetcher.currentDiagnosticFirmwareVersion
                         )
                     } label: {
                         Label("导出并分享", systemImage: "square.and.arrow.up")
@@ -1063,6 +1119,11 @@ struct NetworkDoctorView: View {
         case 0.5...: return "可信度中等"
         default: return "仅供参考"
         }
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 60 ? "\(total / 60) 分钟 \(total % 60) 秒" : "\(total) 秒"
     }
 
 }

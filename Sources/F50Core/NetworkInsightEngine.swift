@@ -15,6 +15,14 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
     public let downloadBytesPerSecond: Double
     public let uploadBytesPerSecond: Double
     public let latencyMilliseconds: Double?
+    /// Number of lightweight public-connectivity requests made in this round.
+    public let publicProbeAttemptCount: Int?
+    /// Number of successful requests in this round.
+    public let publicProbeSuccessCount: Int?
+    /// Median latency of successful requests in this round.
+    public let publicProbeMedianLatencyMilliseconds: Double?
+    /// Kept for compatibility; this now means public probe failure rate, not
+    /// ICMP packet loss.
     public let packetLossPercent: Double?
     public let pci: String?
     public let cellId: String?
@@ -42,6 +50,9 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         downloadBytesPerSecond: Double = 0,
         uploadBytesPerSecond: Double = 0,
         latencyMilliseconds: Double? = nil,
+        publicProbeAttemptCount: Int? = nil,
+        publicProbeSuccessCount: Int? = nil,
+        publicProbeMedianLatencyMilliseconds: Double? = nil,
         packetLossPercent: Double? = nil,
         pci: String? = nil,
         cellId: String? = nil,
@@ -65,6 +76,9 @@ public struct TelemetrySample: Codable, Equatable, Sendable {
         self.downloadBytesPerSecond = max(0, downloadBytesPerSecond)
         self.uploadBytesPerSecond = max(0, uploadBytesPerSecond)
         self.latencyMilliseconds = latencyMilliseconds.map { max(0, $0) }
+        self.publicProbeAttemptCount = publicProbeAttemptCount.map { max(0, $0) }
+        self.publicProbeSuccessCount = publicProbeSuccessCount.map { max(0, min($0, publicProbeAttemptCount ?? $0)) }
+        self.publicProbeMedianLatencyMilliseconds = publicProbeMedianLatencyMilliseconds.map { max(0, $0) }
         self.packetLossPercent = packetLossPercent.map { min(100, max(0, $0)) }
         self.pci = pci
         self.cellId = cellId
@@ -275,6 +289,8 @@ public enum DoctorFindingCategory: String, Codable, CaseIterable, Sendable {
     case congestion
     case deviceOverheating
     case localConnection
+    case publicConnectivity
+    case cellularConnectivity
     // Legacy values retained so reports saved by earlier releases still decode.
     case frequentSwitching
     case possibleOverheating
@@ -312,15 +328,36 @@ public struct DoctorFinding: Codable, Equatable, Sendable {
     /// Evidence that lowers the probability of this cause. Optional for
     /// backwards-compatible decoding of reports saved by earlier releases.
     public let counterEvidence: [String]?
+    public let recommendation: String?
     public let confidence: Double
 
-    public init(category: DoctorFindingCategory, title: String, summary: String, evidence: [String], counterEvidence: [String] = [], confidence: Double) {
+    public init(category: DoctorFindingCategory, title: String, summary: String, evidence: [String], counterEvidence: [String] = [], recommendation: String? = nil, confidence: Double) {
         self.category = category
         self.title = title
         self.summary = summary
         self.evidence = evidence
         self.counterEvidence = counterEvidence
+        self.recommendation = recommendation
         self.confidence = min(1, max(0, confidence))
+    }
+
+    public var actionableRecommendation: String? {
+        recommendation ?? Self.defaultRecommendation(for: category)
+    }
+
+    private static func defaultRecommendation(for category: DoctorFindingCategory) -> String? {
+        switch category {
+        case .insufficientData: return "保持工具页在前台，完成快速或深度诊断后再判断。"
+        case .coverage: return "将 F50 移到窗边或较开阔位置后重新诊断。"
+        case .interference: return "调整设备朝向和摆放位置，再运行一次诊断对比。"
+        case .baseStationSwitching, .frequentSwitching: return "保持设备位置稳定；必要时锁定较稳定的频段后复测。"
+        case .congestion: return "在不同时间复测，并分别检查公网与蜂窝状态，不要仅凭一次失败下结论。"
+        case .deviceOverheating, .possibleOverheating: return "让设备降温并保持通风，温度恢复后重新诊断。"
+        case .localConnection: return "检查 App 到 F50 的管理连接，再打开数据通道诊断。"
+        case .publicConnectivity: return "确认 DNS、路由和目标站点可达性，并在稍后重试公网探测。"
+        case .cellularConnectivity: return "检查蜂窝注册和 PPP 状态；恢复连接后重新诊断。"
+        case .networkQuality: return "保留本报告并在相同位置复测，比较无线与公网两层结果。"
+        }
     }
 }
 
@@ -335,8 +372,17 @@ public struct DoctorReport: Codable, Equatable, Sendable {
     public let cellularChanges: [CellularChangeEvent]?
     public let timeline: [DoctorTimelineEvent]?
     public let counterEvidence: [String]?
+    public let observedDurationSeconds: TimeInterval?
+    public let freshSampleCount: Int?
+    public let radioMetricCoverage: Double?
+    public let radioMetricSampleCounts: [String: Int]?
+    public let publicProbeAttemptCount: Int?
+    public let publicProbeSuccessCount: Int?
+    public let publicProbeSuccessRate: Double?
+    public let publicProbeMedianLatencyMilliseconds: Double?
+    public let ruleVersion: String?
 
-    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]? = nil, timeline: [DoctorTimelineEvent]? = nil, counterEvidence: [String]? = nil) {
+    public init(start: Date?, end: Date?, sampleCount: Int, fiveGOnlineRate: Double, switchSummary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent]? = nil, timeline: [DoctorTimelineEvent]? = nil, counterEvidence: [String]? = nil, observedDurationSeconds: TimeInterval? = nil, freshSampleCount: Int? = nil, radioMetricCoverage: Double? = nil, radioMetricSampleCounts: [String: Int]? = nil, publicProbeAttemptCount: Int? = nil, publicProbeSuccessCount: Int? = nil, publicProbeSuccessRate: Double? = nil, publicProbeMedianLatencyMilliseconds: Double? = nil, ruleVersion: String? = nil) {
         self.start = start
         self.end = end
         self.sampleCount = sampleCount
@@ -346,11 +392,20 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         self.cellularChanges = cellularChanges
         self.timeline = timeline
         self.counterEvidence = counterEvidence
+        self.observedDurationSeconds = observedDurationSeconds
+        self.freshSampleCount = freshSampleCount
+        self.radioMetricCoverage = radioMetricCoverage
+        self.radioMetricSampleCounts = radioMetricSampleCounts
+        self.publicProbeAttemptCount = publicProbeAttemptCount
+        self.publicProbeSuccessCount = publicProbeSuccessCount
+        self.publicProbeSuccessRate = publicProbeSuccessRate
+        self.publicProbeMedianLatencyMilliseconds = publicProbeMedianLatencyMilliseconds
+        self.ruleVersion = ruleVersion
     }
 
     public var primaryFinding: DoctorFinding? { findings.first }
 
-    public func exportMarkdown(deviceAddress: String? = nil, includeSensitiveData: Bool = false) -> String {
+    public func exportMarkdown(deviceAddress: String? = nil, includeSensitiveData: Bool = false, appVersion: String? = nil, buildNumber: String? = nil, firmwareVersion: String? = nil) -> String {
         let formatter = ISO8601DateFormatter()
         var lines = ["# F50 Network Doctor 诊断报告", ""]
         if let start { lines.append("- 开始：\(formatter.string(from: start))") }
@@ -358,6 +413,24 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         lines.append("- 采样：\(sampleCount) 次")
         lines.append("- 5G 在线率：\(Int((fiveGOnlineRate * 100).rounded()))%")
         lines.append("- 制式切换：\(switchSummary.total) 次")
+        if let appVersion, !appVersion.isEmpty { lines.append("- App 版本：\(appVersion)") }
+        if let buildNumber, !buildNumber.isEmpty { lines.append("- 构建号：\(buildNumber)") }
+        if let firmwareVersion, !firmwareVersion.isEmpty { lines.append("- 固件版本：\(firmwareVersion)") }
+        if let observedDurationSeconds { lines.append("- 有效时长：\(Self.formatDuration(observedDurationSeconds))") }
+        if let freshSampleCount { lines.append("- 有效采样：\(freshSampleCount) 次") }
+        if let radioMetricCoverage { lines.append("- 无线指标覆盖率：\(Int((radioMetricCoverage * 100).rounded()))%") }
+        if let counts = radioMetricSampleCounts {
+            let labels = ["rsrp": "RSRP", "rsrq": "RSRQ", "snr": "SINR/SNR"]
+            let detail = labels.compactMap { key, label in counts[key].map { "\(label) \($0)" } }.joined(separator: "，")
+            if !detail.isEmpty { lines.append("- 无线指标样本：\(detail)") }
+        }
+        if let attempts = publicProbeAttemptCount, attempts > 0 {
+            let success = publicProbeSuccessCount ?? 0
+            let rate = publicProbeSuccessRate ?? 0
+            lines.append("- 公网探测：\(success)/\(attempts) 成功（成功率 \(Int((rate * 100).rounded()))%）")
+            if let median = publicProbeMedianLatencyMilliseconds { lines.append("- 公网探测成功请求延迟中位数：\(Int(median.rounded())) ms") }
+        } else { lines.append("- 公网探测：暂无有效样本") }
+        if let ruleVersion { lines.append("- 规则版本：\(ruleVersion)") }
         if includeSensitiveData, let deviceAddress, !deviceAddress.isEmpty {
             lines.append("- 设备地址：\(deviceAddress)")
         } else {
@@ -370,6 +443,7 @@ public struct DoctorReport: Codable, Equatable, Sendable {
             lines.append(finding.summary)
             for item in finding.evidence { lines.append("- 证据：\(item)") }
             for item in finding.counterEvidence ?? [] { lines.append("- 反证：\(item)") }
+            if let recommendation = finding.actionableRecommendation { lines.append("- 建议：\(recommendation)") }
             lines.append("")
         }
         if let counterEvidence, !counterEvidence.isEmpty {
@@ -405,6 +479,11 @@ public struct DoctorReport: Codable, Equatable, Sendable {
         }
         return redacted
     }
+
+    private static func formatDuration(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 60 ? "\(total / 60) 分钟 \(total % 60) 秒" : "\(total) 秒"
+    }
 }
 
 /// Pure local analysis for Signal Lab and Network Doctor.
@@ -426,6 +505,55 @@ public final class NetworkInsightEngine: @unchecked Sendable {
     }
 
     public func reset() { samples.removeAll(keepingCapacity: true) }
+
+    /// Adds a public-connectivity result to the latest radio observation. A
+    /// probe must not create another radio sample or alter switch timing.
+    @discardableResult
+    public func mergePublicProbeResult(
+        attempts: Int,
+        successes: Int,
+        medianLatencyMilliseconds: Double?,
+        fallbackSample: TelemetrySample? = nil
+    ) -> LiveSignalInsight {
+        let boundedAttempts = max(0, attempts)
+        let boundedSuccesses = min(boundedAttempts, max(0, successes))
+        let failureRate = boundedAttempts > 0 ? Double(boundedAttempts - boundedSuccesses) / Double(boundedAttempts) * 100 : nil
+        func withProbeData(_ sample: TelemetrySample) -> TelemetrySample {
+            TelemetrySample(
+                timestamp: sample.timestamp,
+                online: sample.online,
+                cellularConnected: sample.cellularConnected,
+                networkType: sample.networkType,
+                rsrp: sample.rsrp,
+                rsrq: sample.rsrq,
+                snr: sample.snr,
+                band: sample.band,
+                temperature: sample.temperature,
+                downloadBytesPerSecond: sample.downloadBytesPerSecond,
+                uploadBytesPerSecond: sample.uploadBytesPerSecond,
+                latencyMilliseconds: medianLatencyMilliseconds,
+                publicProbeAttemptCount: boundedAttempts,
+                publicProbeSuccessCount: boundedSuccesses,
+                publicProbeMedianLatencyMilliseconds: medianLatencyMilliseconds,
+                packetLossPercent: failureRate,
+                pci: sample.pci,
+                cellId: sample.cellId,
+                tac: sample.tac,
+                rsrpSource: sample.rsrpSource,
+                rsrqSource: sample.rsrqSource,
+                snrSource: sample.snrSource,
+                snrKind: sample.snrKind,
+                dataAgeSeconds: sample.dataAgeSeconds,
+                localConnectionError: sample.localConnectionError
+            )
+        }
+        if let index = samples.indices.last {
+            samples[index] = withProbeData(samples[index])
+        } else if let fallbackSample {
+            samples.append(withProbeData(fallbackSample))
+        }
+        return liveInsight
+    }
 
     public var liveInsight: LiveSignalInsight {
         let score = signalScore(for: smoothedSample(from: samples))
@@ -588,6 +716,20 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         let loss = average(freshSamples.compactMap(\.packetLossPercent))
         let latency = average(freshSamples.compactMap(\.latencyMilliseconds))
         let packetLossEventCount = timeline.filter { $0.kind == .packetLoss }.count
+        let observedDuration = freshSamples.map(\.timestamp).min().flatMap { start in
+            freshSamples.map(\.timestamp).max().map { max(0, $0.timeIntervalSince(start)) }
+        } ?? 0
+        let radioMetricSampleCounts = [
+            "rsrp": rsrp.count,
+            "rsrq": freshSamples.compactMap(\.rsrq).count,
+            "snr": snr.count
+        ]
+        let wirelessSampleCount = freshSamples.filter { $0.rsrp != nil || $0.rsrq != nil || $0.snr != nil }.count
+        let radioMetricCoverage = freshSamples.isEmpty ? 0 : Double(wirelessSampleCount) / Double(freshSamples.count)
+        let publicProbeAttempts = freshSamples.compactMap(\.publicProbeAttemptCount).reduce(0, +)
+        let publicProbeSuccesses = freshSamples.compactMap(\.publicProbeSuccessCount).reduce(0, +)
+        let publicProbeSuccessRate = publicProbeAttempts > 0 ? Double(publicProbeSuccesses) / Double(publicProbeAttempts) : nil
+        let publicProbeLatencies = freshSamples.compactMap(\.publicProbeMedianLatencyMilliseconds)
         var reportCounterEvidence: [String] = []
         if let maxTemperature, maxTemperature < 60 {
             reportCounterEvidence.append("最高温度仅 \(format(maxTemperature)) ℃，因此设备过热可能性较低")
@@ -597,6 +739,30 @@ public final class NetworkInsightEngine: @unchecked Sendable {
         }
         if summary.total + cellChanges.count == 0 {
             reportCounterEvidence.append("未确认制式、频段或小区切换，因此基站切换可能性较低")
+        }
+
+        var qualityEvidence: [String] = []
+        if wirelessSampleCount < 8 { qualityEvidence.append("有效无线采样仅 \(wirelessSampleCount) 次，至少需要 8 次") }
+        if observedDuration < 30 { qualityEvidence.append("有效时长仅 \(format(observedDuration)) 秒，至少需要 30 秒") }
+        if radioMetricCoverage < 0.5 { qualityEvidence.append("无线指标覆盖率仅 \(format(radioMetricCoverage * 100))%") }
+        if !qualityEvidence.isEmpty {
+            findings.append(DoctorFinding(category: .insufficientData, title: "诊断质量不足", summary: "当前证据不足，部分网络原因可能无法可靠判断；以下结果仅供参考。", evidence: qualityEvidence, confidence: 0))
+        }
+
+        if publicProbeAttempts < 6 {
+            let detail = publicProbeAttempts == 0 ? "暂无公网探测样本" : "公网探测仅 \(publicProbeAttempts) 次"
+            findings.append(DoctorFinding(category: .publicConnectivity, title: "公网连通性未评估", summary: "\(detail)，公网连通性可能无法判断；不影响无线侧规则分析。", evidence: ["至少需要 6 次公网探测才能评估成功率"], confidence: 0))
+        }
+
+        if let publicProbeSuccessRate, publicProbeAttempts >= 6, publicProbeSuccessRate < 0.5 {
+            findings.append(DoctorFinding(category: .publicConnectivity, title: "公网连通性异常", summary: "公网探测失败率偏高，问题可能位于 DNS、路由、目标站点或蜂窝出口；不能仅据此判定为拥塞。", evidence: ["公网探测成功率：\(format(publicProbeSuccessRate * 100))%", "公网探测失败率：\(format((1 - publicProbeSuccessRate) * 100))%"], counterEvidence: latency == nil ? [] : ["仍有成功请求返回，公网并非持续不可达"], confidence: min(0.9, 0.5 + (1 - publicProbeSuccessRate) * 0.4)))
+        }
+
+        let cellularDisconnects = timeline.filter { $0.kind == .disconnection }
+        let cellularOfflineSamples = freshSamples.filter { $0.cellularConnected == false }.count
+        if !cellularDisconnects.isEmpty || cellularOfflineSamples > 0 {
+            let count = max(cellularDisconnects.count, cellularOfflineSamples)
+            findings.append(DoctorFinding(category: .cellularConnectivity, title: "蜂窝侧连接异常", summary: "检测到 F50 蜂窝数据连接掉线；这是蜂窝侧状态，不等同于 App 到设备的本地管理连接。", evidence: ["蜂窝数据掉线或未连接采样：\(count) 次"], confidence: min(0.9, 0.55 + Double(count) * 0.08)))
         }
 
         if let avgRSRP, rsrp.count >= 3, avgRSRP < -105 {
@@ -616,7 +782,7 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             if stableRSRP {
                 var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm", "SINR/SNR 标准差：\(format(snrDeviation)) dB"]
                 let lossNearSINR = correlatedCount(primary: timeline.filter { $0.kind == .sinrFluctuation }, secondary: timeline.filter { $0.kind == .packetLoss }, within: 30)
-                if lossNearSINR > 0 { evidence.append("SINR 波动前后 30 秒出现丢包：\(lossNearSINR) 次") }
+                if lossNearSINR > 0 { evidence.append("SINR 波动前后 30 秒出现公网探测失败：\(lossNearSINR) 次") }
                 findings.append(DoctorFinding(category: .interference, title: "无线干扰", summary: "RSRP 相对稳定，但 SINR/SNR 波动较大，更可能是无线干扰。", evidence: evidence, counterEvidence: normalTemperatureEvidence(maxTemperature), confidence: min(0.9, 0.5 + snrDeviation / 20 + Double(lossNearSINR) * 0.05)))
             }
         }
@@ -629,26 +795,27 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             let bandChanges = cellChanges.filter { $0.kind == .band }.count
             let identityChanges = cellChanges.filter { $0.kind == .pci || $0.kind == .cellId }.count
             var evidence = ["制式切换：\(summary.total) 次", "频段切换：\(bandChanges) 次", "小区标识切换：\(identityChanges) 次"]
-            if disruptionsNearChanges > 0 { evidence.append("切换前后 30 秒伴随掉线、丢包或高延迟：\(disruptionsNearChanges) 次") }
-            findings.append(DoctorFinding(category: .baseStationSwitching, title: "基站切换", summary: "已确认制式、频段或小区变化；与网络异常同时出现时，更可能影响稳定性。", evidence: evidence, counterEvidence: disruptionsNearChanges == 0 ? ["切换前后未观察到掉线、丢包或高延迟，切换未必是故障原因"] : [], confidence: min(0.95, 0.45 + Double(totalChanges) * 0.08 + Double(disruptionsNearChanges) * 0.1)))
+            if disruptionsNearChanges > 0 { evidence.append("切换前后 30 秒伴随掉线、公网探测失败或高延迟：\(disruptionsNearChanges) 次") }
+            findings.append(DoctorFinding(category: .baseStationSwitching, title: "基站切换", summary: "已确认制式、频段或小区变化；与网络异常同时出现时，更可能影响稳定性。", evidence: evidence, counterEvidence: disruptionsNearChanges == 0 ? ["切换前后未观察到掉线、公网探测失败或高延迟，切换未必是故障原因"] : [], confidence: min(0.95, 0.45 + Double(totalChanges) * 0.08 + Double(disruptionsNearChanges) * 0.1)))
         }
 
         if let maxTemperature, maxTemperature >= 65 {
             let thermalEvents = timeline.filter { $0.kind == .highTemperature }
             let thermalDisruptions = correlatedCount(primary: thermalEvents, secondary: disruptions, within: 60)
             var evidence = ["最高温度：\(format(maxTemperature)) ℃"]
-            if thermalDisruptions > 0 { evidence.append("高温前后 60 秒伴随丢包、掉线或高延迟：\(thermalDisruptions) 次") }
+            if thermalDisruptions > 0 { evidence.append("高温前后 60 秒伴随公网探测失败、掉线或高延迟：\(thermalDisruptions) 次") }
             findings.append(DoctorFinding(category: .deviceOverheating, title: "设备过热", summary: "设备温度偏高；只有与性能异常在时间上重合时，过热原因才更可信。", evidence: evidence, counterEvidence: thermalDisruptions == 0 ? ["高温时段未观察到网络性能异常，暂不能证明因果关系"] : [], confidence: min(0.9, 0.45 + (maxTemperature - 65) / 50 + Double(thermalDisruptions) * 0.1)))
         }
 
-        if let avgRSRP, avgRSRP >= -100, (avgSNR ?? 8) >= 5, ((latency ?? 0) >= 120 || ((loss ?? 0) >= 10 && packetLossEventCount >= 2)) {
+        let canAssessCongestion = publicProbeAttempts == 0 || (publicProbeAttempts >= 6 && (publicProbeSuccessRate ?? 0) >= 0.75)
+        if let avgRSRP, avgRSRP >= -100, (avgSNR ?? 8) >= 5, canAssessCongestion, ((latency ?? 0) >= 120 || ((loss ?? 0) >= 10 && packetLossEventCount >= 2)) {
             var evidence = ["平均 RSRP：\(format(avgRSRP)) dBm"]
             if let avgSNR { evidence.append("平均 SINR/SNR：\(format(avgSNR)) dB") }
             if let latency { evidence.append("平均延迟：\(format(latency)) ms") }
-            if let loss { evidence.append("平均丢包：\(format(loss))%") }
+            if let loss { evidence.append("公网探测失败率：\(format(loss))%") }
             let qualityEvents = timeline.filter { $0.kind == .packetLoss || $0.kind == .highLatency }
             let qualityNearSwitches = correlatedCount(primary: qualityEvents, secondary: changes, within: 30)
-            findings.append(DoctorFinding(category: .congestion, title: "网络拥塞", summary: "无线信号尚可，但延迟或丢包偏高；若异常不紧邻切换，更可能是拥塞、回程或上层网络问题。", evidence: evidence, counterEvidence: qualityNearSwitches > 0 ? ["部分质量异常紧邻基站切换，拥塞并非唯一解释"] : normalTemperatureEvidence(maxTemperature), confidence: qualityNearSwitches > 0 ? 0.55 : 0.72))
+            findings.append(DoctorFinding(category: .congestion, title: "可能存在上层网络拥塞", summary: "无线信号尚可且成功公网请求延迟偏高；这可能来自拥塞、回程或上层网络，公网失败本身不等同于拥塞。", evidence: evidence, counterEvidence: qualityNearSwitches > 0 ? ["部分质量异常紧邻基站切换，拥塞并非唯一解释"] : normalTemperatureEvidence(maxTemperature), confidence: qualityNearSwitches > 0 ? 0.55 : 0.72))
         }
 
         let localFailures = timeline.filter { $0.kind == .localConnectionFailure }
@@ -658,13 +825,18 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             if freshSamples.contains(where: { $0.localConnectionError != nil }) { evidence.append("设备抓取器返回了本地连接错误") }
             findings.append(DoctorFinding(category: .localConnection, title: "本地连接异常", summary: "App 在诊断时段无法稳定连接 F50；这与蜂窝侧掉线是不同问题。", evidence: evidence, counterEvidence: nearbyRadioChanges > 0 ? ["中断附近也发生了基站切换，可能同时存在蜂窝侧波动"] : [], confidence: freshSamples.contains(where: { $0.localConnectionError != nil }) ? 0.88 : 0.65))
         }
-        return makeDoctorReport(selected: freshSamples, summary: summary, findings: findings, cellularChanges: cellChanges, timeline: timeline, counterEvidence: reportCounterEvidence)
+        return makeDoctorReport(selected: freshSamples, summary: summary, findings: findings, cellularChanges: cellChanges, timeline: timeline, counterEvidence: reportCounterEvidence, observedDurationSeconds: observedDuration, radioMetricCoverage: radioMetricCoverage, radioMetricSampleCounts: radioMetricSampleCounts, publicProbeAttemptCount: publicProbeAttempts, publicProbeSuccessCount: publicProbeSuccesses, publicProbeSuccessRate: publicProbeSuccessRate, publicProbeMedianLatencyMilliseconds: median(publicProbeLatencies))
     }
 
-    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent], timeline: [DoctorTimelineEvent], counterEvidence: [String]) -> DoctorReport {
-        let sortedFindings = findings.sorted { $0.confidence > $1.confidence }
+    private func makeDoctorReport(selected: [TelemetrySample], summary: NetworkSwitchSummary, findings: [DoctorFinding], cellularChanges: [CellularChangeEvent], timeline: [DoctorTimelineEvent], counterEvidence: [String], observedDurationSeconds: TimeInterval? = nil, radioMetricCoverage: Double? = nil, radioMetricSampleCounts: [String: Int]? = nil, publicProbeAttemptCount: Int? = nil, publicProbeSuccessCount: Int? = nil, publicProbeSuccessRate: Double? = nil, publicProbeMedianLatencyMilliseconds: Double? = nil) -> DoctorReport {
+        let sortedFindings = findings.sorted {
+            let lhsInsufficient = $0.category == .insufficientData
+            let rhsInsufficient = $1.category == .insufficientData
+            if lhsInsufficient != rhsInsufficient { return lhsInsufficient }
+            return $0.confidence > $1.confidence
+        }
         let dates = selected.map(\.timestamp)
-        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings, cellularChanges: cellularChanges, timeline: timeline, counterEvidence: counterEvidence)
+        return DoctorReport(start: dates.min(), end: dates.max(), sampleCount: selected.count, fiveGOnlineRate: fiveGRate(in: selected), switchSummary: summary, findings: sortedFindings, cellularChanges: cellularChanges, timeline: timeline, counterEvidence: counterEvidence, observedDurationSeconds: observedDurationSeconds, freshSampleCount: selected.count, radioMetricCoverage: radioMetricCoverage, radioMetricSampleCounts: radioMetricSampleCounts, publicProbeAttemptCount: publicProbeAttemptCount, publicProbeSuccessCount: publicProbeSuccessCount, publicProbeSuccessRate: publicProbeSuccessRate, publicProbeMedianLatencyMilliseconds: publicProbeMedianLatencyMilliseconds, ruleVersion: "network-doctor-v2")
     }
 
     private func diagnosticTimeline(
@@ -703,7 +875,7 @@ public final class NetworkInsightEngine: @unchecked Sendable {
                 }
             }
             if let loss = sample.packetLossPercent, loss >= 3 {
-                events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .packetLoss, summary: "丢包 \(format(loss))%"))
+                events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .packetLoss, summary: "公网探测失败率 \(format(loss))%"))
             }
             if let latency = sample.latencyMilliseconds, latency >= 120 {
                 events.append(DoctorTimelineEvent(timestamp: sample.timestamp, kind: .highLatency, summary: "延迟 \(format(latency)) ms"))
@@ -890,6 +1062,9 @@ public final class NetworkInsightEngine: @unchecked Sendable {
             downloadBytesPerSecond: latest.downloadBytesPerSecond,
             uploadBytesPerSecond: latest.uploadBytesPerSecond,
             latencyMilliseconds: latest.latencyMilliseconds,
+            publicProbeAttemptCount: latest.publicProbeAttemptCount,
+            publicProbeSuccessCount: latest.publicProbeSuccessCount,
+            publicProbeMedianLatencyMilliseconds: latest.publicProbeMedianLatencyMilliseconds,
             packetLossPercent: latest.packetLossPercent,
             pci: latest.pci,
             cellId: latest.cellId,

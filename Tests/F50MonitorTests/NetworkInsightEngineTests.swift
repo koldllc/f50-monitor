@@ -20,7 +20,10 @@ final class NetworkInsightEngineTests: XCTestCase {
         tac: String? = nil,
         withSources: Bool = false,
         dataAge: Double? = nil,
-        localConnectionError: String? = nil
+        localConnectionError: String? = nil,
+        publicProbeAttempts: Int? = nil,
+        publicProbeSuccesses: Int? = nil,
+        publicProbeMedianLatency: Double? = nil
     ) -> TelemetrySample {
         TelemetrySample(
             timestamp: Date(timeIntervalSince1970: second),
@@ -34,6 +37,9 @@ final class NetworkInsightEngineTests: XCTestCase {
             temperature: temperature,
             downloadBytesPerSecond: download,
             latencyMilliseconds: latency,
+            publicProbeAttemptCount: publicProbeAttempts,
+            publicProbeSuccessCount: publicProbeSuccesses,
+            publicProbeMedianLatencyMilliseconds: publicProbeMedianLatency,
             packetLossPercent: loss,
             pci: pci,
             cellId: cellId,
@@ -270,6 +276,69 @@ final class NetworkInsightEngineTests: XCTestCase {
         let full = report.exportMarkdown(deviceAddress: "192.168.0.1", includeSensitiveData: true)
         XCTAssertTrue(full.contains("CELL-SECRET"))
         XCTAssertTrue(full.contains("192.168.0.1"))
+    }
+
+    func testDoctorMarksShortRunsAsUnableToJudgeAndExportsQuality() {
+        let report = NetworkInsightEngine(samples: [sample(0), sample(1)]).diagnose()
+
+        XCTAssertTrue(report.findings.contains { $0.category == .insufficientData })
+        XCTAssertEqual(report.freshSampleCount, 2)
+        XCTAssertEqual(report.observedDurationSeconds ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(report.radioMetricCoverage ?? 0, 1, accuracy: 0.001)
+        let markdown = report.exportMarkdown()
+        XCTAssertTrue(markdown.contains("有效时长"))
+        XCTAssertTrue(markdown.contains("无线指标覆盖率"))
+        XCTAssertTrue(markdown.contains("规则版本"))
+    }
+
+    func testDoctorSeparatesPublicProbeFailureFromCongestion() {
+        let report = NetworkInsightEngine(samples: [
+            sample(0, latency: nil, loss: 100, publicProbeAttempts: 3, publicProbeSuccesses: 0),
+            sample(5, latency: nil, loss: 100, publicProbeAttempts: 3, publicProbeSuccesses: 0),
+            sample(10, latency: nil, loss: 100, publicProbeAttempts: 3, publicProbeSuccesses: 0)
+        ]).diagnose()
+
+        XCTAssertTrue(report.findings.contains { $0.category == .publicConnectivity })
+        XCTAssertFalse(report.findings.contains { $0.category == .congestion })
+        XCTAssertEqual(report.publicProbeAttemptCount, 9)
+        XCTAssertEqual(report.publicProbeSuccessRate ?? 1, 0, accuracy: 0.001)
+        XCTAssertTrue(report.timeline?.contains { $0.summary.contains("公网探测失败率") } == true)
+    }
+
+    func testDoctorAddsCellularFindingAndFindingRecommendation() {
+        let report = NetworkInsightEngine(samples: [
+            sample(0, cellularConnected: true),
+            sample(5, cellularConnected: false),
+            sample(10, cellularConnected: false)
+        ]).diagnose()
+
+        guard let cellular = report.findings.first(where: { $0.category == .cellularConnectivity }) else {
+            XCTFail("应识别蜂窝侧连接异常")
+            return
+        }
+        XCTAssertNotNil(cellular.actionableRecommendation)
+    }
+
+    func testPublicProbeResultMergesIntoLatestRadioSample() {
+        let engine = NetworkInsightEngine(samples: [sample(0), sample(5)])
+        let before = engine.samples
+        _ = engine.mergePublicProbeResult(attempts: 3, successes: 2, medianLatencyMilliseconds: 42)
+
+        XCTAssertEqual(engine.samples.count, before.count)
+        XCTAssertEqual(engine.samples.last?.timestamp, before.last?.timestamp)
+        XCTAssertEqual(engine.samples.last?.rsrp, before.last?.rsrp)
+        XCTAssertEqual(engine.samples.last?.publicProbeAttemptCount, 3)
+        XCTAssertEqual(engine.samples.last?.publicProbeSuccessCount, 2)
+        XCTAssertEqual(engine.samples.last?.publicProbeMedianLatencyMilliseconds, 42)
+    }
+
+    func testDoctorExportIncludesOptionalBuildAndFirmwareVersions() {
+        let report = NetworkInsightEngine(samples: (0..<8).map { sample(Double($0 * 5), publicProbeAttempts: 1, publicProbeSuccesses: 1) }).diagnose()
+        let markdown = report.exportMarkdown(appVersion: "2.5", buildNumber: "9", firmwareVersion: "B25")
+
+        XCTAssertTrue(markdown.contains("App 版本：2.5"))
+        XCTAssertTrue(markdown.contains("构建号：9"))
+        XCTAssertTrue(markdown.contains("固件版本：B25"))
     }
 
     func testAnonymizedFieldFaultReplaysKeepExpectedRulesStable() throws {
