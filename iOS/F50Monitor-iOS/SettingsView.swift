@@ -115,7 +115,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("数据通道诊断") {
+                Section("诊断与反馈") {
                     Button {
                         diagnoseDataChannels()
                     } label: {
@@ -147,6 +147,12 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    Button {
+                        isShowingFeedback = true
+                    } label: {
+                        Label("问题反馈与设备适配", systemImage: "ladybug.fill")
+                    }
                 }
 
                 Section {
@@ -160,14 +166,6 @@ struct SettingsView: View {
                     Text("刷新与节能")
                 } footer: {
                     Text("后台数据更新基于 iOS 系统智能调度机制（BGAppRefreshTask），适时更新小组件与数据缓存，具体频次由系统根据电量与使用情况决定。")
-                }
-
-                Section("帮助与反馈") {
-                    Button {
-                        isShowingFeedback = true
-                    } label: {
-                        Label("问题反馈与设备适配", systemImage: "ladybug.fill")
-                    }
                 }
 
                 Section {

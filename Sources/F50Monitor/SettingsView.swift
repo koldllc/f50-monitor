@@ -107,7 +107,7 @@ public struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("数据通道诊断")
+                Text("诊断与反馈")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
@@ -134,6 +134,25 @@ public struct SettingsView: View {
                             .foregroundColor(.secondary)
                         Spacer(minLength: 0)
                     }
+                }
+
+                Divider()
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("问题反馈与设备适配")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("提交使用问题、Bug 或新设备适配")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("去反馈") {
+                        onOpenFeedback()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding(12)
@@ -390,31 +409,6 @@ public struct SettingsView: View {
                     }
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("意见与反馈")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("问题反馈与设备适配")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("提交使用问题、Bug 或新设备适配")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("去反馈") {
-                        onOpenFeedback()
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
             .padding(12)
