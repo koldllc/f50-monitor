@@ -549,30 +549,35 @@ public struct SettingsView: View {
             Text("诊断与反馈")
                 .font(groupTitleFont)
 
-            HStack {
-                Text("检测 80、5555、2333 是否可获取数据")
-                    .font(descriptionFont)
-                    .lineSpacing(2)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
-                    diagnoseDataChannels()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isDiagnosingChannels)
-            }
+            VStack(alignment: .leading, spacing: rowSpacing) {
+                Text("数据端口诊断")
+                    .font(itemTitleFont)
 
-            ForEach(channelDiagnosticResults) { result in
-                HStack(spacing: 6) {
-                    Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(result.isAvailable ? F50Theme.green : F50Theme.red)
-                    Text(result.name)
-                        .font(itemTitleFont)
-                    Text(result.detail)
+                HStack {
+                    Text("检测 80、5555、2333 是否可获取数据")
                         .font(descriptionFont)
                         .lineSpacing(2)
                         .foregroundColor(.secondary)
-                    Spacer(minLength: 0)
+                    Spacer()
+                    Button(isDiagnosingChannels ? "检测中…" : "开始检测") {
+                        diagnoseDataChannels()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isDiagnosingChannels)
+                }
+
+                ForEach(channelDiagnosticResults) { result in
+                    HStack(spacing: 6) {
+                        Image(systemName: result.isAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(result.isAvailable ? F50Theme.green : F50Theme.red)
+                        Text(result.name)
+                            .font(itemTitleFont)
+                        Text(result.detail)
+                            .font(descriptionFont)
+                            .lineSpacing(2)
+                            .foregroundColor(.secondary)
+                        Spacer(minLength: 0)
+                    }
                 }
             }
 
