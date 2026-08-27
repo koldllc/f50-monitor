@@ -1,9 +1,0 @@
-<resources>
-    <style name="Theme.F50Monitor" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#1677FF</item>
-        <item name="android:navigationBarColor">#101318</item>
-        <item name="android:statusBarColor">#101318</item>
-        <item name="android:windowLightStatusBar">false</item>
-    </style>
-</resources>

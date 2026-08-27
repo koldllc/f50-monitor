@@ -17,7 +17,7 @@
     <!-- Settings Form Area -->
     <div class="settings-content">
       <!-- Windows Startup -->
-      <div v-if="!isAndroidPlatform" class="settings-section">
+      <div class="settings-section">
         <div class="setting-row">
           <div class="setting-text">
             <span class="setting-title">登录时自动启动</span>
@@ -89,7 +89,7 @@
           </select>
         </div>
 
-        <div v-if="!isAndroidPlatform" class="form-group">
+        <div class="form-group">
           <label class="form-label">无线投屏 ADB 端口</label>
           <input 
             v-model.number="form.screenMirroringPort" 
@@ -100,30 +100,13 @@
       </div>
 
       <!-- Troubleshooting & Feedback -->
-      <div v-if="!isAndroidPlatform" class="settings-section">
+      <div class="settings-section">
         <span class="section-title">帮助与反馈</span>
         <div class="form-group">
           <button class="btn-icon feedback-btn" @click="showFeedbackModal = true">
             📋 问题反馈与新设备适配
           </button>
         </div>
-      </div>
-
-      <div v-if="isAndroidPlatform" class="settings-section">
-        <span class="section-title">本机 Agent</span>
-        <div class="form-group">
-          <span class="form-label">LAN API 地址</span>
-          <span class="input-hint">{{ agentInfo ? `http://${agentInfo.host || '设备网关IP'}:${agentInfo.port}` : '读取中…' }}</span>
-        </div>
-        <div class="form-group">
-          <span class="form-label">Agent Key</span>
-          <code class="agent-key">{{ agentInfo?.agentKey || '读取中…' }}</code>
-          <span class="input-hint">仅用于局域网只读 API 配对，不会通过未鉴权接口返回。</span>
-        </div>
-        <button class="btn-icon feedback-btn" @click="requestBatteryOptimization">
-          {{ agentInfo?.batteryOptimizationIgnored ? '已允许后台运行' : '允许后台长期运行' }}
-        </button>
-        <span v-if="batteryMessage" class="input-hint">{{ batteryMessage }}</span>
       </div>
 
       <!-- Footer Info & Actions -->
@@ -148,8 +131,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { state, saveConfig, invokePlatform, isAndroidPlatform } from '../stores/f50Store.js';
+import { ref, reactive, computed } from 'vue';
+import { state, saveConfig } from '../stores/f50Store.js';
 import DeviceFeedbackModal from './DeviceFeedbackModal.vue';
 
 const emit = defineEmits(['close', 'openSMS']);
@@ -157,8 +140,6 @@ const emit = defineEmits(['close', 'openSMS']);
 const showRouterPwd = ref(false);
 const showUfiToken = ref(false);
 const showFeedbackModal = ref(false);
-const agentInfo = ref(null);
-const batteryMessage = ref('');
 
 const form = reactive({
   baseURL: state.config.baseURL,
@@ -194,32 +175,12 @@ const isIPValid = computed(() => {
 });
 
 function handleRestoreDefault() {
-  form.baseURL = isAndroidPlatform ? 'http://192.168.0.1' : 'http://192.168.0.1:2333';
+  form.baseURL = 'http://192.168.0.1:2333';
   form.password = 'admin';
   form.ufiToken = 'admin';
   form.refreshInterval = 2.0;
   form.displayMode = '仅图标';
   form.screenMirroringPort = 5555;
-}
-
-onMounted(async () => {
-  if (isAndroidPlatform) {
-    try {
-      agentInfo.value = await invokePlatform('get_agent_info');
-    } catch (error) {
-      batteryMessage.value = String(error);
-    }
-  }
-});
-
-async function requestBatteryOptimization() {
-  try {
-    await invokePlatform('request_battery_optimization');
-    batteryMessage.value = '请在系统页面确认后返回。';
-    agentInfo.value = await invokePlatform('get_agent_info');
-  } catch (error) {
-    batteryMessage.value = String(error);
-  }
 }
 
 function handleCancel() {

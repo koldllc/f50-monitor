@@ -26,7 +26,7 @@
 
     <div class="header-right">
       <!-- SMS Button with Unread Badge -->
-        <button v-if="!isAndroidPlatform" class="icon-btn" @click="emit('openSMS')" title="短信箱">
+        <button class="icon-btn" @click="emit('openSMS')" title="短信箱">
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
@@ -63,7 +63,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { state, fetchStatus, isAndroidPlatform } from '../stores/f50Store.js';
+import { state, fetchStatus } from '../stores/f50Store.js';
 import mobileLogo from '../assets/ChinaMobileLogo.svg';
 import unicomLogo from '../assets/ChinaUnicomLogo.svg';
 import telecomLogo from '../assets/ChinaTelecomLogo.svg';

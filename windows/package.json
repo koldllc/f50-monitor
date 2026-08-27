@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:android": "node scripts/build-android-web.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
