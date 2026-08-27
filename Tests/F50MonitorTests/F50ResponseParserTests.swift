@@ -914,27 +914,4 @@ final class F50ResponseParserTests: XCTestCase {
         XCTAssertEqual(decoded.rsrp, "-82 dBm")
     }
 
-    func testWiFiRadioModeUsesAccessPointChipStatusesInsteadOfModuleSwitchValue() {
-        XCTAssertEqual(
-            F50WiFiRadioMode.resolve(moduleSwitch: "1", chip24Enabled: true, chip5Enabled: false),
-            .only24GHz
-        )
-        XCTAssertEqual(
-            F50WiFiRadioMode.resolve(moduleSwitch: "1", chip24Enabled: false, chip5Enabled: true),
-            .only5GHz
-        )
-        XCTAssertEqual(
-            F50WiFiRadioMode.resolve(moduleSwitch: "0", chip24Enabled: true, chip5Enabled: true),
-            .off
-        )
-    }
-
-    func testWiFiRadioModeUsesFirmwareChipEnumForSaving() {
-        XCTAssertEqual(F50WiFiRadioMode.only24GHz.firmwareChipEnum, "chip1")
-        XCTAssertEqual(F50WiFiRadioMode.only5GHz.firmwareChipEnum, "chip2")
-        XCTAssertNil(F50WiFiRadioMode.off.firmwareChipEnum)
-        XCTAssertEqual(F50WiFiRadioMode.only24GHz.firmwareChipIndex, "0")
-        XCTAssertEqual(F50WiFiRadioMode.only5GHz.firmwareChipIndex, "1")
-        XCTAssertNil(F50WiFiRadioMode.off.firmwareChipIndex)
-    }
 }

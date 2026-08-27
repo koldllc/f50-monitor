@@ -18,9 +18,6 @@ public struct SettingsView: View {
     @State private var tempInterval: Double = 2.0
     @State private var tempDisplayMode: MenuBarDisplayMode = .speeds
     @StateObject private var launchAtLogin = LaunchAtLoginManager()
-    @AppStorage(FileSharingPreferences.enabledDefaultsKey) private var isFileSharingEnabled = true
-    @State private var isUpdatingFileSharing = false
-    @State private var fileSharingErrorMessage: String?
     @State private var isDiagnosingChannels = false
     @State private var channelDiagnosticResults: [DataChannelDiagnosticResult] = []
     @State private var selectedGroup: SettingsGroup = .general
@@ -167,9 +164,6 @@ public struct SettingsView: View {
             tempDisplayMode = fetcher.displayMode
             launchAtLogin.refresh()
             screenMirroringManager.checkDependencies()
-        }
-        .task {
-            await refreshFileSharingState()
         }
         .alert("请求下载配置授权", isPresented: $screenMirroringManager.showPermissionAlert) {
             Button("允许并下载") {
@@ -376,52 +370,22 @@ public struct SettingsView: View {
                 .font(groupTitleFont)
 
             HStack {
-                Text("启用文件共享功能")
-                    .font(itemTitleFont)
+                VStack(alignment: .leading, spacing: detailSpacing) {
+                    Text("访问 F50 共享文件")
+                        .font(itemTitleFont)
+                    Text("在 App 内浏览，支持拖拽上传和下载")
+                        .font(descriptionFont)
+                        .lineSpacing(2)
+                        .foregroundColor(.secondary)
+                }
 
                 Spacer()
 
-                Toggle("", isOn: Binding(
-                    get: { isFileSharingEnabled },
-                    set: { updateFileSharing(to: $0) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(isUpdatingFileSharing)
-            }
-
-            if isUpdatingFileSharing {
-                ProgressView("正在同步设备设置…")
-                    .controlSize(.small)
-                    .font(descriptionFont)
-            } else if let fileSharingErrorMessage {
-                Text(fileSharingErrorMessage)
-                    .font(descriptionFont)
-                    .lineSpacing(2)
-                    .foregroundColor(F50Theme.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if isFileSharingEnabled {
-                Divider()
-                HStack {
-                    VStack(alignment: .leading, spacing: detailSpacing) {
-                        Text("访问 F50 共享文件")
-                            .font(itemTitleFont)
-                        Text("在 App 内浏览，支持拖拽上传和下载")
-                            .font(descriptionFont)
-                            .lineSpacing(2)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("打开") {
-                        onOpenFileShare()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(F50Theme.blue)
+                Button("打开") {
+                    onOpenFileShare()
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(F50Theme.blue)
             }
         }
     }
@@ -612,33 +576,4 @@ public struct SettingsView: View {
         }
     }
 
-    @MainActor
-    private func refreshFileSharingState() async {
-        isUpdatingFileSharing = true
-        defer { isUpdatingFileSharing = false }
-        do {
-            isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
-            fileSharingErrorMessage = nil
-        } catch {
-            fileSharingErrorMessage = "无法读取设备文件共享状态：\(error.localizedDescription)"
-        }
-    }
-
-    private func updateFileSharing(to enabled: Bool) {
-        let previousValue = isFileSharingEnabled
-        isFileSharingEnabled = enabled
-        isUpdatingFileSharing = true
-        fileSharingErrorMessage = nil
-
-        Task { @MainActor in
-            defer { isUpdatingFileSharing = false }
-            do {
-                try await fetcher.setSambaEnabled(enabled)
-                isFileSharingEnabled = try await fetcher.fetchSambaEnabled()
-            } catch {
-                isFileSharingEnabled = previousValue
-                fileSharingErrorMessage = "无法修改设备文件共享状态：\(error.localizedDescription)"
-            }
-        }
-    }
 }
