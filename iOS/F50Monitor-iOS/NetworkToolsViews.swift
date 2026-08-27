@@ -962,7 +962,7 @@ struct NetworkDoctorView: View {
                             session.start(with: fetcher.status)
                         } label: {
                             Label("开始诊断", systemImage: "play.fill")
-                                .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, alignment: .center)
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(!fetcher.status.isOnline)
@@ -1032,7 +1032,7 @@ struct NetworkDoctorView: View {
                 }
 
                 if let counterEvidence = session.report.counterEvidence, !counterEvidence.isEmpty {
-                    Section("反证与较低可能性") {
+                    Section("辅助判断") {
                         ForEach(counterEvidence, id: \.self) { evidence in
                             Label(evidence, systemImage: "checkmark.shield")
                                 .font(.subheadline)
